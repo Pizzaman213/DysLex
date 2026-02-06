@@ -1,0 +1,15 @@
+{
+  "description": "Letter omission patterns, especially double letters",
+  "patterns": [
+    {"pattern": "double_consonant", "probability": 0.4},
+    {"pattern": "silent_e", "probability": 0.3},
+    {"pattern": "unstressed_vowel", "probability": 0.2}
+  ],
+  "examples": [
+    {"correct": "occurred", "error": "occured"},
+    {"correct": "beginning", "error": "begining"},
+    {"correct": "necessary", "error": "necesary"},
+    {"correct": "accommodate", "error": "accomodate"},
+    {"correct": "committee", "error": "commitee"}
+  ]
+}

@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  dyslex-web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - dyslex-api
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    networks:
+      - dyslex-network
+
+  dyslex-api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      dyslex-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://dyslex:dyslex@dyslex-db:5432/dyslex
+      - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+    networks:
+      - dyslex-network
+
+  dyslex-db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=dyslex
+      - POSTGRES_PASSWORD=dyslex
+      - POSTGRES_DB=dyslex
+    volumes:
+      - dyslex-db-data:/var/lib/postgresql/data
+      - ../database/schema/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ../database/seeds/error_types.sql:/docker-entrypoint-initdb.d/02-error_types.sql
+      - ../database/seeds/confusion_pairs_en.sql:/docker-entrypoint-initdb.d/03-confusion_pairs.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dyslex -d dyslex"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dyslex-network
+
+networks:
+  dyslex-network:
+    driver: bridge
+
+volumes:
+  dyslex-db-data:

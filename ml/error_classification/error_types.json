@@ -1,0 +1,40 @@
+{
+  "categories": [
+    {
+      "id": "reversal",
+      "name": "Letter Reversals",
+      "description": "Confusing visually similar letters",
+      "examples": ["b/d", "p/q", "m/w", "n/u"]
+    },
+    {
+      "id": "transposition",
+      "name": "Letter Transpositions",
+      "description": "Swapping adjacent letters",
+      "examples": ["teh/the", "form/from", "thier/their"]
+    },
+    {
+      "id": "phonetic",
+      "name": "Phonetic Substitutions",
+      "description": "Spelling based on sound rather than convention",
+      "examples": ["becuase/because", "definately/definitely"]
+    },
+    {
+      "id": "omission",
+      "name": "Letter Omissions",
+      "description": "Missing letters, especially in double letter words",
+      "examples": ["writting/writing", "occured/occurred"]
+    },
+    {
+      "id": "addition",
+      "name": "Letter Additions",
+      "description": "Extra letters added",
+      "examples": ["untill/until", "accomodate/accommodate"]
+    },
+    {
+      "id": "confusion",
+      "name": "Word Confusion",
+      "description": "Mixing up homophones and similar words",
+      "examples": ["their/there/they're", "your/you're", "its/it's"]
+    }
+  ]
+}

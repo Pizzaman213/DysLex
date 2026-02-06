@@ -1,0 +1,35 @@
+{
+  "language": "fr",
+  "pairs": [
+    {
+      "words": ["a", "à"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["ou", "où"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["et", "est"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["ses", "ces", "c'est", "s'est"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["son", "sont"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["on", "ont"],
+      "category": "homophone",
+      "frequency": "high"
+    }
+  ]
+}

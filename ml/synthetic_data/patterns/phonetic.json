@@ -1,0 +1,12 @@
+{
+  "description": "Phonetic substitution patterns",
+  "patterns": [
+    {"from": "ough", "to": "off", "context": "end"},
+    {"from": "tion", "to": "shun", "context": "end"},
+    {"from": "ph", "to": "f", "context": "any"},
+    {"from": "gh", "to": "f", "context": "end"},
+    {"from": "ck", "to": "k", "context": "end"},
+    {"from": "ie", "to": "ei", "context": "middle"},
+    {"from": "ei", "to": "ie", "context": "middle"}
+  ]
+}

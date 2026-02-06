@@ -1,0 +1,16 @@
+{
+  "description": "Letter transposition patterns",
+  "patterns": [
+    {"type": "adjacent_swap", "probability": 0.5},
+    {"type": "vowel_swap", "probability": 0.3}
+  ],
+  "common_examples": [
+    {"correct": "the", "error": "teh"},
+    {"correct": "from", "error": "form"},
+    {"correct": "their", "error": "thier"},
+    {"correct": "said", "error": "siad"},
+    {"correct": "does", "error": "dose"},
+    {"correct": "friend", "error": "freind"},
+    {"correct": "receive", "error": "recieve"}
+  ]
+}

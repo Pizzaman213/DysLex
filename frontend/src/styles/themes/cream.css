@@ -1,0 +1,20 @@
+.theme-cream {
+  --color-bg-primary: #fdf6e3;
+  --color-bg-secondary: #f5eed6;
+  --color-bg-tertiary: #eee8c5;
+  --color-text-primary: #3d3d3d;
+  --color-text-secondary: #5a5a5a;
+  --color-text-muted: #7a7a7a;
+  --color-accent: #4a90a4;
+  --color-accent-hover: #3a7a94;
+  --color-success: #5a9a6a;
+  --color-warning: #c9a227;
+  --color-error: #c25450;
+  --color-border: #d4c9a8;
+
+  /* Correction colors - softer for light theme */
+  --color-correction-spelling: #f5d4d4;
+  --color-correction-grammar: #d4e4f5;
+  --color-correction-confusion: #f5e4d4;
+  --color-correction-phonetic: #e4f5d4;
+}

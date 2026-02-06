@@ -1,0 +1,42 @@
+graph TB
+    subgraph Frontend
+        Editor[TipTap Editor]
+        ONNX[ONNX Runtime]
+        Snapshot[Snapshot Engine]
+        Modes[Writing Modes]
+    end
+
+    subgraph Backend
+        API[FastAPI]
+        Orchestrator[LLM Orchestrator]
+        AdaptiveLoop[Adaptive Loop]
+        ErrorProfile[Error Profile]
+    end
+
+    subgraph External
+        NIM[NVIDIA NIM]
+        Nemotron[Nemotron]
+        TTS[MagpieTTS]
+        Whisper[faster-whisper]
+    end
+
+    subgraph Database
+        PostgreSQL[(PostgreSQL)]
+    end
+
+    Editor --> ONNX
+    Editor --> Snapshot
+    Snapshot --> AdaptiveLoop
+
+    Editor --> API
+    API --> Orchestrator
+    Orchestrator --> NIM
+    NIM --> Nemotron
+    NIM --> TTS
+    NIM --> Whisper
+
+    Orchestrator --> ErrorProfile
+    ErrorProfile --> PostgreSQL
+    AdaptiveLoop --> ErrorProfile
+
+    Modes --> Editor

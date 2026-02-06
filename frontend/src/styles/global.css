@@ -1,0 +1,206 @@
+@import './tokens.css';
+@import './themes/cream.css';
+@import './themes/night.css';
+
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Base */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family-body);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+}
+
+/* Focus states */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* App Layout */
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-xl);
+  background-color: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-title {
+  font-size: var(--font-size-2xl);
+  font-weight: 600;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  padding: var(--space-lg);
+  gap: var(--space-lg);
+}
+
+/* Mode Navigation */
+.mode-nav {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.mode-btn {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.mode-btn.active {
+  background-color: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+}
+
+/* Editor */
+.editor-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.editor-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.dyslex-editor {
+  min-height: 400px;
+  padding: var(--space-lg);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.dyslex-editor:focus {
+  border-color: var(--color-accent);
+}
+
+/* Panels */
+.panel-container {
+  width: 320px;
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+}
+
+/* Status Bar */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-sm) var(--space-xl);
+  background-color: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.status-btn {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+}
+
+.status-btn:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.toolbar-btn {
+  padding: var(--space-sm);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.toolbar-btn:hover {
+  background-color: var(--color-bg-secondary);
+}
+
+/* Corrections */
+.correction-marker {
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.correction-spelling { background-color: var(--color-correction-spelling); }
+.correction-grammar { background-color: var(--color-correction-grammar); }
+.correction-confusion { background-color: var(--color-correction-confusion); }
+.correction-phonetic { background-color: var(--color-correction-phonetic); }
+
+/* Buttons */
+button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Cards */
+.card {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.badge-info { background-color: var(--color-accent); color: white; }
+.badge-success { background-color: var(--color-success); color: white; }
+.badge-warning { background-color: var(--color-warning); color: white; }
+.badge-error { background-color: var(--color-error); color: white; }

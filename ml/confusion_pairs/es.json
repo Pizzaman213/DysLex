@@ -1,0 +1,35 @@
+{
+  "language": "es",
+  "pairs": [
+    {
+      "words": ["a", "ha"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["hay", "ahí", "ay"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["haber", "a ver"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["echo", "hecho"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["vaya", "valla", "baya"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["porque", "por qué", "porqué"],
+      "category": "similar",
+      "frequency": "high"
+    }
+  ]
+}

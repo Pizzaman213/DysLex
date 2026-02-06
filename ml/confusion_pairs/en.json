@@ -1,0 +1,55 @@
+{
+  "language": "en",
+  "pairs": [
+    {
+      "words": ["their", "there", "they're"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["your", "you're"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["its", "it's"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["to", "too", "two"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["then", "than"],
+      "category": "similar",
+      "frequency": "high"
+    },
+    {
+      "words": ["affect", "effect"],
+      "category": "similar",
+      "frequency": "high"
+    },
+    {
+      "words": ["accept", "except"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["lose", "loose"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["weather", "whether"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["principal", "principle"],
+      "category": "homophone",
+      "frequency": "medium"
+    }
+  ]
+}

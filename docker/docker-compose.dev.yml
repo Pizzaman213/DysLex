@@ -1,0 +1,25 @@
+version: '3.8'
+
+# Development overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  dyslex-web:
+    build:
+      context: ../frontend
+      target: builder
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+
+  dyslex-api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ../backend:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://dyslex:dyslex@dyslex-db:5432/dyslex

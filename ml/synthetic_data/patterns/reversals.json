@@ -1,0 +1,13 @@
+{
+  "description": "Letter reversal patterns common in dyslexia",
+  "patterns": [
+    {"from": "b", "to": "d", "frequency": 0.3},
+    {"from": "d", "to": "b", "frequency": 0.3},
+    {"from": "p", "to": "q", "frequency": 0.2},
+    {"from": "q", "to": "p", "frequency": 0.2},
+    {"from": "m", "to": "w", "frequency": 0.1},
+    {"from": "w", "to": "m", "frequency": 0.1},
+    {"from": "n", "to": "u", "frequency": 0.15},
+    {"from": "u", "to": "n", "frequency": 0.15}
+  ]
+}

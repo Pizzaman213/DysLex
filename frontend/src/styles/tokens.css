@@ -1,0 +1,60 @@
+:root {
+  /* Colors - Cream Theme */
+  --color-bg-primary: #fdf6e3;
+  --color-bg-secondary: #f5eed6;
+  --color-bg-tertiary: #eee8c5;
+  --color-text-primary: #3d3d3d;
+  --color-text-secondary: #5a5a5a;
+  --color-text-muted: #7a7a7a;
+  --color-accent: #4a90a4;
+  --color-accent-hover: #3a7a94;
+  --color-success: #5a9a6a;
+  --color-warning: #c9a227;
+  --color-error: #c25450;
+
+  /* Correction colors */
+  --color-correction-spelling: #e8c4c4;
+  --color-correction-grammar: #c4d4e8;
+  --color-correction-confusion: #e8d4c4;
+  --color-correction-phonetic: #d4e8c4;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+
+  /* Typography */
+  --font-family-display: 'OpenDyslexic', 'Atkinson Hyperlegible', sans-serif;
+  --font-family-body: 'OpenDyslexic', 'Atkinson Hyperlegible', sans-serif;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* Border radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(74, 144, 164, 0.4);
+}
