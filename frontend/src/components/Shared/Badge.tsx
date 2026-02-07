@@ -1,5 +1,5 @@
 interface BadgeProps {
-  variant: 'info' | 'success' | 'warning' | 'error';
+  variant: 'info' | 'success' | 'warning' | 'error' | 'spelling' | 'grammar' | 'homophone' | 'clarity' | 'style' | 'spell' | 'homo' | 'gram' | 'struct';
   children: React.ReactNode;
 }
 

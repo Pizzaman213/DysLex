@@ -11,6 +11,7 @@ const SNAPSHOT_INTERVAL = 5000;
 class SnapshotManager {
   private snapshots: Snapshot[] = [];
   private lastSnapshotTime = 0;
+  private lastActivityTime = 0;
 
   addSnapshot(text: string): Snapshot | null {
     const now = Date.now();
@@ -51,6 +52,26 @@ class SnapshotManager {
   clear(): void {
     this.snapshots = [];
     this.lastSnapshotTime = 0;
+    this.lastActivityTime = 0;
+  }
+
+  recordActivity(): void {
+    this.lastActivityTime = Date.now();
+  }
+
+  shouldSnapshotOnPause(thresholdMs: number): boolean {
+    const now = Date.now();
+    const idleTime = now - this.lastActivityTime;
+    const lastSnapshot = this.getLastSnapshot();
+
+    // Only snapshot if idle for threshold AND text has changed
+    return idleTime >= thresholdMs && lastSnapshot !== null;
+  }
+
+  getRecentPair(): [Snapshot | null, Snapshot | null] {
+    const last = this.getLastSnapshot();
+    const previous = this.getPreviousSnapshot();
+    return [previous, last];
   }
 }
 

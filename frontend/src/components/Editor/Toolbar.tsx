@@ -1,5 +1,3 @@
-import { VoiceBar } from '../Shared/VoiceBar';
-
 interface ToolbarProps {
   mode: 'capture' | 'mindmap' | 'draft' | 'polish';
 }
@@ -7,8 +5,6 @@ interface ToolbarProps {
 export function Toolbar({ mode }: ToolbarProps) {
   return (
     <div className="toolbar" role="toolbar" aria-label="Editor toolbar">
-      {mode === 'capture' && <VoiceBar />}
-
       {(mode === 'draft' || mode === 'polish') && (
         <div className="format-tools">
           <button

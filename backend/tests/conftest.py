@@ -1,0 +1,70 @@
+"""Shared test fixtures for DysLex AI backend tests."""
+
+import uuid
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import JSON, event
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.db.models import Base, User
+
+
+# Use an in-memory SQLite database for tests.
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+TestSessionFactory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+# SQLite doesn't support JSONB — remap to plain JSON at the dialect level.
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
+
+
+# Monkey-patch JSONB columns to render as JSON for SQLite tests.
+from sqlalchemy.dialects.postgresql import JSONB as _JSONB  # noqa: E402
+
+_original_compile = None
+
+
+def _register_jsonb_for_sqlite():
+    """Register a compilation rule so JSONB compiles to JSON on SQLite."""
+    from sqlalchemy.ext.compiler import compiles
+
+    @compiles(_JSONB, "sqlite")
+    def _compile_jsonb_sqlite(element, compiler, **kw):
+        return "JSON"
+
+
+_register_jsonb_for_sqlite()
+
+
+@pytest_asyncio.fixture
+async def db() -> AsyncSession:
+    """Create tables and yield a fresh async session for each test."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with TestSessionFactory() as session:
+        yield session
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def test_user(db: AsyncSession) -> User:
+    """Create and return a test user."""
+    user = User(
+        id=str(uuid.uuid4()),
+        email="test@example.com",
+        name="Test User",
+        password_hash="fakehash",
+    )
+    db.add(user)
+    await db.flush()
+    return user

@@ -3,11 +3,26 @@ export interface DiffChange {
   oldValue?: string;
   newValue?: string;
   position: number;
+  context?: string;
+  category?: 'insertion' | 'deletion' | 'substitution' | 'reordering';
 }
 
 export interface DiffResult {
   changes: DiffChange[];
   timestamp: number;
+}
+
+// Enhanced types for passive learning
+export type DiffSignal =
+  | 'self-correction'   // User fixed their own typo
+  | 'rewrite'          // User rewrote phrase completely
+  | 'insertion'        // User added new text
+  | 'deletion'         // User removed text
+  | 'no-change';       // No meaningful change
+
+export interface EnhancedDiffChange extends DiffChange {
+  signal: DiffSignal;
+  similarity?: number;
 }
 
 export function computeWordDiff(oldText: string, newText: string): DiffResult {
@@ -109,4 +124,148 @@ function longestCommonSubsequence(a: string[], b: string[]): string[] {
   }
 
   return result;
+}
+
+export function computeWordDiffWithContext(
+  oldText: string,
+  newText: string
+): DiffResult {
+  const baseResult = computeWordDiff(oldText, newText);
+
+  // Enhance each change with context and category
+  const enhancedChanges = baseResult.changes.map((change) => {
+    const context = extractContext(oldText, change.position, 50);
+    const category = categorizeChange(change);
+
+    return {
+      ...change,
+      context,
+      category,
+    };
+  });
+
+  return {
+    ...baseResult,
+    changes: enhancedChanges,
+  };
+}
+
+function extractContext(text: string, wordPosition: number, charLimit: number): string {
+  const words = text.split(/\s+/).filter(Boolean);
+
+  // Get surrounding words
+  const startIdx = Math.max(0, wordPosition - 5);
+  const endIdx = Math.min(words.length, wordPosition + 6);
+  const contextWords = words.slice(startIdx, endIdx);
+
+  let context = contextWords.join(' ');
+
+  // Truncate if needed
+  if (context.length > charLimit) {
+    context = context.substring(0, charLimit) + '...';
+  }
+
+  return context;
+}
+
+function categorizeChange(change: DiffChange): 'insertion' | 'deletion' | 'substitution' | 'reordering' {
+  switch (change.type) {
+    case 'add':
+      return 'insertion';
+    case 'remove':
+      return 'deletion';
+    case 'replace':
+      // Check if it's likely a reordering (similar words)
+      if (change.oldValue && change.newValue) {
+        const similarity = calculateSimilarity(change.oldValue, change.newValue);
+        if (similarity < 0.3) {
+          return 'reordering';
+        }
+      }
+      return 'substitution';
+    default:
+      return 'substitution';
+  }
+}
+
+function calculateSimilarity(a: string, b: string): number {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1.0;
+
+  const distance = levenshteinDistance(a.toLowerCase(), b.toLowerCase());
+  return 1.0 - distance / maxLen;
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+/**
+ * Categorize a change as a specific signal for passive learning
+ */
+function categorizeSignal(change: DiffChange): DiffSignal {
+  if (change.type === 'add') return 'insertion';
+  if (change.type === 'remove') return 'deletion';
+
+  if (change.type === 'replace' && change.oldValue && change.newValue) {
+    const similarity = calculateSimilarity(change.oldValue, change.newValue);
+
+    // High similarity (>60%) = self-correction
+    // Low similarity = rewrite
+    return similarity > 0.6 ? 'self-correction' : 'rewrite';
+  }
+
+  return 'no-change';
+}
+
+/**
+ * Enhanced diff with signal categorization for passive learning
+ */
+export function computeEnhancedDiff(
+  oldText: string,
+  newText: string
+): { changes: EnhancedDiffChange[]; timestamp: number } {
+  const basicDiff = computeWordDiffWithContext(oldText, newText);
+
+  const enhancedChanges = basicDiff.changes.map(change => {
+    const signal = categorizeSignal(change);
+    const similarity = change.oldValue && change.newValue
+      ? calculateSimilarity(change.oldValue, change.newValue)
+      : undefined;
+
+    return {
+      ...change,
+      signal,
+      similarity,
+    };
+  });
+
+  return {
+    changes: enhancedChanges,
+    timestamp: basicDiff.timestamp,
+  };
 }

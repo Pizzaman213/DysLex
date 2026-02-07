@@ -1,20 +1,27 @@
-import { useSettingsStore } from '../../stores/settingsStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import type { Theme } from '@/types';
+
+const THEME_OPTIONS: { value: Theme; label: string }[] = [
+  { value: 'cream', label: 'Cream' },
+  { value: 'night', label: 'Night' },
+  { value: 'blue-tint', label: 'Blue Tint' },
+];
 
 export function ThemeSwitcher() {
   const { theme, setTheme } = useSettingsStore();
 
-  const toggleTheme = () => {
-    setTheme(theme === 'cream' ? 'night' : 'cream');
-  };
-
   return (
-    <button
+    <select
       className="theme-switcher"
-      onClick={toggleTheme}
-      aria-label={`Switch to ${theme === 'cream' ? 'night' : 'cream'} theme`}
-      title={`Current: ${theme} theme`}
+      value={theme}
+      onChange={(e) => setTheme(e.target.value as Theme)}
+      aria-label="Select theme"
     >
-      <span aria-hidden="true">{theme === 'cream' ? '🌙' : '☀️'}</span>
-    </button>
+      {THEME_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
   );
 }

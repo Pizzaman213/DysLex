@@ -68,11 +68,77 @@ CREATE TABLE IF NOT EXISTS user_progress (
     UNIQUE(user_id, date)
 );
 
+-- Source column on error_logs (detection source)
+ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'passive';
+
+-- Per-user error pattern frequency map
+CREATE TABLE IF NOT EXISTS user_error_patterns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    misspelling VARCHAR(255) NOT NULL,
+    correction VARCHAR(255) NOT NULL,
+    error_type VARCHAR(50) NOT NULL,
+    frequency INTEGER NOT NULL DEFAULT 1,
+    improving BOOLEAN NOT NULL DEFAULT FALSE,
+    language_code VARCHAR(10) NOT NULL DEFAULT 'en',
+    first_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, misspelling, correction)
+);
+
+-- Per-user word confusion tracking
+CREATE TABLE IF NOT EXISTS user_confusion_pairs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    word_a VARCHAR(100) NOT NULL,
+    word_b VARCHAR(100) NOT NULL,
+    confusion_count INTEGER NOT NULL DEFAULT 1,
+    last_confused_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, word_a, word_b)
+);
+
+-- Personal dictionary — words to never flag
+CREATE TABLE IF NOT EXISTS personal_dictionary (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    word VARCHAR(255) NOT NULL,
+    source VARCHAR(20) NOT NULL DEFAULT 'manual',
+    added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, word)
+);
+
+-- Weekly aggregated progress snapshots
+CREATE TABLE IF NOT EXISTS progress_snapshots (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    week_start DATE NOT NULL,
+    total_words_written INTEGER NOT NULL DEFAULT 0,
+    total_corrections INTEGER NOT NULL DEFAULT 0,
+    accuracy_score FLOAT NOT NULL DEFAULT 0.0,
+    error_type_breakdown JSONB DEFAULT '{}'::jsonb,
+    top_errors JSONB DEFAULT '[]'::jsonb,
+    patterns_mastered INTEGER NOT NULL DEFAULT 0,
+    new_patterns_detected INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(user_id, week_start)
+);
+
 -- Indexes
 CREATE INDEX idx_error_logs_user_id ON error_logs(user_id);
 CREATE INDEX idx_error_logs_created_at ON error_logs(created_at);
+CREATE INDEX idx_error_logs_source ON error_logs(source);
 CREATE INDEX idx_confusion_pairs_language ON confusion_pairs(language);
 CREATE INDEX idx_user_progress_user_date ON user_progress(user_id, date);
+CREATE INDEX idx_user_error_patterns_user_id ON user_error_patterns(user_id);
+CREATE INDEX idx_user_error_patterns_user_freq ON user_error_patterns(user_id, frequency DESC);
+CREATE INDEX idx_user_confusion_pairs_user_id ON user_confusion_pairs(user_id);
+CREATE INDEX idx_personal_dictionary_user_id ON personal_dictionary(user_id);
+CREATE INDEX idx_progress_snapshots_user_id ON progress_snapshots(user_id);
+CREATE INDEX idx_progress_snapshots_user_week ON progress_snapshots(user_id, week_start DESC);
+
+-- Composite indexes for performance
+CREATE INDEX IF NOT EXISTS idx_error_logs_user_created ON error_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_error_patterns_user_type ON user_error_patterns(user_id, error_type);
+CREATE INDEX IF NOT EXISTS idx_user_error_patterns_user_lastseen ON user_error_patterns(user_id, last_seen);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()

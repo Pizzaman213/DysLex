@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database
+*.db
+*.sqlite
+
+# ML models (use Git LFS or external storage)
+ml/models/*.onnx
+ml/models/*.pt
+ml/models/*.bin
+
+# Claude Code local files
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/agents/*.local.md
+.claude/rules/*.local.md
+
+# Secrets
+secrets/
+*.pem
+*.key
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# TTS audio storage
+backend/storage/audio/*.mp3
+backend/storage/audio/*.meta

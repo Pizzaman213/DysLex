@@ -13,7 +13,7 @@ export function CorrectionOverlay({ editor, corrections }: CorrectionOverlayProp
 
   return (
     <div className="correction-overlay" aria-live="polite">
-      {corrections.map((correction, index) => (
+      {corrections.map((correction) => (
         <div
           key={`${correction.start}-${correction.end}`}
           className={`correction-marker correction-${correction.type}`}

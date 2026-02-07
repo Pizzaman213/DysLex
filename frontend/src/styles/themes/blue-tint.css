@@ -1,0 +1,82 @@
+/* Blue Tint Theme — DysLex AI */
+[data-theme="blue-tint"] {
+  /* Core Backgrounds */
+  --bg: #EEF4F8;
+  --bg2: #E4ECF2;
+  --bg-editor: #F5F9FC;
+  --bg-sidebar: #E0EAF2;
+  --bg-card: #FAFCFE;
+
+  /* Backward-compat aliases */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--bg2);
+  --bg-hover: rgba(45, 42, 36, 0.04);
+  --bg-active: rgba(45, 42, 36, 0.08);
+
+  /* Text Colors */
+  --text: #242A30;
+  --text2: #5A6570;
+  --text3: #8A94A0;
+
+  /* Backward-compat aliases */
+  --text-primary: var(--text);
+  --text-secondary: var(--text2);
+  --text-tertiary: var(--text3);
+  --text-inverse: #FAFCFE;
+
+  /* Border Colors */
+  --border: rgba(45, 42, 36, 0.08);
+  --border2: rgba(45, 42, 36, 0.15);
+  --border-medium: rgba(45, 42, 36, 0.12);
+  --border-strong: rgba(45, 42, 36, 0.20);
+
+  /* Accent Color */
+  --accent: #E07B4C;
+  --accent-h: #C96A3E;
+  --accent-l: rgba(224, 123, 76, 0.12);
+  --accent-g: rgba(224, 123, 76, 0.25);
+
+  --accent-hover: var(--accent-h);
+  --accent-light: var(--accent-l);
+  --accent-glow: var(--accent-g);
+
+  /* Semantic Colors */
+  --green: #5BA07A;
+  --green-l: rgba(91, 160, 122, 0.12);
+  --green-light: var(--green-l);
+
+  --yellow: #D4A843;
+  --yellow-l: rgba(212, 168, 67, 0.12);
+  --yellow-light: var(--yellow-l);
+
+  --blue: #5B8FC7;
+  --blue-l: rgba(91, 143, 199, 0.12);
+  --blue-light: var(--blue-l);
+
+  --purple: #9B7FC7;
+  --purple-l: rgba(155, 127, 199, 0.12);
+  --purple-light: var(--purple-l);
+
+  --red: #C25450;
+  --red-light: rgba(194, 84, 80, 0.12);
+
+  /* Correction Colors */
+  --color-border: #B8C8D8;
+  --color-correction-spelling: rgba(194, 84, 80, 0.15);
+  --color-correction-grammar: rgba(91, 143, 199, 0.15);
+  --color-correction-confusion: rgba(224, 123, 76, 0.15);
+  --color-correction-phonetic: rgba(91, 160, 122, 0.15);
+
+  --success: var(--green);
+  --warning: var(--yellow);
+  --error: var(--red);
+  --hover-bg: rgba(0, 0, 0, 0.03);
+  --focus-ring: 0 0 0 3px rgba(91, 143, 199, 0.4);
+
+  /* Cluster Colors (Mind Map) */
+  --color-cluster-1: #E07B4C;
+  --color-cluster-2: #5BA07A;
+  --color-cluster-3: #5B8FC7;
+  --color-cluster-4: #9B7FC7;
+  --color-cluster-5: #D4A843;
+}

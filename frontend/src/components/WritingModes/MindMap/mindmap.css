@@ -1,0 +1,794 @@
+/* Mind Map Mode Container — overridden by global.css */
+
+/* Mind Map Canvas Container */
+.mindmap-canvas-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  background: var(--bg, var(--bg-primary));
+}
+
+.mindmap-reactflow {
+  flex: 1;
+  background: var(--bg, var(--bg-primary));
+}
+
+/* ============================================================
+   TOOLBAR
+   ============================================================ */
+.mindmap-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg2, var(--bg-secondary));
+  border-bottom: 1px solid var(--border, var(--color-border));
+}
+
+.toolbar-group {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-editor, var(--bg-card));
+  border: 1px solid var(--border, var(--color-border));
+  border-radius: var(--radius-md);
+  color: var(--text, var(--text-primary));
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-height: var(--touch-target-min);
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-btn-icon {
+  width: var(--touch-target-min);
+  padding: var(--space-sm);
+  font-size: var(--font-size-xl);
+  font-weight: bold;
+  text-align: center;
+  line-height: 1;
+}
+
+.toolbar-btn-primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.toolbar-btn-primary:hover:not(:disabled) {
+  background: var(--accent-h, var(--accent-hover));
+  border-color: var(--accent-h, var(--accent-hover));
+}
+
+.toolbar-btn-active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* Toolbar Wrapper — holds toolbar + collapsible panel */
+.mindmap-toolbar-wrapper {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2, var(--bg-secondary));
+  border-bottom: 1px solid var(--border, var(--color-border));
+}
+
+.mindmap-toolbar-wrapper > .mindmap-toolbar {
+  border-bottom: none;
+}
+
+/* Extract from Text Panel */
+.extract-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md) var(--space-md);
+}
+
+.extract-textarea {
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border, var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--bg-editor, var(--bg-card));
+  color: var(--text, var(--text-primary));
+  font-family: var(--font-family-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  resize: vertical;
+  min-height: 80px;
+}
+
+.extract-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.extract-textarea:disabled {
+  opacity: 0.6;
+}
+
+.extract-textarea::placeholder {
+  color: var(--text2, var(--text-secondary));
+}
+
+.extract-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* ============================================================
+   MIND MAP NODE — Pill-shaped, color-coded by cluster
+   ============================================================ */
+.mindmap-node {
+  position: relative;
+  padding: 10px 18px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: grab;
+  transition: box-shadow 0.2s, transform 0.2s;
+  white-space: nowrap;
+  user-select: none;
+  border: 2px solid transparent;
+}
+
+.mindmap-node:hover {
+  z-index: 20;
+  transform: scale(1.06);
+  box-shadow: var(--sh-lg, var(--shadow-lg));
+}
+
+/* Central / Root node */
+.mindmap-node.central {
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px 24px;
+  border-radius: 24px;
+  border-color: var(--accent);
+  box-shadow: 0 4px 20px var(--accent-g, rgba(224,123,76,.25));
+}
+
+/* Cluster color variants */
+.mindmap-node.n1 {
+  background: var(--accent-l, rgba(224,123,76,.12));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mindmap-node.n2 {
+  background: var(--green-l, rgba(91,160,122,.12));
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.mindmap-node.n3 {
+  background: var(--blue-l, rgba(91,143,199,.12));
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.mindmap-node.n4 {
+  background: var(--yellow-l, rgba(212,168,67,.12));
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.mindmap-node.n5 {
+  background: var(--purple-l, rgba(155,127,199,.12));
+  border-color: var(--purple);
+  color: var(--purple);
+}
+
+/* Sub-nodes — smaller, lighter */
+.mindmap-node.sub {
+  font-size: 11px;
+  padding: 7px 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+/* Editing state — expand for inputs */
+.mindmap-node.editing {
+  white-space: normal;
+  min-width: 240px;
+  max-width: 300px;
+  padding: 14px;
+  border-radius: var(--radius-md, 12px);
+  background: var(--bg-editor, var(--bg-card));
+  border-color: var(--accent);
+  color: var(--text, var(--text-primary));
+}
+
+.mindmap-node-content {
+  position: relative;
+}
+
+.mindmap-node-title {
+  font-weight: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.mindmap-node-body {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 4px;
+  white-space: normal;
+  max-width: 200px;
+  line-height: 1.3;
+}
+
+/* Node Hover Actions */
+.mindmap-node-hover-actions {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast, .2s);
+}
+
+.mindmap-node:hover .mindmap-node-hover-actions {
+  opacity: 1;
+}
+
+.btn-add,
+.btn-delete {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border, var(--color-border));
+  background: var(--bg-editor, var(--bg-card));
+  color: var(--text, var(--text-primary));
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast, .2s);
+  line-height: 1;
+}
+
+.btn-add {
+  background: var(--green, var(--success));
+  color: white;
+  border-color: var(--green, var(--success));
+}
+
+.btn-add:hover {
+  opacity: 0.8;
+  transform: scale(1.1);
+}
+
+.btn-delete {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
+.btn-delete:hover {
+  opacity: 0.8;
+  transform: scale(1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mindmap-node:hover {
+    transform: none;
+  }
+  .mindmap-node-hover-actions {
+    opacity: 1;
+  }
+  .btn-add:hover,
+  .btn-delete:hover {
+    transform: none;
+  }
+}
+
+/* ============================================================
+   NODE EDIT MODE
+   ============================================================ */
+.mindmap-node-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mindmap-node-title-input,
+.mindmap-node-body-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border, var(--color-border));
+  border-radius: 6px;
+  background: var(--bg-editor, #fff);
+  color: var(--text, var(--text-primary));
+  font-family: var(--font-family-body, inherit);
+  font-size: 13px;
+}
+
+.mindmap-node-title-input {
+  font-weight: 600;
+}
+
+.mindmap-node-body-input {
+  font-size: 12px;
+  resize: vertical;
+  min-height: 50px;
+}
+
+.mindmap-node-title-input:focus,
+.mindmap-node-body-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-l, rgba(224,123,76,.12));
+}
+
+/* Cluster Picker */
+.mindmap-node-cluster-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.cluster-label {
+  font-size: 11px;
+  color: var(--text2, var(--text-secondary));
+  font-weight: 600;
+}
+
+.cluster-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+}
+
+.cluster-dot:hover {
+  transform: scale(1.2);
+}
+
+.cluster-dot.active {
+  border-color: var(--text, var(--text-primary));
+  box-shadow: 0 0 0 2px var(--bg-editor, var(--bg-card));
+}
+
+/* Node Actions */
+.mindmap-node-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-save,
+.btn-cancel {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, var(--color-border));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+}
+
+.btn-save {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.btn-save:hover {
+  background: var(--accent-h, var(--accent-hover));
+}
+
+.btn-cancel {
+  background: var(--bg2, var(--bg-secondary));
+  color: var(--text, var(--text-primary));
+}
+
+.btn-cancel:hover {
+  background: var(--bg, var(--bg-primary));
+}
+
+/* ============================================================
+   DELETE CONFIRMATION
+   ============================================================ */
+.mindmap-delete-confirmation {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-editor, var(--bg-card));
+  border: 2px solid var(--error);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--sh-lg, var(--shadow-lg));
+  z-index: 1000;
+  min-width: 200px;
+  white-space: normal;
+}
+
+.delete-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text, var(--text-primary));
+  margin-bottom: 4px;
+}
+
+.delete-desc {
+  font-size: 12px;
+  color: var(--text2, var(--text-secondary));
+  margin-bottom: 12px;
+}
+
+.delete-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-confirm-delete,
+.btn-cancel-delete {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, var(--color-border));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+}
+
+.btn-confirm-delete {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
+.btn-confirm-delete:hover {
+  opacity: 0.8;
+}
+
+.btn-cancel-delete {
+  background: var(--bg2, var(--bg-secondary));
+  color: var(--text, var(--text-primary));
+}
+
+.btn-cancel-delete:hover {
+  background: var(--bg, var(--bg-primary));
+}
+
+/* ============================================================
+   HANDLES — small, subtle
+   ============================================================ */
+.mindmap-handle {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 2px solid var(--bg-editor, var(--bg-card));
+  opacity: 0;
+  transition: opacity var(--transition-fast, .2s);
+}
+
+.mindmap-node:hover .mindmap-handle {
+  opacity: 1;
+}
+
+.mindmap-handle:hover {
+  background: var(--accent-h, var(--accent-hover));
+  transform: scale(1.3);
+  opacity: 1;
+}
+
+/* ============================================================
+   REACT FLOW OVERRIDES
+   ============================================================ */
+.react-flow__controls {
+  background: var(--bg-editor, var(--bg-card));
+  border: 1px solid var(--border, var(--color-border));
+  border-radius: 12px;
+}
+
+.react-flow__controls-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-editor, var(--bg-card));
+  border-bottom: 1px solid var(--border, var(--color-border));
+  color: var(--text, var(--text-primary));
+}
+
+.react-flow__controls-button:hover {
+  background: var(--bg2, var(--bg-secondary));
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.react-flow__minimap {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.react-flow__minimap-mask {
+  fill: var(--bg, var(--bg-primary));
+  opacity: 0.8;
+}
+
+.react-flow__minimap-node {
+  fill: var(--accent);
+  stroke: var(--border, var(--color-border));
+}
+
+/* ============================================================
+   AI SUGGESTIONS PANEL
+   ============================================================ */
+.ai-suggestions-panel {
+  width: 300px;
+  background: var(--bg2, var(--bg-secondary));
+  border-left: 1px solid var(--border, var(--color-border));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.suggestions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md, 16px);
+  border-bottom: 1px solid var(--border, var(--color-border));
+  background: var(--bg-editor, var(--bg-card));
+}
+
+.suggestions-title {
+  font-size: var(--font-size-lg, 16px);
+  font-weight: 600;
+  color: var(--text, var(--text-primary));
+  margin: 0;
+}
+
+.btn-suggest {
+  padding: 4px 14px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+}
+
+.btn-suggest:hover:not(:disabled) {
+  background: var(--accent-h, var(--accent-hover));
+}
+
+.btn-suggest:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.suggestions-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-md, 16px);
+}
+
+.suggestions-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  color: var(--text2, var(--text-secondary));
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border, var(--color-border));
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.suggestions-empty {
+  padding: 32px;
+  color: var(--text2, var(--text-secondary));
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Suggestion Card */
+.suggestion-card {
+  background: var(--bg-editor, var(--bg-card));
+  border: 1px solid var(--border, var(--color-border));
+  border-radius: 12px;
+  padding: 14px;
+  transition: all var(--transition-fast, .2s);
+}
+
+.suggestion-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.suggestion-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.suggestion-icon {
+  font-size: 16px;
+}
+
+.suggestion-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2, var(--text-secondary));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.suggestion-description {
+  font-size: 12px;
+  color: var(--text, var(--text-primary));
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.suggestion-reason {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text2, var(--text-secondary));
+  font-style: italic;
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-accept,
+.btn-dismiss {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, var(--color-border));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+}
+
+.btn-accept {
+  background: var(--green, var(--success));
+  color: white;
+  border-color: var(--green, var(--success));
+}
+
+.btn-accept:hover {
+  opacity: 0.9;
+}
+
+.btn-dismiss {
+  background: var(--bg2, var(--bg-secondary));
+  color: var(--text, var(--text-primary));
+}
+
+.btn-dismiss:hover {
+  background: var(--bg, var(--bg-primary));
+}
+
+/* ============================================================
+   CLUSTER LIST (in suggestions panel)
+   ============================================================ */
+.cluster-list {
+  margin-top: 16px;
+}
+
+.cluster-list-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text3, var(--text-secondary));
+  margin-bottom: 8px;
+}
+
+.cluster-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text, var(--text-primary));
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+}
+
+.cluster-item:hover {
+  background: var(--bg, var(--bg-primary));
+}
+
+.cluster-item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cluster-item-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text3, var(--text-secondary));
+  font-weight: 600;
+}
+
+/* Panel action button */
+.panel-action-btn {
+  width: 100%;
+  padding: 10px;
+  margin-top: 20px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast, .2s);
+  text-align: center;
+}
+
+.panel-action-btn:hover:not(:disabled) {
+  background: var(--accent-h, var(--accent-hover));
+}
+
+.panel-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

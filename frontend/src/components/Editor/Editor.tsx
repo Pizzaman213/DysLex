@@ -2,9 +2,9 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Highlight from '@tiptap/extension-highlight';
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useEditorStore } from '../../stores/editorStore';
-import { usePassiveLearning } from '../../hooks/usePassiveLearning';
+import { useSnapshotEngine } from '../../hooks/useSnapshotEngine';
 import { CorrectionOverlay } from './CorrectionOverlay';
 
 interface EditorProps {
@@ -13,7 +13,6 @@ interface EditorProps {
 
 export function Editor({ mode }: EditorProps) {
   const { content, setContent, corrections } = useEditorStore();
-  const { takeSnapshot, computeDiff } = usePassiveLearning();
 
   const editor = useEditor({
     extensions: [
@@ -29,9 +28,6 @@ export function Editor({ mode }: EditorProps) {
     onUpdate: ({ editor }) => {
       setContent(editor.getHTML());
     },
-    onBlur: () => {
-      computeDiff();
-    },
     editorProps: {
       attributes: {
         class: 'dyslex-editor',
@@ -42,15 +38,8 @@ export function Editor({ mode }: EditorProps) {
     },
   });
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (editor) {
-        takeSnapshot(editor.getText());
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [editor, takeSnapshot]);
+  // Passive learning: auto-snapshots every 5s + pause detection + batched correction logging
+  useSnapshotEngine(editor);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {

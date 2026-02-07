@@ -1,113 +1,182 @@
-import { useState, useCallback } from 'react';
-
-interface Node {
-  id: string;
-  text: string;
-  x: number;
-  y: number;
-  connections: string[];
-}
+import { useCallback, useEffect, useState } from 'react';
+import { useCaptureStore } from '../../stores/captureStore';
+import { useMindMapStore } from '../../stores/mindMapStore';
+import { api } from '../../services/api';
+import { MindMapCanvas } from './MindMap/MindMapCanvas';
+import { AISuggestionsPanel } from './MindMap/AISuggestionsPanel';
+import { StatusBar } from '../Shared/StatusBar';
+import { Scaffold } from './MindMap/types';
+import './MindMap/mindmap.css';
 
 interface MindMapModeProps {
-  onExport: (nodes: Node[]) => void;
+  onNavigateToDraft: (scaffold: Scaffold) => void;
 }
 
-export function MindMapMode({ onExport }: MindMapModeProps) {
-  const [nodes, setNodes] = useState<Node[]>([
-    { id: 'root', text: 'Main Idea', x: 300, y: 200, connections: [] },
-  ]);
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
+  const [isScaffoldLoading, setIsScaffoldLoading] = useState(false);
 
-  const addNode = useCallback((parentId: string) => {
-    const parent = nodes.find((n) => n.id === parentId);
-    if (!parent) return;
+  const captureCards = useCaptureStore((s) => s.cards);
+  const resetCapture = useCaptureStore((s) => s.reset);
 
-    const newNode: Node = {
-      id: `node-${Date.now()}`,
-      text: 'New idea',
-      x: parent.x + 150,
-      y: parent.y + Math.random() * 100 - 50,
-      connections: [],
-    };
+  const {
+    nodes,
+    edges,
+    addNode,
+    setScaffold,
+    setSuggestions,
+    setIsSuggestionsLoading,
+  } = useMindMapStore();
 
-    setNodes((prev) => [
-      ...prev.map((n) =>
-        n.id === parentId
-          ? { ...n, connections: [...n.connections, newNode.id] }
-          : n
-      ),
-      newNode,
-    ]);
-  }, [nodes]);
+  // Import cards from Capture Mode on mount
+  useEffect(() => {
+    if (captureCards.length > 0) {
+      const rootNode = nodes.find((n) => n.id === 'root');
+      const rootX = rootNode?.position.x || 400;
+      const rootY = rootNode?.position.y || 200;
 
-  const updateNodeText = useCallback((id: string, text: string) => {
-    setNodes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, text } : n))
-    );
-  }, []);
+      const angleStep = (2 * Math.PI) / captureCards.length;
+      const radius = 250;
+
+      captureCards.forEach((card, index) => {
+        const angle = index * angleStep;
+        const x = rootX + Math.cos(angle) * radius;
+        const y = rootY + Math.sin(angle) * radius;
+
+        addNode('root', { x, y }, {
+          title: card.title,
+          body: card.body || '',
+          cluster: ((index % 5) + 1) as 1 | 2 | 3 | 4 | 5,
+        });
+      });
+
+      resetCapture();
+    }
+  }, [captureCards, resetCapture, nodes, addNode]);
+
+  const handleSuggest = useCallback(async () => {
+    setIsSuggestionsLoading(true);
+
+    try {
+      const apiNodes = nodes.map((node) => ({
+        id: node.id,
+        title: node.data.title,
+        body: node.data.body,
+        cluster: node.data.cluster,
+        x: node.position.x,
+        y: node.position.y,
+      }));
+
+      const apiEdges = edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+      }));
+
+      const response = await api.suggestConnections(apiNodes, apiEdges);
+      setSuggestions(response.suggestions);
+    } catch (error) {
+      console.error('Failed to get suggestions:', error);
+      setSuggestions([]);
+    } finally {
+      setIsSuggestionsLoading(false);
+    }
+  }, [nodes, edges, setSuggestions, setIsSuggestionsLoading]);
+
+  const handleExtractFromText = useCallback(async (text: string) => {
+    try {
+      const response = await api.extractIdeas(text);
+      const cards = response.cards;
+      if (cards.length === 0) return;
+
+      // Position topic nodes in a circle around the root
+      const rootNode = nodes.find((n) => n.id === 'root');
+      const rootX = rootNode?.position.x || 400;
+      const rootY = rootNode?.position.y || 200;
+
+      const topicAngleStep = (2 * Math.PI) / cards.length;
+      const topicRadius = 280;
+
+      cards.forEach((card, topicIndex) => {
+        const cluster = ((topicIndex % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+        const topicAngle = topicIndex * topicAngleStep - Math.PI / 2;
+        const topicX = rootX + Math.cos(topicAngle) * topicRadius;
+        const topicY = rootY + Math.sin(topicAngle) * topicRadius;
+
+        // Create the topic node connected to root
+        addNode('root', { x: topicX, y: topicY }, {
+          title: card.title,
+          body: card.body || '',
+          cluster,
+        });
+
+        // Get the ID of the node we just created
+        const currentNodes = useMindMapStore.getState().nodes;
+        const topicNode = currentNodes[currentNodes.length - 1];
+
+        // Create sub-nodes connected to the topic node
+        const subs = card.sub_ideas || [];
+        if (subs.length > 0) {
+          const subAngleStep = (Math.PI * 0.8) / Math.max(subs.length - 1, 1);
+          const subRadius = 160;
+          const subStartAngle = topicAngle - (Math.PI * 0.4);
+
+          subs.forEach((sub, subIndex) => {
+            const subAngle = subs.length === 1
+              ? topicAngle
+              : subStartAngle + subIndex * subAngleStep;
+            const subX = topicX + Math.cos(subAngle) * subRadius;
+            const subY = topicY + Math.sin(subAngle) * subRadius;
+
+            addNode(topicNode.id, { x: subX, y: subY }, {
+              title: sub.title,
+              body: sub.body || '',
+              cluster,
+            });
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Failed to extract ideas:', error);
+    }
+  }, [nodes, addNode]);
+
+  const handleBuildScaffold = useCallback(async () => {
+    setIsScaffoldLoading(true);
+
+    try {
+      const apiNodes = nodes.map((node) => ({
+        id: node.id,
+        title: node.data.title,
+        body: node.data.body,
+        cluster: node.data.cluster,
+        x: node.position.x,
+        y: node.position.y,
+      }));
+
+      const apiEdges = edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+      }));
+
+      const response = await api.buildScaffold(apiNodes, apiEdges);
+      setScaffold(response);
+      onNavigateToDraft(response);
+    } catch (error) {
+      console.error('Failed to build scaffold:', error);
+      alert('Failed to build scaffold. Please try again.');
+    } finally {
+      setIsScaffoldLoading(false);
+    }
+  }, [nodes, edges, setScaffold, onNavigateToDraft]);
 
   return (
-    <div className="mindmap-mode" role="application" aria-label="Mind map canvas">
-      <div className="mindmap-toolbar">
-        <button
-          onClick={() => selectedNode && addNode(selectedNode)}
-          disabled={!selectedNode}
-          aria-label="Add connected idea"
-        >
-          Add Branch
-        </button>
-        <button
-          onClick={() => onExport(nodes)}
-          aria-label="Export to draft"
-        >
-          Export to Draft
-        </button>
+    <div className="mindmap-mode">
+      <div className="mindmap-canvas-container">
+        <MindMapCanvas onBuildScaffold={handleBuildScaffold} isScaffoldLoading={isScaffoldLoading} onExtractFromText={handleExtractFromText} />
+        <StatusBar />
       </div>
-
-      <svg className="mindmap-canvas" viewBox="0 0 600 400">
-        {nodes.map((node) =>
-          node.connections.map((connId) => {
-            const target = nodes.find((n) => n.id === connId);
-            if (!target) return null;
-            return (
-              <line
-                key={`${node.id}-${connId}`}
-                x1={node.x}
-                y1={node.y}
-                x2={target.x}
-                y2={target.y}
-                className="mindmap-connection"
-              />
-            );
-          })
-        )}
-
-        {nodes.map((node) => (
-          <g
-            key={node.id}
-            transform={`translate(${node.x}, ${node.y})`}
-            onClick={() => setSelectedNode(node.id)}
-            role="button"
-            tabIndex={0}
-            aria-label={`Node: ${node.text}`}
-            aria-selected={selectedNode === node.id}
-          >
-            <circle
-              r="30"
-              className={`mindmap-node ${selectedNode === node.id ? 'selected' : ''}`}
-            />
-            <foreignObject x="-25" y="-10" width="50" height="20">
-              <input
-                type="text"
-                value={node.text}
-                onChange={(e) => updateNodeText(node.id, e.target.value)}
-                className="mindmap-node-text"
-                aria-label="Edit node text"
-              />
-            </foreignObject>
-          </g>
-        ))}
-      </svg>
+      <AISuggestionsPanel onSuggest={handleSuggest} onBuildScaffold={handleBuildScaffold} isScaffoldLoading={isScaffoldLoading} />
     </div>
   );
 }

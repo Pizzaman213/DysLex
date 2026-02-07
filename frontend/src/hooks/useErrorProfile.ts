@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useUserStore } from '../stores/userStore';
 
 interface Pattern {
   id: string;
@@ -28,12 +29,18 @@ export function useErrorProfile() {
   const [profile, setProfile] = useState<ErrorProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const user = useUserStore((s) => s.user);
 
   useEffect(() => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchProfile = async () => {
       try {
         setIsLoading(true);
-        const data = await api.getErrorProfile();
+        const data = await api.getErrorProfile(user.id);
         setProfile(data);
         setError(null);
       } catch (err) {
@@ -44,11 +51,12 @@ export function useErrorProfile() {
     };
 
     fetchProfile();
-  }, []);
+  }, [user?.id]);
 
   const refreshProfile = async () => {
+    if (!user?.id) return;
     try {
-      const data = await api.getErrorProfile();
+      const data = await api.getErrorProfile(user.id);
       setProfile(data);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to refresh profile'));

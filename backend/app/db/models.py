@@ -1,8 +1,8 @@
 """SQLAlchemy ORM models."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -25,24 +25,50 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    error_profile: Mapped["ErrorProfile"] = relationship(back_populates="user", uselist=False)
+    settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
     error_logs: Mapped[list["ErrorLog"]] = relationship(back_populates="user")
+    error_patterns: Mapped[list["UserErrorPattern"]] = relationship(back_populates="user")
+    user_confusion_pairs: Mapped[list["UserConfusionPair"]] = relationship(back_populates="user")
+    personal_dictionary: Mapped[list["PersonalDictionary"]] = relationship(back_populates="user")
+    progress_snapshots: Mapped[list["ProgressSnapshot"]] = relationship(back_populates="user")
 
 
-class ErrorProfile(Base):
-    """User's error profile for adaptive learning."""
+class UserSettings(Base):
+    """User settings for application customization."""
 
-    __tablename__ = "error_profiles"
+    __tablename__ = "user_settings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), unique=True)
-    overall_score: Mapped[int] = mapped_column(Integer, default=50)
-    patterns: Mapped[dict] = mapped_column(JSONB, default=dict)
-    confusion_pairs: Mapped[dict] = mapped_column(JSONB, default=dict)
-    achievements: Mapped[list] = mapped_column(JSONB, default=list)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+    # General
+    language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+
+    # Appearance
+    theme: Mapped[str] = mapped_column(String(20), nullable=False, default="cream")
+    font: Mapped[str] = mapped_column(String(50), nullable=False, default="OpenDyslexic")
+    font_size: Mapped[int] = mapped_column(Integer, nullable=False, default=18)
+    line_spacing: Mapped[float] = mapped_column(Float, nullable=False, default=1.75)
+    letter_spacing: Mapped[float] = mapped_column(Float, nullable=False, default=0.05)
+
+    # Accessibility
+    voice_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    auto_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    focus_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tts_speed: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    correction_aggressiveness: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+
+    # Privacy
+    anonymized_data_collection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cloud_sync: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Advanced
+    developer_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user: Mapped["User"] = relationship(back_populates="error_profile")
+    user: Mapped["User"] = relationship(back_populates="settings")
 
 
 class ErrorLog(Base):
@@ -58,9 +84,89 @@ class ErrorLog(Base):
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     was_accepted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="passive")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="error_logs")
+
+
+class UserErrorPattern(Base):
+    """Per-user misspelling -> correction frequency map."""
+
+    __tablename__ = "user_error_patterns"
+    __table_args__ = (
+        UniqueConstraint("user_id", "misspelling", "correction"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    misspelling: Mapped[str] = mapped_column(String(255), nullable=False)
+    correction: Mapped[str] = mapped_column(String(255), nullable=False)
+    error_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    frequency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    improving: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    language_code: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="error_patterns")
+
+
+class UserConfusionPair(Base):
+    """Per-user word confusion tracking."""
+
+    __tablename__ = "user_confusion_pairs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "word_a", "word_b"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    word_a: Mapped[str] = mapped_column(String(100), nullable=False)
+    word_b: Mapped[str] = mapped_column(String(100), nullable=False)
+    confusion_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_confused_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="user_confusion_pairs")
+
+
+class PersonalDictionary(Base):
+    """Words to never flag for a user."""
+
+    __tablename__ = "personal_dictionary"
+    __table_args__ = (
+        UniqueConstraint("user_id", "word"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    word: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="personal_dictionary")
+
+
+class ProgressSnapshot(Base):
+    """Weekly aggregated progress stats."""
+
+    __tablename__ = "progress_snapshots"
+    __table_args__ = (
+        UniqueConstraint("user_id", "week_start"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    total_words_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_corrections: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    accuracy_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    error_type_breakdown: Mapped[dict] = mapped_column(JSONB, default=dict)
+    top_errors: Mapped[list] = mapped_column(JSONB, default=list)
+    patterns_mastered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    new_patterns_detected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    user: Mapped["User"] = relationship(back_populates="progress_snapshots")
 
 
 class ConfusionPair(Base):

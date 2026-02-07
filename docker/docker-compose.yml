@@ -23,10 +23,26 @@ services:
     depends_on:
       dyslex-db:
         condition: service_healthy
+      dyslex-redis:
+        condition: service_started
     environment:
+      - DEV_MODE=${DEV_MODE:-true}
       - DATABASE_URL=postgresql+asyncpg://dyslex:dyslex@dyslex-db:5432/dyslex
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
+      - DB_POOL_RECYCLE=${DB_POOL_RECYCLE:-3600}
+      - REDIS_URL=redis://dyslex-redis:6379/0
+      - SNAPSHOT_TTL_HOURS=${SNAPSHOT_TTL_HOURS:-24}
       - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY}
+      - NVIDIA_NIM_LLM_URL=${NVIDIA_NIM_LLM_URL:-https://integrate.api.nvidia.com/v1}
+      - NVIDIA_NIM_VOICE_URL=${NVIDIA_NIM_VOICE_URL:-https://integrate.api.nvidia.com/v1}
+      - TRANSCRIPTION_URL=${TRANSCRIPTION_URL:-http://dyslex-whisper:8000/v1}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+      - RATE_LIMIT_LLM=${RATE_LIMIT_LLM:-10}
+      - RATE_LIMIT_VOICE=${RATE_LIMIT_VOICE:-20}
+      - CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.85}
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-25}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:
       - dyslex-network
 
@@ -51,9 +67,31 @@ services:
     networks:
       - dyslex-network
 
+  dyslex-redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - dyslex-redis-data:/data
+    networks:
+      - dyslex-network
+
+  dyslex-whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    ports:
+      - "8786:8000"
+    environment:
+      - WHISPER__MODEL=Systran/faster-whisper-base.en
+    networks:
+      - dyslex-network
+    profiles:
+      - desktop
+
 networks:
   dyslex-network:
     driver: bridge
 
 volumes:
   dyslex-db-data:
+  dyslex-redis-data:

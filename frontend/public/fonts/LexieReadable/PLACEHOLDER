@@ -1,0 +1,16 @@
+This is a placeholder. The LexieReadable-Regular.woff2 font file needs to be manually downloaded.
+
+Lexie Readable is a font designed by Keith Bates at K-Type for readability,
+particularly for readers with dyslexia. It is not freely redistributable as
+a web font (woff2), so it cannot be downloaded automatically from a CDN.
+
+To obtain Lexie Readable:
+
+1. Visit https://www.k-type.com/fonts/lexie-readable/
+2. Download the font according to the license terms
+3. Convert to .woff2 format if needed (using a tool like https://cloudconvert.com/ttf-to-woff2)
+4. Place the resulting file in this directory as: LexieReadable-Regular.woff2
+
+Alternative free dyslexia-friendly fonts already included in this project:
+- OpenDyslexic (in ../OpenDyslexic/)
+- Atkinson Hyperlegible (in ../AtkinsonHyperlegible/)

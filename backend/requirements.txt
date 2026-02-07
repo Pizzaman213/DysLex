@@ -1,8 +1,9 @@
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
-pydantic>=2.0.0
+pydantic[email]>=2.0.0
 pydantic-settings>=2.0.0
 sqlalchemy>=2.0.0
+greenlet>=3.0.0
 alembic>=1.12.0
 asyncpg>=0.28.0
 psycopg2-binary>=2.9.0
@@ -12,5 +13,21 @@ python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 ruff>=0.1.0
 mypy>=1.5.0
+slowapi>=0.1.9
+tenacity>=8.2.0
+aiofiles>=23.0.0
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
+redis>=5.0.0
+apscheduler>=3.10.0
+
+# ML Dependencies for Quick Correction Engine
+transformers>=4.35.0
+torch>=2.1.0
+datasets>=2.14.0
+accelerate>=0.24.0
+onnx>=1.15.0
+onnxruntime>=1.16.0
+optimum[exporters]>=1.14.0
+peft>=0.6.0
+numpy>=1.24.0

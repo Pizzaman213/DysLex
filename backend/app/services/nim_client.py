@@ -1,43 +1,58 @@
-"""NVIDIA NIM API client for quick corrections."""
+"""NVIDIA NIM API client for quick corrections (Tier 1).
 
-import httpx
+Now uses local ONNX model via QuickCorrectionService for fast corrections.
+Falls back gracefully if model is not available.
+"""
 
-from app.config import settings
+import logging
+
 from app.models.correction import Correction
 
+logger = logging.getLogger(__name__)
 
-async def quick_correction(text: str, user_id: str) -> list[Correction]:
-    """Get quick corrections using NVIDIA NIM API."""
-    if not settings.nvidia_nim_api_key:
-        return []
+# Import QuickCorrectionService
+_quick_service = None
 
-    async with httpx.AsyncClient() as client:
+
+def _get_quick_service():
+    """Get or initialize Quick Correction Service."""
+    global _quick_service
+    if _quick_service is None:
+        from app.services.quick_correction_service import get_quick_correction_service
+
+        _quick_service = get_quick_correction_service()
+    return _quick_service
+
+
+async def quick_correction(
+    text: str,
+    user_id: str,
+    profile: object | None = None,
+) -> list[Correction]:
+    """Get quick corrections using local ONNX model (Tier 1).
+
+    Returns an empty list when the model is not available or inference fails.
+    The system degrades gracefully to Tier 2 (deep analysis) in these cases.
+
+    Args:
+        text: Text to correct
+        user_id: User ID for personalization
+        profile: Optional user error profile (for future use)
+
+    Returns:
+        List of corrections with confidence scores
+    """
+    # Try local ONNX model first
+    service = _get_quick_service()
+
+    if service is not None:
         try:
-            response = await client.post(
-                f"{settings.nvidia_nim_base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.nvidia_nim_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "nvidia/nemotron-mini-4b-instruct",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a spelling and grammar correction assistant. Return corrections in JSON format.",
-                        },
-                        {
-                            "role": "user",
-                            "content": f"Find spelling and grammar errors in: {text}",
-                        },
-                    ],
-                    "max_tokens": 500,
-                    "temperature": 0.1,
-                },
-                timeout=10.0,
-            )
-            response.raise_for_status()
-            # Parse response and convert to Correction objects
-            return []
-        except httpx.HTTPError:
-            return []
+            corrections = await service.correct(text, user_id)
+            logger.debug(f"Quick correction found {len(corrections)} errors")
+            return corrections
+        except Exception as e:
+            logger.error(f"Quick correction failed: {e}", exc_info=True)
+
+    # Fallback: return empty list (will trigger Tier 2)
+    logger.debug("Quick correction not available, falling back to Tier 2")
+    return []

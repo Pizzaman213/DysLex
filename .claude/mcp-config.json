@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dyslex-ai": {
+      "command": "python3",
+      "args": [
+        "/Users/connorsecrist/Dyslexia/.claude/mcp-server-dyslex.py"
+      ],
+      "description": "DysLex AI service controller - start, stop, status, and logs",
+      "env": {}
+    }
+  }
+}

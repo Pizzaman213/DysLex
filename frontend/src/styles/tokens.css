@@ -1,60 +1,93 @@
+/**
+ * Design Tokens — DysLex AI
+ * Unified token system with backward-compatible aliases
+ */
+
 :root {
-  /* Colors - Cream Theme */
-  --color-bg-primary: #fdf6e3;
-  --color-bg-secondary: #f5eed6;
-  --color-bg-tertiary: #eee8c5;
-  --color-text-primary: #3d3d3d;
-  --color-text-secondary: #5a5a5a;
-  --color-text-muted: #7a7a7a;
-  --color-accent: #4a90a4;
-  --color-accent-hover: #3a7a94;
-  --color-success: #5a9a6a;
-  --color-warning: #c9a227;
-  --color-error: #c25450;
+  /* ===== TYPOGRAPHY ===== */
+  --font: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-d: 'Outfit', var(--font);
+  --font-dyslexic: 'OpenDyslexic', var(--font);
+  --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
 
-  /* Correction colors */
-  --color-correction-spelling: #e8c4c4;
-  --color-correction-grammar: #c4d4e8;
-  --color-correction-confusion: #e8d4c4;
-  --color-correction-phonetic: #d4e8c4;
+  /* Backward-compat aliases */
+  --f-body: var(--font);
+  --f-display: var(--font-d);
+  --f-dyslexic: var(--font-dyslexic);
+  --f-mono: var(--font-mono);
 
-  /* Spacing */
-  --space-xs: 0.25rem;
-  --space-sm: 0.5rem;
-  --space-md: 1rem;
-  --space-lg: 1.5rem;
-  --space-xl: 2rem;
-  --space-2xl: 3rem;
+  /* Font Sizes */
+  --fs-10: 10px;
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-28: 28px;
 
-  /* Typography */
-  --font-family-display: 'OpenDyslexic', 'Atkinson Hyperlegible', sans-serif;
-  --font-family-body: 'OpenDyslexic', 'Atkinson Hyperlegible', sans-serif;
-  --font-size-sm: 0.875rem;
-  --font-size-base: 1rem;
-  --font-size-lg: 1.125rem;
-  --font-size-xl: 1.25rem;
-  --font-size-2xl: 1.5rem;
-  --font-size-3xl: 2rem;
-  --line-height-tight: 1.25;
-  --line-height-normal: 1.5;
-  --line-height-relaxed: 1.75;
+  /* Font Weights */
+  --fw-light: 300;
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
 
-  /* Border radius */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 1rem;
-  --radius-full: 9999px;
+  /* Line Heights */
+  --lh-tight: 1.2;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.75;
+  --lh-loose: 2.0;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  /* Letter Spacing */
+  --ls-tight: -0.01em;
+  --ls-normal: 0.02em;
+  --ls-relaxed: 0.05em;
+  --ls-loose: 0.12em;
 
-  /* Transitions */
-  --transition-fast: 150ms ease;
-  --transition-normal: 250ms ease;
-  --transition-slow: 350ms ease;
+  /* Word Spacing */
+  --ws-normal: 0.05em;
 
-  /* Focus ring */
-  --focus-ring: 0 0 0 3px rgba(74, 144, 164, 0.4);
+  /* ===== SPACING ===== */
+  --sp-2: 2px;
+  --sp-4: 4px;
+  --sp-6: 6px;
+  --sp-8: 8px;
+  --sp-10: 10px;
+  --sp-12: 12px;
+  --sp-16: 16px;
+  --sp-20: 20px;
+  --sp-24: 24px;
+  --sp-32: 32px;
+  --sp-40: 40px;
+  --sp-48: 48px;
+  --sp-64: 64px;
+
+  /* ===== BORDER RADIUS ===== */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-full: 9999px;
+
+  /* ===== SHADOWS ===== */
+  --sh-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.04);
+  --sh-md: 0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.06);
+  --sh-lg: 0 4px 8px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* ===== TRANSITIONS ===== */
+  --ease: .25s cubic-bezier(.4, 0, .2, 1);
+  --t-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --t-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --t-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ===== Z-INDEX ===== */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 300;
+  --z-toast: 400;
 }

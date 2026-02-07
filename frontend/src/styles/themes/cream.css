@@ -1,20 +1,104 @@
-.theme-cream {
-  --color-bg-primary: #fdf6e3;
-  --color-bg-secondary: #f5eed6;
-  --color-bg-tertiary: #eee8c5;
-  --color-text-primary: #3d3d3d;
-  --color-text-secondary: #5a5a5a;
-  --color-text-muted: #7a7a7a;
-  --color-accent: #4a90a4;
-  --color-accent-hover: #3a7a94;
-  --color-success: #5a9a6a;
-  --color-warning: #c9a227;
-  --color-error: #c25450;
-  --color-border: #d4c9a8;
+/* Cream Theme (Default) — DysLex AI */
+:root,
+[data-theme="cream"] {
+  /* Core Backgrounds */
+  --bg: #FAF6EE;
+  --bg2: #F3EFE7;
+  --bg-editor: #FFFDF8;
+  --bg-sidebar: #F7F3EB;
+  --bg-card: #FFFDF8;
 
-  /* Correction colors - softer for light theme */
-  --color-correction-spelling: #f5d4d4;
-  --color-correction-grammar: #d4e4f5;
-  --color-correction-confusion: #f5e4d4;
-  --color-correction-phonetic: #e4f5d4;
+  /* Backward-compat aliases */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--bg2);
+  --bg-hover: rgba(45, 42, 36, 0.04);
+  --bg-active: rgba(45, 42, 36, 0.08);
+
+  /* Text Colors */
+  --text: #2D2A24;
+  --text2: #6B6862;
+  --text3: #9B9892;
+
+  /* Backward-compat aliases */
+  --text-primary: var(--text);
+  --text-secondary: var(--text2);
+  --text-tertiary: var(--text3);
+  --text-inverse: #FFFDF8;
+
+  /* Border Colors */
+  --border: rgba(45, 42, 36, 0.08);
+  --border2: rgba(45, 42, 36, 0.15);
+  --border-medium: rgba(45, 42, 36, 0.12);
+  --border-strong: rgba(45, 42, 36, 0.20);
+
+  /* Accent Color */
+  --accent: #E07B4C;
+  --accent-h: #D16A3A;
+  --accent-l: rgba(224, 123, 76, 0.12);
+  --accent-g: rgba(224, 123, 76, 0.25);
+
+  /* Backward-compat aliases */
+  --accent-hover: var(--accent-h);
+  --accent-light: var(--accent-l);
+  --accent-glow: var(--accent-g);
+
+  /* Semantic Colors */
+  --green: #47A855;
+  --green-l: rgba(71, 168, 85, 0.12);
+  --green-light: var(--green-l);
+  --green-glow: rgba(71, 168, 85, 0.25);
+
+  --yellow: #E8A547;
+  --yellow-l: rgba(232, 165, 71, 0.12);
+  --yellow-light: var(--yellow-l);
+  --yellow-glow: rgba(232, 165, 71, 0.25);
+
+  --blue: #4A90E2;
+  --blue-l: rgba(74, 144, 226, 0.12);
+  --blue-light: var(--blue-l);
+  --blue-glow: rgba(74, 144, 226, 0.25);
+
+  --purple: #9B59B6;
+  --purple-l: rgba(155, 89, 182, 0.12);
+  --purple-light: var(--purple-l);
+  --purple-glow: rgba(155, 89, 182, 0.25);
+
+  --red: #E74C3C;
+  --red-light: rgba(231, 76, 60, 0.12);
+  --red-glow: rgba(231, 76, 60, 0.25);
+
+  /* Correction Colors */
+  --color-border: rgba(45, 42, 36, 0.12);
+  --color-correction-spelling: rgba(231, 76, 60, 0.15);
+  --color-correction-grammar: rgba(155, 89, 182, 0.15);
+  --color-correction-confusion: rgba(224, 123, 76, 0.15);
+  --color-correction-phonetic: rgba(71, 168, 85, 0.15);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08);
+
+  /* Focus */
+  --focus-ring: 0 0 0 3px rgba(224, 123, 76, 0.4);
+
+  /* Tracked Changes Colors */
+  --success-text: #1E7B3A;
+  --success-bg: #E8F5E9;
+  --success-border: #4CAF50;
+  --success: var(--green);
+  --error-text: #C62828;
+  --error-bg: #FFEBEE;
+  --error-border: #E57373;
+  --error: var(--red);
+  --warning: var(--yellow);
+  --hover-bg: rgba(0, 0, 0, 0.03);
+  --accent-bg: rgba(224, 123, 76, 0.1);
+
+  /* Cluster Colors (Mind Map) */
+  --color-cluster-1: #E07B4C;
+  --color-cluster-2: #47A855;
+  --color-cluster-3: #4A90E2;
+  --color-cluster-4: #9B59B6;
+  --color-cluster-5: #E8A547;
 }
