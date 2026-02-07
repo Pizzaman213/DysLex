@@ -13,9 +13,11 @@ Tools:
 """
 
 import asyncio
+import base64
 import json
 import sys
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +34,7 @@ except ImportError:
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 RUN_SCRIPT = PROJECT_ROOT / "run.py"
+CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 # Global state
 server = Server("dyslex-ai")
@@ -129,6 +132,40 @@ async def handle_list_tools() -> list[types.Tool]:
                 "type": "object",
                 "properties": {}
             }
+        ),
+        types.Tool(
+            name="dyslex_screenshot",
+            description="Take a screenshot of the DysLex AI frontend using headless Chrome. Returns the image so Claude can visually inspect the UI.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL to screenshot (default: http://localhost:3000)",
+                        "default": "http://localhost:3000"
+                    },
+                    "width": {
+                        "type": "integer",
+                        "description": "Viewport width in pixels (default: 1280)",
+                        "default": 1280
+                    },
+                    "height": {
+                        "type": "integer",
+                        "description": "Viewport height in pixels (default: 900)",
+                        "default": 900
+                    },
+                    "wait": {
+                        "type": "integer",
+                        "description": "Milliseconds to wait for page to render (default: 3000)",
+                        "default": 3000
+                    },
+                    "full_page": {
+                        "type": "boolean",
+                        "description": "Capture the full scrollable page instead of just the viewport (default: false)",
+                        "default": False
+                    }
+                }
+            }
         )
     ]
 
@@ -156,6 +193,8 @@ async def handle_call_tool(
             return await restart_dyslex(arguments)
         elif name == "dyslex_check":
             return await check_prerequisites()
+        elif name == "dyslex_screenshot":
+            return await take_screenshot(arguments)
         else:
             return [types.TextContent(
                 type="text",
@@ -392,6 +431,83 @@ async def check_prerequisites() -> list[types.TextContent]:
         return [types.TextContent(
             type="text",
             text=f"❌ Error checking prerequisites: {str(e)}"
+        )]
+
+
+async def take_screenshot(args: dict) -> list[types.TextContent | types.ImageContent]:
+    """Take a screenshot of the frontend using headless Chrome."""
+    url = args.get("url", "http://localhost:3000")
+    width = args.get("width", 1280)
+    height = args.get("height", 900)
+    wait_ms = args.get("wait", 3000)
+    full_page = args.get("full_page", False)
+
+    if not Path(CHROME_PATH).exists():
+        return [types.TextContent(
+            type="text",
+            text="Google Chrome not found at expected path. Install Chrome to use screenshots."
+        )]
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        screenshot_path = tmp.name
+
+    try:
+        cmd = [
+            CHROME_PATH,
+            "--headless",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-software-rasterizer",
+            f"--screenshot={screenshot_path}",
+            f"--window-size={width},{height}",
+            f"--virtual-time-budget={wait_ms}",
+        ]
+
+        if full_page:
+            cmd.append("--full-page-screenshot")
+
+        cmd.append(url)
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        screenshot_file = Path(screenshot_path)
+        if not screenshot_file.exists() or screenshot_file.stat().st_size == 0:
+            return [types.TextContent(
+                type="text",
+                text=f"Screenshot failed. Chrome stderr:\n{result.stderr[:1000]}"
+            )]
+
+        image_data = base64.b64encode(screenshot_file.read_bytes()).decode("utf-8")
+        screenshot_file.unlink()
+
+        return [
+            types.ImageContent(
+                type="image",
+                data=image_data,
+                mimeType="image/png"
+            ),
+            types.TextContent(
+                type="text",
+                text=f"Screenshot of {url} ({width}x{height})"
+            )
+        ]
+
+    except subprocess.TimeoutExpired:
+        Path(screenshot_path).unlink(missing_ok=True)
+        return [types.TextContent(
+            type="text",
+            text="Screenshot timed out after 30 seconds."
+        )]
+    except Exception as e:
+        Path(screenshot_path).unlink(missing_ok=True)
+        return [types.TextContent(
+            type="text",
+            text=f"Screenshot error: {str(e)}"
         )]
 
 

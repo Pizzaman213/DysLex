@@ -131,6 +131,7 @@ class ErrorTypeBreakdown(BaseModel):
     homophone: float = 0.0
     omission: float = 0.0
     transposition: float = 0.0
+    grammar: float = 0.0
     other: float = 0.0
 
 
@@ -156,3 +157,11 @@ class LLMContext(BaseModel):
     writing_level: str
     personal_dictionary: list[str]
     context_notes: list[str]
+    grammar_patterns: list[dict] = []
+    improvement_trends: list[dict] = []
+    mastered_words: list[str] = []
+    total_stats: dict | None = None
+    writing_streak: dict | None = None
+    recent_error_count: int | None = None
+    recent_document_topics: list[str] = []
+    correction_aggressiveness: int = 50

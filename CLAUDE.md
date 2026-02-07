@@ -126,6 +126,31 @@ Run prerequisite checks without starting services. Validates Python version, Nod
 dyslex_check()
 ```
 
+#### dyslex_screenshot
+Take a screenshot of the DysLex AI frontend using headless Chrome. Returns the image directly so Claude can visually inspect the UI without the user needing to manually screenshot anything.
+
+**Parameters:**
+- `url` (string): URL to screenshot (default: 'http://localhost:3000')
+- `width` (integer): Viewport width in pixels (default: 1280)
+- `height` (integer): Viewport height in pixels (default: 900)
+- `wait` (integer): Milliseconds to wait for page to render (default: 3000)
+- `full_page` (boolean): Capture the full scrollable page instead of just the viewport (default: false)
+
+**Usage:**
+```python
+# Screenshot the default frontend page
+dyslex_screenshot()
+
+# Screenshot a specific route with custom viewport
+dyslex_screenshot(url="http://localhost:3000/draft", width=1440, height=900)
+
+# Full-page screenshot for long content
+dyslex_screenshot(full_page=True)
+
+# Screenshot with extra wait time for slow-loading pages
+dyslex_screenshot(wait=5000)
+```
+
 ### When to Use These Tools
 
 **Use these tools proactively when:**
@@ -135,6 +160,8 @@ dyslex_check()
 - User reports startup issues: `dyslex_check()` to validate environment
 - User wants to stop services: `dyslex_stop()`
 - Switching between dev and Docker: `dyslex_stop()` then `dyslex_start(mode="docker")`
+- After making UI changes: `dyslex_screenshot()` to visually verify the result
+- User asks "how does it look?": `dyslex_screenshot()` to see the current state
 
 **Example interactions:**
 ```
@@ -152,11 +179,17 @@ User: "Start the development server"
 
 User: "Is DysLex AI running?"
 → Run dyslex_status() to show all service statuses
+
+User: "I changed the page margins, does it look right?"
+→ Run dyslex_screenshot(url="http://localhost:3000/draft") to visually verify
+
+User: "Take a screenshot of the settings page"
+→ Run dyslex_screenshot(url="http://localhost:3000/settings", full_page=True)
 ```
 
 ### Important Notes
 
-- The MCP server is configured in `~/.claude/mcp_config.json`
+- The MCP server is configured in `.mcp.json` at the project root
 - Setup script: `.claude/setup.sh` (already run)
 - Full documentation: `.claude/README.md` and `CLAUDE_INTEGRATION.md`
 - The tools manage the actual `run.py` script which handles all service orchestration
