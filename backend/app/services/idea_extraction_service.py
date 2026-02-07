@@ -2,8 +2,9 @@
 Service for extracting idea cards from transcripts via LLM.
 """
 
+import json
 import logging
-from typing import List
+from typing import List, Tuple
 import httpx
 
 from app.config import settings
@@ -14,25 +15,48 @@ from app.utils.json_parser import parse_json_from_llm_response
 logger = logging.getLogger(__name__)
 
 
-def _validate_and_fix_cards(cards: List[ThoughtCard]) -> List[ThoughtCard]:
+def _validate_and_fix_cards(cards: List[ThoughtCard], original_text: str = "") -> List[ThoughtCard]:
     """Validate and fix parsed cards to ensure consistent structure."""
     fixed = []
+    seen_titles: set[str] = set()
+    original_lower = original_text.strip().lower()
+
     for i, card in enumerate(cards):
+        if not card.title.strip():
+            continue
+
+        # Deduplicate by title
+        title_key = card.title.strip().lower()
+        if title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+
         # Ensure IDs are present
         if not card.id:
             card.id = f"topic-{i + 1}"
 
-        # Ensure sub_ideas have IDs
+        # Fix body: if the LLM dumped the entire input text verbatim, use just the title
+        body_lower = card.body.strip().lower()
+        if original_lower and body_lower == original_lower:
+            card.body = card.title
+            logger.warning(f"Card '{card.title}' had full input as body — replaced with title")
+
+        # Ensure sub_ideas have IDs and filter duplicates
         valid_subs = []
+        seen_sub_titles: set[str] = set()
         for j, sub in enumerate(card.sub_ideas):
             if not sub.id:
                 sub.id = f"{card.id}-sub-{j + 1}"
-            if sub.title.strip():
-                valid_subs.append(sub)
+            sub_title_key = sub.title.strip().lower()
+            if sub.title.strip() and sub_title_key not in seen_sub_titles:
+                # Skip sub-ideas that just repeat the topic body
+                sub_body_lower = sub.body.strip().lower()
+                if sub_body_lower != body_lower:
+                    seen_sub_titles.add(sub_title_key)
+                    valid_subs.append(sub)
         card.sub_ideas = valid_subs
 
-        if card.title.strip():
-            fixed.append(card)
+        fixed.append(card)
 
     return fixed
 
@@ -40,7 +64,7 @@ def _validate_and_fix_cards(cards: List[ThoughtCard]) -> List[ThoughtCard]:
 class IdeaExtractionService:
     """Extracts thought cards from transcripts using Nemotron via NIM."""
 
-    async def extract_ideas(self, transcript: str) -> List[ThoughtCard]:
+    async def extract_ideas(self, transcript: str) -> Tuple[List[ThoughtCard], str]:
         """
         Extract thought cards with sub-ideas from a transcript.
 
@@ -48,14 +72,14 @@ class IdeaExtractionService:
             transcript: The transcript text to analyze
 
         Returns:
-            List of ThoughtCard objects with nested sub_ideas
+            Tuple of (list of ThoughtCard objects, central topic string)
 
         Raises:
             httpx.HTTPError: If the API request fails
         """
         if not settings.nvidia_nim_api_key:
             logger.warning("NVIDIA_NIM_API_KEY not set — idea extraction will fail")
-            return []
+            return [], ""
 
         url = f"{settings.nvidia_nim_llm_url}/chat/completions"
 
@@ -92,29 +116,45 @@ class IdeaExtractionService:
                 result = response.json()
                 content = result["choices"][0]["message"]["content"]
 
-                logger.debug(f"LLM raw response: {content[:500]}")
+                logger.info(f"LLM raw response: {content[:500]}")
 
-                cards = parse_json_from_llm_response(
-                    content=content,
-                    model_class=ThoughtCard,
-                    is_array=True
-                )
+                # Try parsing as {topic, cards} object first
+                topic = ""
+                cards: List[ThoughtCard] = []
 
-                cards = _validate_and_fix_cards(cards)
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict):
+                        topic = parsed.get("topic", "")
+                        raw_cards = parsed.get("cards", [])
+                        cards = [ThoughtCard(**c) if isinstance(c, dict) else c for c in raw_cards]
+                    elif isinstance(parsed, list):
+                        # Backward compat: LLM returned a plain array
+                        cards = [ThoughtCard(**c) if isinstance(c, dict) else c for c in parsed]
+                except (json.JSONDecodeError, TypeError):
+                    # Fall back to the existing parser
+                    cards = parse_json_from_llm_response(
+                        content=content,
+                        model_class=ThoughtCard,
+                        is_array=True
+                    )
+
+                cards = _validate_and_fix_cards(cards, original_text=transcript)
 
                 logger.info(
                     f"Extracted {len(cards)} topics with "
                     f"{sum(len(c.sub_ideas) for c in cards)} total sub-ideas"
+                    f" (topic: '{topic}')"
                 )
 
-                return cards
+                return cards, topic
 
         except httpx.HTTPError as e:
             logger.error(f"Idea extraction failed: {e}")
             raise
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse LLM response: {e}")
-            return []
+            return [], ""
 
 
 # Singleton instance

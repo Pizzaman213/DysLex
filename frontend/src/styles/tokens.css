@@ -1,22 +1,16 @@
 /**
  * Design Tokens — DysLex AI
- * Unified token system with backward-compatible aliases
+ * Spacing, typography, timing, radii, z-index, shadows
+ * Theme colors live in themes/*.css — this file is theme-agnostic.
  */
 
 :root {
-  /* ===== TYPOGRAPHY ===== */
-  --font: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-d: 'Outfit', var(--font);
-  --font-dyslexic: 'OpenDyslexic', var(--font);
-  --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  /* ===== FONT FAMILIES ===== */
+  --font: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-d: 'Outfit', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  /* Backward-compat aliases */
-  --f-body: var(--font);
-  --f-display: var(--font-d);
-  --f-dyslexic: var(--font-dyslexic);
-  --f-mono: var(--font-mono);
-
-  /* Font Sizes */
+  /* ===== FONT SIZES ===== */
   --fs-10: 10px;
   --fs-11: 11px;
   --fs-12: 12px;
@@ -27,28 +21,28 @@
   --fs-20: 20px;
   --fs-24: 24px;
   --fs-28: 28px;
+  --fs-36: 36px;
 
-  /* Font Weights */
+  /* ===== FONT WEIGHTS ===== */
   --fw-light: 300;
-  --fw-normal: 400;
   --fw-medium: 500;
   --fw-semibold: 600;
   --fw-bold: 700;
   --fw-extrabold: 800;
 
-  /* Line Heights */
+  /* ===== LINE HEIGHTS ===== */
   --lh-tight: 1.2;
-  --lh-normal: 1.5;
-  --lh-relaxed: 1.75;
+  --lh-normal: 1.6;
+  --lh-relaxed: 1.8;
   --lh-loose: 2.0;
 
-  /* Letter Spacing */
+  /* ===== LETTER SPACING ===== */
   --ls-tight: -0.01em;
-  --ls-normal: 0.02em;
-  --ls-relaxed: 0.05em;
-  --ls-loose: 0.12em;
+  --ls-normal: 0.01em;
+  --ls-relaxed: 0.03em;
+  --ls-loose: 0.06em;
 
-  /* Word Spacing */
+  /* ===== WORD SPACING ===== */
   --ws-normal: 0.05em;
 
   /* ===== SPACING ===== */
@@ -62,32 +56,32 @@
   --sp-20: 20px;
   --sp-24: 24px;
   --sp-32: 32px;
-  --sp-40: 40px;
   --sp-48: 48px;
-  --sp-64: 64px;
 
   /* ===== BORDER RADIUS ===== */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
-  --r-xl: 24px;
+  --r-xs: 3px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
   --r-full: 9999px;
 
-  /* ===== SHADOWS ===== */
-  --sh-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.04);
-  --sh-md: 0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.06);
-  --sh-lg: 0 4px 8px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.08);
-
-  /* ===== TRANSITIONS ===== */
-  --ease: .25s cubic-bezier(.4, 0, .2, 1);
-  --t-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  --t-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  --t-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-
   /* ===== Z-INDEX ===== */
-  --z-base: 0;
+  --z-base: 1;
   --z-dropdown: 100;
   --z-sticky: 200;
   --z-modal: 300;
   --z-toast: 400;
+
+  /* ===== TIMING & EASING ===== */
+  --t-fast: 150ms;
+  --t-slow: 400ms;
+  --ease: 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --t-page: 300ms;
+  --ease-page: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* ===== SHADOWS (short aliases for theme values) ===== */
+  --sh-sm: var(--shadow-sm);
+  --sh-md: var(--shadow-md);
+  --sh-lg: var(--shadow-lg);
 }

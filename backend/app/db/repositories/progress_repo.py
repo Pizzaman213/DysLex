@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,27 @@ from app.db.exceptions import ConnectionError, DatabaseError
 from app.db.models import ErrorLog
 
 logger = logging.getLogger(__name__)
+
+
+def _to_isoformat(value: Any) -> str:
+    """Convert a datetime or string to ISO format string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
+
+
+def _to_date(value: Any) -> "datetime.date | None":
+    """Convert a date string or date object to a date object."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        from datetime import date as _date
+        return _date.fromisoformat(value)
+    if isinstance(value, datetime):
+        return value.date()
+    return value
 
 
 async def get_error_frequency_by_week(
@@ -33,16 +54,17 @@ async def get_error_frequency_by_week(
     try:
         cutoff = datetime.utcnow() - timedelta(weeks=weeks)
 
+        week_col = func.date_trunc("week", ErrorLog.created_at)
         query = (
             select(
-                func.date_trunc("week", ErrorLog.created_at).label("week_start"),
+                week_col.label("week_start"),
                 func.count(ErrorLog.id).label("total_errors"),
             )
             .where(ErrorLog.user_id == user_id)
             .where(ErrorLog.created_at >= cutoff)
             .where(ErrorLog.error_type != "self-correction")
-            .group_by(func.date_trunc("week", ErrorLog.created_at))
-            .order_by(func.date_trunc("week", ErrorLog.created_at).asc())
+            .group_by(week_col)
+            .order_by(literal_column("week_start").asc())
         )
 
         result = await db.execute(query)
@@ -50,7 +72,7 @@ async def get_error_frequency_by_week(
 
         return [
             {
-                "week_start": row.week_start.isoformat() if row.week_start else "",
+                "week_start": _to_isoformat(row.week_start),
                 "total_errors": row.total_errors,
             }
             for row in rows
@@ -83,17 +105,18 @@ async def get_error_breakdown_by_type(
     try:
         cutoff = datetime.utcnow() - timedelta(weeks=weeks)
 
+        week_col = func.date_trunc("week", ErrorLog.created_at)
         query = (
             select(
-                func.date_trunc("week", ErrorLog.created_at).label("week_start"),
+                week_col.label("week_start"),
                 ErrorLog.error_type,
                 func.count(ErrorLog.id).label("count"),
             )
             .where(ErrorLog.user_id == user_id)
             .where(ErrorLog.created_at >= cutoff)
             .where(ErrorLog.error_type != "self-correction")
-            .group_by(func.date_trunc("week", ErrorLog.created_at), ErrorLog.error_type)
-            .order_by(func.date_trunc("week", ErrorLog.created_at).asc())
+            .group_by(week_col, ErrorLog.error_type)
+            .order_by(literal_column("week_start").asc())
         )
 
         result = await db.execute(query)
@@ -102,7 +125,7 @@ async def get_error_breakdown_by_type(
         # Group by week
         weeks_dict: dict[str, dict[str, int]] = {}
         for row in rows:
-            week_key = row.week_start.isoformat() if row.week_start else ""
+            week_key = _to_isoformat(row.week_start)
             if week_key not in weeks_dict:
                 weeks_dict[week_key] = {
                     "week_start": week_key,
@@ -195,7 +218,7 @@ async def get_mastered_words(
             {
                 "word": row.word,
                 "times_corrected": row.times_corrected,
-                "last_corrected": row.last_corrected.isoformat() if row.last_corrected else "",
+                "last_corrected": _to_isoformat(row.last_corrected),
             }
             for row in rows
         ]
@@ -235,7 +258,7 @@ async def get_writing_streak(db: AsyncSession, user_id: str) -> dict[str, Any]:
         )
 
         result = await db.execute(query)
-        dates = [row.activity_date for row in result.all()]
+        dates = [_to_date(row.activity_date) for row in result.all()]
 
         if not dates:
             return {
@@ -342,17 +365,18 @@ async def get_improvement_by_error_type(
         cutoff = datetime.utcnow() - timedelta(weeks=weeks)
 
         # Get counts per type per week
+        week_col = func.date_trunc("week", ErrorLog.created_at)
         query = (
             select(
-                func.date_trunc("week", ErrorLog.created_at).label("week_start"),
+                week_col.label("week_start"),
                 ErrorLog.error_type,
                 func.count(ErrorLog.id).label("count"),
             )
             .where(ErrorLog.user_id == user_id)
             .where(ErrorLog.created_at >= cutoff)
             .where(ErrorLog.error_type != "self-correction")
-            .group_by(func.date_trunc("week", ErrorLog.created_at), ErrorLog.error_type)
-            .order_by(func.date_trunc("week", ErrorLog.created_at).asc())
+            .group_by(week_col, ErrorLog.error_type)
+            .order_by(literal_column("week_start").asc())
         )
 
         result = await db.execute(query)

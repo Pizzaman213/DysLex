@@ -19,7 +19,7 @@ async def quick_only(
     db: AsyncSession,
 ) -> list[Correction]:
     """Run Tier 1 (quick) corrections only."""
-    profile = await get_user_profile(user_id, db)
+    profile = await _safe_get_profile(user_id, db)
     results = await quick_correction(text, user_id, profile)
     return results
 
@@ -29,10 +29,14 @@ async def deep_only(
     user_id: str,
     context: str | None = None,
     db: AsyncSession | None = None,
+    *,
+    raise_on_error: bool = False,
 ) -> list[Correction]:
     """Run Tier 2 (deep analysis) corrections only."""
-    profile = await get_user_profile(user_id, db) if db else None
-    results = await deep_analysis(text, user_id, context, profile, db=db)
+    profile = await _safe_get_profile(user_id, db)
+    results = await deep_analysis(
+        text, user_id, context, profile, db=db, raise_on_error=raise_on_error,
+    )
     for r in results:
         r.tier = "deep"
     return results
@@ -53,7 +57,7 @@ async def auto_route(
     5. Merge results (deep overrides quick for overlapping positions)
     6. Return merged results with tier metadata
     """
-    profile = await get_user_profile(user_id, db) if db else None
+    profile = await _safe_get_profile(user_id, db)
 
     # Tier 1 — quick corrections
     quick_results = await quick_correction(text, user_id, profile)
@@ -82,12 +86,25 @@ async def document_review(
     db: AsyncSession | None = None,
 ) -> list[Correction]:
     """Full-document deep review — always uses Tier 2."""
-    return await deep_only(text, user_id, context, db)
+    return await deep_only(text, user_id, context, db, raise_on_error=True)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _safe_get_profile(
+    user_id: str, db: AsyncSession | None
+) -> object | None:
+    """Load user profile, returning None on any failure."""
+    if db is None:
+        return None
+    try:
+        return await get_user_profile(user_id, db)
+    except Exception:
+        logger.warning("Failed to load profile for user %s — continuing without it", user_id, exc_info=True)
+        return None
 
 
 def _needs_deep_analysis(text: str, quick_results: list[Correction]) -> bool:
@@ -102,11 +119,18 @@ def _merge_corrections(
 ) -> list[Correction]:
     """Merge quick (confident) and deep results; deep wins on overlap."""
     by_pos: dict[tuple[int, int], Correction] = {}
+    no_pos: list[Correction] = []
     for c in confident:
+        if c.position is None:
+            no_pos.append(c)
+            continue
         key = (c.position.start, c.position.end)
         by_pos[key] = c
     for c in deep:
+        if c.position is None:
+            no_pos.append(c)
+            continue
         key = (c.position.start, c.position.end)
         # Deep always overrides quick at same position
         by_pos[key] = c
-    return list(by_pos.values())
+    return list(by_pos.values()) + no_pos

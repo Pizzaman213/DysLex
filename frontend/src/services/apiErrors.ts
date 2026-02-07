@@ -27,6 +27,11 @@ export class ApiError extends Error {
       return 'You do not have permission to perform this action.';
     }
 
+    // Service unavailable — backend sent a specific reason (e.g. missing API key)
+    if (this.status === 503 && this.data?.detail) {
+      return this.data.detail;
+    }
+
     // Server errors
     if (this.status >= 500) {
       return 'Our servers are having trouble. Please try again in a moment.';

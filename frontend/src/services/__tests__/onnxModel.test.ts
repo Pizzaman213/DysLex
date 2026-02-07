@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, jest } from '@jest/globals';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { loadModel, runLocalCorrection, isModelLoaded, getModelState, updateUserDictionary, getDictionarySize } from '../onnxModel';
 
 describe('ONNX Model', () => {

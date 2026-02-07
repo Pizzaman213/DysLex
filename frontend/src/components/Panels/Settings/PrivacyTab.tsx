@@ -15,11 +15,9 @@ export function PrivacyTab() {
   const handleExportData = async () => {
     setIsExporting(true);
     try {
-      // TODO: Get actual user ID from auth store
-      const userId = 'demo-user-id';
+      const userId = '00000000-0000-0000-0000-000000000000';
       const blob = await api.exportUserData(userId);
 
-      // Create download
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -49,16 +47,13 @@ export function PrivacyTab() {
 
     setIsDeleting(true);
     try {
-      // TODO: Get actual user ID from auth store
-      const userId = 'demo-user-id';
+      const userId = '00000000-0000-0000-0000-000000000000';
       await api.deleteUserData(userId);
 
-      // Clear localStorage
       localStorage.clear();
 
       setToast({ message: 'All data deleted. Redirecting...', type: 'success' });
 
-      // Redirect to login after 2 seconds
       setTimeout(() => {
         window.location.href = '/';
       }, 2000);
@@ -74,69 +69,79 @@ export function PrivacyTab() {
     <div className="settings-tab-content" role="tabpanel" id="privacy-panel" aria-labelledby="privacy-tab">
       <h2>Privacy & Data</h2>
 
-      <div className="setting-row">
-        <label htmlFor="anonymized-data-toggle">
-          <span className="setting-label">Anonymized Data Collection</span>
-          <span className="setting-help">
-            Share usage statistics to help improve DysLex AI. Your writing content is never shared.
-          </span>
-        </label>
-        <button
-          id="anonymized-data-toggle"
-          role="switch"
-          aria-checked={anonymizedDataCollection}
-          className={`setting-toggle ${anonymizedDataCollection ? 'active' : ''}`}
-          onClick={() => setAnonymizedDataCollection(!anonymizedDataCollection)}
-        >
-          <span className="toggle-slider"></span>
-        </button>
-      </div>
-
-      <div className="setting-row">
-        <label htmlFor="cloud-sync-toggle">
-          <span className="setting-label">Cloud Sync</span>
-          <span className="setting-help">Sync settings and error profile across devices</span>
-        </label>
-        <button
-          id="cloud-sync-toggle"
-          role="switch"
-          aria-checked={cloudSync}
-          className={`setting-toggle ${cloudSync ? 'active' : ''}`}
-          onClick={() => setCloudSync(!cloudSync)}
-        >
-          <span className="toggle-slider"></span>
-        </button>
-      </div>
-
-      <div className="setting-section-divider"></div>
-
-      <h3>Data Management</h3>
-
-      <div className="privacy-action-card">
-        <div className="action-card-content">
-          <h4>Download My Data</h4>
-          <p>Export all your data as JSON (GDPR data portability)</p>
+      <div className="setting-section">
+        <div className="setting-section-header">
+          <h3>Data Sharing</h3>
+          <p className="setting-section-desc">Control what data leaves your device</p>
         </div>
-        <button
-          className="action-button primary"
-          onClick={handleExportData}
-          disabled={isExporting}
-        >
-          {isExporting ? 'Exporting...' : 'Download Data'}
-        </button>
+
+        <div className="setting-row">
+          <label htmlFor="anonymized-data-toggle">
+            <span className="setting-label">Anonymized Data Collection</span>
+            <span className="setting-help">
+              Share usage statistics to help improve DysLex AI. Your writing content is never shared.
+            </span>
+          </label>
+          <button
+            id="anonymized-data-toggle"
+            role="switch"
+            aria-checked={anonymizedDataCollection}
+            className={`setting-toggle ${anonymizedDataCollection ? 'active' : ''}`}
+            onClick={() => setAnonymizedDataCollection(!anonymizedDataCollection)}
+          >
+            <span className="toggle-slider"></span>
+          </button>
+        </div>
+
+        <div className="setting-row">
+          <label htmlFor="cloud-sync-toggle">
+            <span className="setting-label">Cloud Sync</span>
+            <span className="setting-help">Sync settings and error profile across devices</span>
+          </label>
+          <button
+            id="cloud-sync-toggle"
+            role="switch"
+            aria-checked={cloudSync}
+            className={`setting-toggle ${cloudSync ? 'active' : ''}`}
+            onClick={() => setCloudSync(!cloudSync)}
+          >
+            <span className="toggle-slider"></span>
+          </button>
+        </div>
       </div>
 
-      <div className="privacy-action-card destructive">
-        <div className="action-card-content">
-          <h4>Delete All Data</h4>
-          <p>Permanently delete your account and all associated data. This cannot be undone.</p>
+      <div className="setting-section">
+        <div className="setting-section-header">
+          <h3>Data Management</h3>
+          <p className="setting-section-desc">Export or delete your personal data</p>
         </div>
-        <button
-          className="action-button destructive"
-          onClick={() => setShowDeleteConfirm(true)}
-        >
-          Delete Everything
-        </button>
+
+        <div className="privacy-action-card">
+          <div className="action-card-content">
+            <h4>Download My Data</h4>
+            <p>Export all your data as JSON (GDPR data portability)</p>
+          </div>
+          <button
+            className="action-button primary"
+            onClick={handleExportData}
+            disabled={isExporting}
+          >
+            {isExporting ? 'Exporting...' : 'Download'}
+          </button>
+        </div>
+
+        <div className="privacy-action-card">
+          <div className="action-card-content">
+            <h4>Delete All Data</h4>
+            <p>Permanently delete your account and all associated data</p>
+          </div>
+          <button
+            className="action-button destructive"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            Delete
+          </button>
+        </div>
       </div>
 
       {showDeleteConfirm && (

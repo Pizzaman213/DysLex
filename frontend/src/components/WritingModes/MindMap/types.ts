@@ -8,7 +8,18 @@ export interface MindMapNodeData extends Record<string, unknown> {
 
 export type MindMapFlowNode = Node<MindMapNodeData>;
 
-export type MindMapFlowEdge = Edge;
+export type EdgeRelationship =
+  | 'supports'
+  | 'contradicts'
+  | 'leads_to'
+  | 'example_of'
+  | 'related_to';
+
+export interface MindMapEdgeData extends Record<string, unknown> {
+  relationship?: EdgeRelationship | null;
+}
+
+export type MindMapFlowEdge = Edge<MindMapEdgeData>;
 
 export type AISuggestionType = 'connection' | 'gap' | 'cluster';
 
@@ -19,6 +30,7 @@ export interface AISuggestion {
   targetNodeId?: string;
   description: string;
   confidence?: number;
+  suggestedRelationship?: EdgeRelationship;
 }
 
 export interface ScaffoldSection {

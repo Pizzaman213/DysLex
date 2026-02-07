@@ -1,5 +1,7 @@
 """Tests for progress repository."""
 
+import uuid
+
 import pytest
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +14,7 @@ from app.db.repositories import progress_repo
 async def test_user(db: AsyncSession):
     """Create a test user."""
     user = User(
-        id="test-user-123",
+        id=str(uuid.uuid4()),
         email="test@example.com",
         name="Test User",
         password_hash="hashed",
@@ -144,7 +146,7 @@ async def test_get_improvement_by_error_type(db: AsyncSession, test_user, sample
 async def test_empty_user_data(db: AsyncSession):
     """Test with user that has no error logs."""
     empty_user = User(
-        id="empty-user-456",
+        id=str(uuid.uuid4()),
         email="empty@example.com",
         name="Empty User",
         password_hash="hashed",

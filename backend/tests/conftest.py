@@ -22,7 +22,29 @@ TestSessionFactory = async_sessionmaker(engine, class_=AsyncSession, expire_on_c
 def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+
+    # Register date_trunc for SQLite (PostgreSQL built-in, not available in SQLite)
+    def _date_trunc(part, value):
+        if value is None:
+            return None
+        from datetime import datetime as _dt
+
+        try:
+            dt = _dt.fromisoformat(value)
+        except (TypeError, ValueError):
+            return value
+        if part == "week":
+            dt = dt - __import__("datetime").timedelta(days=dt.weekday())
+            return dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        if part == "month":
+            return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        if part == "day":
+            return dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        return value
+
+    dbapi_connection.create_function("date_trunc", 2, _date_trunc)
 
 
 # Monkey-patch JSONB columns to render as JSON for SQLite tests.
@@ -54,6 +76,12 @@ async def db() -> AsyncSession:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def db_session(db: AsyncSession) -> AsyncSession:
+    """Alias for the ``db`` fixture used by some test modules."""
+    return db
 
 
 @pytest_asyncio.fixture

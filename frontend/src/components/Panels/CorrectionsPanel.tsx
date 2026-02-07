@@ -4,12 +4,41 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { Card } from '../Shared/Card';
 import { Badge } from '../Shared/Badge';
 
+/**
+ * Find `original` text in the ProseMirror document and replace it with `replacement`.
+ * Searches the document text nodes directly — no position mapping needed.
+ * Returns true if the replacement was applied.
+ */
+function findAndReplace(editor: Editor, original: string, replacement: string): boolean {
+  const { doc } = editor.state;
+  let applied = false;
+
+  doc.descendants((node, pos) => {
+    if (applied) return false;
+    if (node.isText && node.text) {
+      const idx = node.text.indexOf(original);
+      if (idx !== -1) {
+        const from = pos + idx;
+        const to = from + original.length;
+        editor.chain().focus()
+          .insertContentAt({ from, to }, replacement)
+          .run();
+        applied = true;
+        return false;
+      }
+    }
+    return true;
+  });
+
+  return applied;
+}
+
 interface CorrectionsPanelProps {
   editor: Editor | null;
 }
 
 export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
-  const { corrections, applyCorrection, dismissCorrection, applyAllCorrections, setActiveCorrection } =
+  const { corrections, applyCorrection, dismissCorrection, clearCorrections, applyAllCorrections, setActiveCorrection } =
     useEditorStore();
   const { recordCorrectionApplied, recordCorrectionDismissed } = useSessionStore();
 
@@ -24,15 +53,14 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
   const handleApply = (correction: Correction) => {
     if (!editor) return;
 
-    // Replace text in editor
-    editor
-      .chain()
-      .focus()
-      .insertContentAt({ from: correction.start, to: correction.end }, correction.suggested)
-      .run();
+    // Search for the original text in the document and replace it.
+    // This is more robust than using mapped positions which can drift.
+    findAndReplace(editor, correction.original, correction.suggested);
 
-    // Mark as applied
+    // Clear ALL corrections — positions are now stale.
+    // The debounced re-fetch will get fresh corrections with correct positions.
     applyCorrection(correction.id);
+    clearCorrections();
 
     // Track in session
     recordCorrectionApplied();
@@ -48,24 +76,18 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
   const handleApplyAll = () => {
     if (!editor) return;
 
-    // Apply in reverse order to avoid position shifts
+    // Apply each correction by searching for its text.
+    // Apply in reverse document order so earlier replacements don't shift later ones.
     const reversedCorrections = [...sortedCorrections].reverse();
 
     reversedCorrections.forEach((correction) => {
-      editor
-        .chain()
-        .insertContentAt(
-          { from: correction.start, to: correction.end },
-          correction.suggested
-        )
-        .run();
-
-      // Track each correction
+      findAndReplace(editor, correction.original, correction.suggested);
       recordCorrectionApplied();
     });
 
     // Mark all as applied
     applyAllCorrections();
+    clearCorrections();
   };
 
   const handleCardClick = (correction: Correction) => {
@@ -82,7 +104,7 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
     return (
       <div className="corrections-panel" role="region" aria-label="Corrections panel">
         <h2 className="corrections-panel__title">Suggestions</h2>
-        <p className="corrections-panel__empty">No suggestions right now. Keep writing!</p>
+        <p className="corrections-panel__empty">Looking good! No suggestions right now — keep going!</p>
       </div>
     );
   }
@@ -165,22 +187,28 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
   );
 }
 
-function getCorrectionLabel(type: Correction['type']): string {
+function getCorrectionLabel(type: string): string {
   switch (type) {
     case 'spelling':
-      return 'Spelling';
+      return 'Quick Fix';
     case 'grammar':
-      return 'Grammar';
-    case 'confusion':
-      return 'Word Choice';
+    case 'subject_verb':
+    case 'tense':
+    case 'article':
+    case 'word_order':
+    case 'missing_word':
+    case 'run_on':
+      return 'Polish';
+    case 'homophone':
     case 'phonetic':
       return 'Sound-alike';
-    case 'homophone':
-      return 'Homophone';
+    case 'confusion':
+    case 'word_choice':
+      return 'Word Swap';
     case 'clarity':
-      return 'Clarity';
+      return 'Clarity Boost';
     case 'style':
-      return 'Style';
+      return 'Style Tip';
     default:
       return 'Suggestion';
   }

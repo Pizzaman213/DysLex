@@ -1,18 +1,52 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { DyslexEditor } from '../Editor/DyslexEditor';
 import { EditorToolbar } from '../Editor/EditorToolbar';
 import { PolishPanel } from '../Panels/PolishPanel';
+import { VoiceBar } from '../Shared/VoiceBar';
 import { StatusBar } from '../Shared/StatusBar';
+import { useCaptureVoice } from '../../hooks/useCaptureVoice';
 import { useReadAloud } from '../../hooks/useReadAloud';
 import { useEditorStore } from '../../stores/editorStore';
 import { usePolishStore } from '../../stores/polishStore';
-
+import { useSettingsStore } from '../../stores/settingsStore';
+import { PAGE_DIMENSIONS, PAGE_MARGIN, getContentHeight } from '../../constants/pageDimensions';
 export function PolishMode() {
   const { content } = useEditorStore();
   const { setActiveSuggestion } = usePolishStore();
+  const pageType = useSettingsStore((s) => s.pageType);
+  const viewMode = useSettingsStore((s) => s.viewMode);
+  const zoom = useSettingsStore((s) => s.zoom);
+  const pageNumbers = useSettingsStore((s) => s.pageNumbers);
+  const togglePageNumbers = useSettingsStore((s) => s.togglePageNumbers);
+
+  const pageStyle = useMemo(() => {
+    const dim = PAGE_DIMENSIONS[pageType];
+    return {
+      '--page-width': `${dim.width}px`,
+      '--page-height': `${dim.height}px`,
+      '--page-margin': `${PAGE_MARGIN}px`,
+      '--page-content-height': `${getContentHeight(pageType)}px`,
+    } as React.CSSProperties;
+  }, [pageType]);
+  const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, start: startVoice, stop: stopVoice } = useCaptureVoice();
   const { speak, stop, isPlaying, isLoading } = useReadAloud();
   const [editor, setEditor] = useState<Editor | null>(null);
+  const lastInsertedVoiceRef = useRef<string>('');
+
+  // Batch-insert finalized voice text into editor as it arrives
+  useEffect(() => {
+    if (!isRecording || !editor || interimText) return;
+
+    const lastInserted = lastInsertedVoiceRef.current;
+    if (voiceTranscript.length > lastInserted.length) {
+      const delta = voiceTranscript.slice(lastInserted.length);
+      if (delta.trim()) {
+        editor.chain().focus().insertContent(delta).run();
+        lastInsertedVoiceRef.current = voiceTranscript;
+      }
+    }
+  }, [isRecording, voiceTranscript, interimText, editor]);
 
   useEffect(() => {
     const handleTrackedChangeClick = (e: Event) => {
@@ -41,25 +75,78 @@ export function PolishMode() {
     }
   };
 
+  const [showAnalysis, setShowAnalysis] = useState(true);
+
+  const handlePageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (viewMode === 'continuous') return;
+
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const scale = zoom / 100;
+    const margin = PAGE_MARGIN * scale;
+
+    const relativeY = e.clientY - rect.top;
+    const relativeBottom = rect.bottom - e.clientY;
+
+    if (relativeY < margin || relativeBottom < margin) {
+      e.preventDefault();
+      togglePageNumbers();
+    }
+  }, [viewMode, zoom, togglePageNumbers]);
+
   return (
     <div className="polish-mode">
-      <div className="polish-layout">
+      <div className={`polish-layout${showAnalysis ? '' : ' panel-hidden'}`}>
         <div className="polish-editor-area">
-          <div className="polish-controls">
-            <button
-              onClick={handleReadAloud}
-              aria-label={isLoading ? 'Loading audio' : isPlaying ? 'Stop reading' : 'Read aloud'}
-              className="btn btn-secondary"
-              disabled={isLoading}
-            >
-              {isLoading ? 'Loading...' : isPlaying ? 'Stop' : 'Read Aloud'}
-            </button>
-            {editor && <EditorToolbar editor={editor} />}
+          <div className="draft-toolbar-row">
+            <EditorToolbar
+              editor={editor}
+              panelsVisible={showAnalysis}
+              onTogglePanels={() => setShowAnalysis(prev => !prev)}
+              onReadAloud={handleReadAloud}
+              isReadAloudPlaying={isPlaying}
+              isReadAloudLoading={isLoading}
+              readAloudDisabled={!content.trim()}
+            />
           </div>
 
-          <DyslexEditor
-            mode="polish"
-            onEditorReady={handleEditorReady}
+          <div className={`polish-scroll view-${viewMode}`} style={{ '--editor-zoom': zoom / 100 } as React.CSSProperties}>
+            <div
+              className="editor-page"
+              style={pageStyle}
+              data-page-numbers={pageNumbers}
+              onDoubleClick={handlePageDoubleClick}
+            >
+              <DyslexEditor
+                mode="polish"
+                onEditorReady={handleEditorReady}
+              />
+            </div>
+          </div>
+
+          <VoiceBar
+            isRecording={isRecording}
+            isTranscribing={isTranscribing}
+            analyserNode={analyserNode}
+            onStartRecording={() => {
+              lastInsertedVoiceRef.current = '';
+              startVoice();
+            }}
+            onStopRecording={async () => {
+              const text = await stopVoice();
+              if (text && editor) {
+                const remaining = text.slice(lastInsertedVoiceRef.current.length);
+                if (remaining.trim()) {
+                  editor.chain().focus().insertContent(remaining).run();
+                }
+              }
+              lastInsertedVoiceRef.current = '';
+            }}
+            compact
+            onReadAloud={handleReadAloud}
+            isReadAloudPlaying={isPlaying}
+            isReadAloudLoading={isLoading}
+            readAloudDisabled={!content.trim()}
           />
 
           <StatusBar />

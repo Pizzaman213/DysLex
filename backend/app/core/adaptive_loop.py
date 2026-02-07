@@ -1,13 +1,39 @@
 """Passive learning loop - learns from user behavior without explicit feedback."""
 
 import difflib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import combinations
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+# Load homophone pairs from confusion_pairs/en.json at module init
+_HOMOPHONE_PAIRS: set[tuple[str, str]] = set()
+
+_CONFUSION_JSON = Path(__file__).resolve().parents[3] / "ml" / "confusion_pairs" / "en.json"
+try:
+    _data = json.loads(_CONFUSION_JSON.read_text())
+    for group in _data.get("pairs", []):
+        words = [w.lower() for w in group.get("words", [])]
+        for a, b in combinations(words, 2):
+            _HOMOPHONE_PAIRS.add(tuple(sorted([a, b])))
+    logger.info("Loaded %d homophone pairs from %s", len(_HOMOPHONE_PAIRS), _CONFUSION_JSON)
+except Exception:
+    logger.warning("Could not load confusion pairs from %s, using fallback set", _CONFUSION_JSON)
+    # Fallback: original 10-pair hardcoded set
+    _HOMOPHONE_PAIRS = {
+        ("their", "there"), ("their", "they're"), ("there", "they're"),
+        ("to", "too"), ("to", "two"), ("too", "two"),
+        ("you're", "your"),
+        ("it's", "its"),
+        ("affect", "effect"),
+        ("accept", "except"),
+    }
 
 
 @dataclass
@@ -196,17 +222,17 @@ def _classify_error_type(original: str, corrected: str) -> str:
     if _has_letter_reversal(orig_lower, corr_lower):
         return "letter_reversal"
 
-    # Phonetic substitution (sounds similar)
-    if _is_phonetically_similar(orig_lower, corr_lower):
-        return "phonetic"
-
-    # Homophone confusion (different words, same sound)
+    # Homophone confusion (different words, same sound) — check before phonetic
     if _are_homophones(orig_lower, corr_lower):
         return "homophone"
 
-    # Letter omission/addition
+    # Letter omission/addition — check before phonetic to avoid false positives
     if _is_omission_or_addition(orig_lower, corr_lower):
         return "omission"
+
+    # Phonetic substitution (sounds similar)
+    if _is_phonetically_similar(orig_lower, corr_lower):
+        return "phonetic"
 
     # Default to spelling error
     return "spelling"
@@ -232,9 +258,26 @@ def _is_phonetically_similar(a: str, b: str) -> bool:
     """Rough phonetic similarity check.
 
     True if words share most consonants in similar positions.
+    Applies basic phonetic normalization (ph→f, ck→k, ght→t, etc.)
+    before comparing consonant skeletons.
     """
+    _PHONETIC_SUBS = [
+        ("ph", "f"),
+        ("ght", "t"),
+        ("ck", "k"),
+        ("wh", "w"),
+        ("kn", "n"),
+        ("wr", "r"),
+        ("gn", "n"),
+    ]
+
+    def normalize(word: str) -> str:
+        for old, new in _PHONETIC_SUBS:
+            word = word.replace(old, new)
+        return word
+
     def get_consonants(word: str) -> str:
-        return "".join(c for c in word if c not in "aeiou")
+        return "".join(c for c in normalize(word) if c not in "aeiou")
 
     cons_a = get_consonants(a)
     cons_b = get_consonants(b)
@@ -250,19 +293,10 @@ def _is_phonetically_similar(a: str, b: str) -> bool:
 def _are_homophones(a: str, b: str) -> bool:
     """Check if words are common homophones.
 
-    Simple check - in production would use comprehensive homophone dictionary.
+    Uses the comprehensive homophone list loaded from ml/confusion_pairs/en.json.
     """
-    common_pairs = {
-        ("there", "their"), ("their", "they're"), ("there", "they're"),
-        ("to", "too"), ("to", "two"), ("too", "two"),
-        ("your", "you're"),
-        ("its", "it's"),
-        ("affect", "effect"),
-        ("accept", "except"),
-    }
-
     pair = tuple(sorted([a, b]))
-    return pair in common_pairs or tuple(reversed(pair)) in common_pairs
+    return pair in _HOMOPHONE_PAIRS
 
 
 def _is_omission_or_addition(a: str, b: str) -> bool:
@@ -308,7 +342,7 @@ async def update_error_profile_from_corrections(
 async def compute_learning_signal(
     user_id: str,
     window_hours: int = 24,
-    db: AsyncSession = None,
+    db: AsyncSession | None = None,
 ) -> dict:
     """Compute learning signals from recent user activity."""
     if db is not None:

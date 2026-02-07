@@ -4,6 +4,11 @@ import { resolve } from 'path';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts',
+  },
   plugins: [
     react(),
     viteStaticCopy({
@@ -28,6 +33,14 @@ export default defineConfig({
           src: '../ml/models/quick_correction_base_v1/correction_dict.json',
           dest: 'models/quick_correction_base_v1',
         },
+        {
+          src: '../ml/models/quick_correction_base_v1/frequency_dictionary_en_82_765.txt',
+          dest: 'models/quick_correction_base_v1',
+        },
+        {
+          src: '../ml/models/quick_correction_base_v1/frequency_dictionary_en_full.txt',
+          dest: 'models/quick_correction_base_v1',
+        },
       ],
     }),
   ],
@@ -47,14 +60,14 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['onnxruntime-web'],
+    exclude: ['onnxruntime-web', 'onnxruntime-web/wasm'],
   },
   build: {
     rollupOptions: {
       output: {
         manualChunks: {
           tiptap: ['@tiptap/core', '@tiptap/react', '@tiptap/starter-kit'],
-          onnx: ['onnxruntime-web'],
+          onnx: ['onnxruntime-web/wasm'],
           reactflow: ['@xyflow/react'],
         },
       },

@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.database import get_session
 
+DEMO_USER_ID = "00000000-0000-0000-0000-000000000000"
+
 # ---------------------------------------------------------------------------
 # Database dependency
 # ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ async def get_current_user_id(
     """
     if credentials is None:
         if settings.dev_mode:
-            return "demo-user-id"
+            return DEMO_USER_ID
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",

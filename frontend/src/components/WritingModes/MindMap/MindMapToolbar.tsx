@@ -1,20 +1,25 @@
 import { useCallback, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import { useMindMapStore } from '../../../stores/mindMapStore';
+import { VisionCapturePanel } from './VisionCapturePanel';
 
 interface MindMapToolbarProps {
   onBuildScaffold: () => void;
   isScaffoldLoading: boolean;
   onExtractFromText: (text: string) => Promise<void>;
+  onExtractFromImage: (base64: string, mimeType: string) => Promise<void>;
+  onTidyUp: () => void;
 }
 
-export function MindMapToolbar({ onBuildScaffold, isScaffoldLoading, onExtractFromText }: MindMapToolbarProps) {
+export function MindMapToolbar({ onBuildScaffold, isScaffoldLoading, onExtractFromText, onExtractFromImage, onTidyUp }: MindMapToolbarProps) {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
-  const { addNode, nodes } = useMindMapStore();
+  const { addNode, nodes, undo, redo, canUndo, canRedo } = useMindMapStore();
 
   const [showTextInput, setShowTextInput] = useState(false);
+  const [showVisionCapture, setShowVisionCapture] = useState(false);
   const [extractText, setExtractText] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isVisionProcessing, setIsVisionProcessing] = useState(false);
 
   const handleAddIdea = useCallback(() => {
     addNode(null, {
@@ -47,6 +52,16 @@ export function MindMapToolbar({ onBuildScaffold, isScaffoldLoading, onExtractFr
     }
   }, [extractText, onExtractFromText]);
 
+  const handleVisionCapture = useCallback(async (base64: string, mimeType: string) => {
+    setIsVisionProcessing(true);
+    try {
+      await onExtractFromImage(base64, mimeType);
+      setShowVisionCapture(false);
+    } finally {
+      setIsVisionProcessing(false);
+    }
+  }, [onExtractFromImage]);
+
   const canBuildScaffold = nodes.length >= 2 && !isScaffoldLoading;
 
   return (
@@ -63,12 +78,54 @@ export function MindMapToolbar({ onBuildScaffold, isScaffoldLoading, onExtractFr
           </button>
           <button
             type="button"
-            onClick={() => setShowTextInput((v) => !v)}
+            onClick={() => { setShowTextInput((v) => !v); setShowVisionCapture(false); }}
             className={`toolbar-btn${showTextInput ? ' toolbar-btn-active' : ''}`}
             aria-label="Extract ideas from text"
             aria-expanded={showTextInput}
           >
             Extract from Text
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowVisionCapture((v) => !v); setShowTextInput(false); }}
+            className={`toolbar-btn${showVisionCapture ? ' toolbar-btn-active' : ''}`}
+            aria-label="Extract ideas from image"
+            aria-expanded={showVisionCapture}
+          >
+            Scan Image
+          </button>
+          <button
+            type="button"
+            onClick={onTidyUp}
+            className="toolbar-btn"
+            aria-label="Auto-arrange nodes"
+            title="Tidy Up"
+            disabled={nodes.length <= 1}
+          >
+            Tidy Up
+          </button>
+        </div>
+
+        <div className="toolbar-group">
+          <button
+            type="button"
+            onClick={undo}
+            className="toolbar-btn toolbar-btn-icon"
+            aria-label="Undo"
+            title="Undo (Cmd+Z)"
+            disabled={!canUndo()}
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            className="toolbar-btn toolbar-btn-icon"
+            aria-label="Redo"
+            title="Redo (Cmd+Shift+Z)"
+            disabled={!canRedo()}
+          >
+            ↷
           </button>
         </div>
 
@@ -144,6 +201,14 @@ export function MindMapToolbar({ onBuildScaffold, isScaffoldLoading, onExtractFr
             </button>
           </div>
         </div>
+      )}
+
+      {showVisionCapture && (
+        <VisionCapturePanel
+          onCapture={handleVisionCapture}
+          isProcessing={isVisionProcessing}
+          onCancel={() => setShowVisionCapture(false)}
+        />
       )}
     </div>
   );

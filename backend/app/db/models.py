@@ -3,7 +3,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -18,19 +18,21 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False)
-    error_logs: Mapped[list["ErrorLog"]] = relationship(back_populates="user")
-    error_patterns: Mapped[list["UserErrorPattern"]] = relationship(back_populates="user")
-    user_confusion_pairs: Mapped[list["UserConfusionPair"]] = relationship(back_populates="user")
-    personal_dictionary: Mapped[list["PersonalDictionary"]] = relationship(back_populates="user")
-    progress_snapshots: Mapped[list["ProgressSnapshot"]] = relationship(back_populates="user")
+    settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
+    error_logs: Mapped[list["ErrorLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    error_patterns: Mapped[list["UserErrorPattern"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    user_confusion_pairs: Mapped[list["UserConfusionPair"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    personal_dictionary: Mapped[list["PersonalDictionary"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    progress_snapshots: Mapped[list["ProgressSnapshot"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    folders: Mapped[list["Folder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    documents: Mapped[list["Document"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class UserSettings(Base):
@@ -38,8 +40,8 @@ class UserSettings(Base):
 
     __tablename__ = "user_settings"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
 
     # General
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
@@ -76,8 +78,8 @@ class ErrorLog(Base):
 
     __tablename__ = "error_logs"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"))
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     corrected_text: Mapped[str] = mapped_column(Text, nullable=False)
     error_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -98,8 +100,8 @@ class UserErrorPattern(Base):
         UniqueConstraint("user_id", "misspelling", "correction"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     misspelling: Mapped[str] = mapped_column(String(255), nullable=False)
     correction: Mapped[str] = mapped_column(String(255), nullable=False)
     error_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -120,8 +122,8 @@ class UserConfusionPair(Base):
         UniqueConstraint("user_id", "word_a", "word_b"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     word_a: Mapped[str] = mapped_column(String(100), nullable=False)
     word_b: Mapped[str] = mapped_column(String(100), nullable=False)
     confusion_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -138,8 +140,8 @@ class PersonalDictionary(Base):
         UniqueConstraint("user_id", "word"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     word: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
     added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -155,8 +157,8 @@ class ProgressSnapshot(Base):
         UniqueConstraint("user_id", "week_start"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     week_start: Mapped[date] = mapped_column(Date, nullable=False)
     total_words_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_corrections: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -174,7 +176,7 @@ class ConfusionPair(Base):
 
     __tablename__ = "confusion_pairs"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     language: Mapped[str] = mapped_column(String(10), nullable=False)
     word1: Mapped[str] = mapped_column(String(100), nullable=False)
     word2: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -187,8 +189,43 @@ class ErrorPattern(Base):
 
     __tablename__ = "error_patterns"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     examples: Mapped[list] = mapped_column(JSONB, default=list)
+
+
+class Folder(Base):
+    """User folder for organising documents."""
+
+    __tablename__ = "folders"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="folders")
+    documents: Mapped[list["Document"]] = relationship(back_populates="folder")
+
+
+class Document(Base):
+    """User document."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    folder_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="Untitled Document")
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="documents")
+    folder: Mapped["Folder | None"] = relationship(back_populates="documents")

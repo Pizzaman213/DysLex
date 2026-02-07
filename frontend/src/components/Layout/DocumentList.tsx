@@ -2,10 +2,12 @@ import { useState } from 'react';
 import {
   DndContext,
   DragEndEvent,
+  DragOverEvent,
   DragOverlay,
   DragStartEvent,
   PointerSensor,
   KeyboardSensor,
+  useDroppable,
   useSensor,
   useSensors,
   pointerWithin,
@@ -21,8 +23,10 @@ import { SortableDocItem } from './SortableDocItem';
 import { FolderItem } from './FolderItem';
 
 const collisionDetection: CollisionDetection = (args) => {
-  // First check for pointer-within collisions (folder drop targets)
+  // First check for pointer-within collisions (folder drop targets + root zone)
   const pointerCollisions = pointerWithin(args);
+
+  // Prioritize folder droppables
   const folderDropTarget = pointerCollisions.find((c) =>
     String(c.id).startsWith('droppable-')
   );
@@ -30,8 +34,23 @@ const collisionDetection: CollisionDetection = (args) => {
     return [folderDropTarget];
   }
 
-  // Fall back to closest center for reordering
-  return closestCenter(args);
+  // Check for root drop zone
+  const rootZone = pointerCollisions.find((c) => c.id === 'root-drop-zone');
+
+  // Use closestCenter among root items for positioning
+  const centerCollisions = closestCenter(args);
+
+  // If pointer is in root zone but closestCenter found something, use that for ordering
+  if (rootZone && centerCollisions.length > 0) {
+    return centerCollisions;
+  }
+
+  // If pointer is in root zone but nothing from closestCenter, return root zone
+  if (rootZone) {
+    return [rootZone];
+  }
+
+  return centerCollisions;
 };
 
 export function DocumentList() {
@@ -48,6 +67,12 @@ export function DocumentList() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
+  // Root drop zone — allows dragging docs back to root even when only folders exist
+  const { setNodeRef: setRootDropRef } = useDroppable({
+    id: 'root-drop-zone',
+    data: { type: 'root' },
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -59,7 +84,7 @@ export function DocumentList() {
     setActiveId(String(event.active.id));
   };
 
-  const handleDragOver = (event: DragEndEvent) => {
+  const handleDragOver = (event: DragOverEvent) => {
     const { over } = event;
     if (over && String(over.id).startsWith('droppable-')) {
       const folderId = String(over.id).replace('droppable-', '');
@@ -79,22 +104,22 @@ export function DocumentList() {
     const activeIdStr = String(active.id);
     const overIdStr = String(over.id);
     const activeData = active.data.current as { type: string; folderId?: string | null } | undefined;
+    const overData = over.data.current as { type: string; folderId?: string | null } | undefined;
 
-    // Only handle document drags (not folder-on-folder)
-    if (activeData?.type !== 'document') {
-      // Folder reorder in root
-      if (activeData?.type === 'folder' && activeIdStr !== overIdStr) {
-        // If dropped on another root-level item, reorder
-        if (rootOrder.includes(overIdStr)) {
-          reorderRoot(activeIdStr, overIdStr);
-        }
+    // Folder reorder in root
+    if (activeData?.type === 'folder') {
+      if (activeIdStr !== overIdStr && rootOrder.includes(overIdStr)) {
+        reorderRoot(activeIdStr, overIdStr);
       }
       return;
     }
 
+    // Only handle document drags from here
+    if (activeData?.type !== 'document') return;
+
     const docFolderId = activeData.folderId ?? null;
 
-    // Case 1: Document dropped on a folder droppable
+    // Dropped on a folder's droppable zone → move INTO that folder
     if (overIdStr.startsWith('droppable-')) {
       const targetFolderId = overIdStr.replace('droppable-', '');
       if (docFolderId !== targetFolderId) {
@@ -103,28 +128,36 @@ export function DocumentList() {
       return;
     }
 
-    // Case 2: Document dropped on a folder sortable item
-    const overData = over.data.current as { type: string; folderId?: string | null } | undefined;
-    if (overData?.type === 'folder') {
-      moveDocumentToFolder(activeIdStr, overIdStr);
+    // Dropped on root drop zone with no specific target → move to root
+    if (overIdStr === 'root-drop-zone') {
+      if (docFolderId) {
+        moveDocumentToFolder(activeIdStr, null);
+      }
       return;
     }
 
-    // Case 3: Reorder within the same context
     if (activeIdStr === overIdStr) return;
 
+    // Determine where the over target lives
+    const isOverInRoot = rootOrder.includes(overIdStr);
     const overFolderId = overData?.folderId ?? null;
 
-    if (docFolderId && docFolderId === overFolderId) {
-      // Reorder within same folder
-      reorderInFolder(docFolderId, activeIdStr, overIdStr);
-    } else if (!docFolderId && !overFolderId) {
-      // Reorder within root
+    if (docFolderId && isOverInRoot) {
+      // Doc is in a folder, dropped on a root-level item → move to root & reorder
+      moveDocumentToFolder(activeIdStr, null);
       reorderRoot(activeIdStr, overIdStr);
-    } else {
-      // Cross-context: move doc to the target's context
-      const targetFolder = overFolderId ?? null;
-      moveDocumentToFolder(activeIdStr, targetFolder);
+    } else if (!docFolderId && isOverInRoot) {
+      // Both in root → simple reorder
+      reorderRoot(activeIdStr, overIdStr);
+    } else if (docFolderId && overFolderId && docFolderId === overFolderId) {
+      // Reorder within the same folder
+      reorderInFolder(docFolderId, activeIdStr, overIdStr);
+    } else if (overFolderId && docFolderId !== overFolderId) {
+      // Cross-folder move
+      moveDocumentToFolder(activeIdStr, overFolderId);
+    } else if (!docFolderId && overFolderId) {
+      // Root doc dropped on a doc inside a folder → move into that folder
+      moveDocumentToFolder(activeIdStr, overFolderId);
     }
   };
 
@@ -143,7 +176,7 @@ export function DocumentList() {
   return (
     <div>
       <div className="sb-title">Documents</div>
-      <div className="doc-list">
+      <div className="doc-list" ref={setRootDropRef}>
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetection}

@@ -3,13 +3,6 @@ import { NavIcon } from '@/components/Shared/NavIcon';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { DocumentList } from './DocumentList';
 
-const MODE_ITEMS = [
-  { to: '/capture', label: 'Capture', icon: 'mic' as const },
-  { to: '/mindmap', label: 'Mind Map', icon: 'mindmap' as const },
-  { to: '/draft', label: 'Draft', icon: 'edit' as const },
-  { to: '/polish', label: 'Polish', icon: 'check' as const },
-];
-
 const THEMES = [
   { id: 'cream', label: 'Cream', className: 'tsw-cream' },
   { id: 'night', label: 'Night', className: 'tsw-night' },
@@ -17,15 +10,45 @@ const THEMES = [
 ] as const;
 
 export function Sidebar() {
-  const { theme, setTheme } = useSettingsStore();
+  const {
+    theme, setTheme, mindMapEnabled, draftModeEnabled, polishModeEnabled,
+    sidebarCollapsed, toggleSidebar,
+  } = useSettingsStore();
+
+  const modeItems = [
+    { to: '/capture', label: 'Capture', icon: 'mic' as const, enabled: true },
+    { to: '/mindmap', label: 'Mind Map', icon: 'mindmap' as const, enabled: mindMapEnabled },
+    { to: '/draft', label: 'Draft', icon: 'edit' as const, enabled: draftModeEnabled },
+    { to: '/polish', label: 'Polish', icon: 'check' as const, enabled: polishModeEnabled },
+  ];
+
+  const visibleModes = modeItems.filter((item) => item.enabled);
 
   return (
-    <aside className="sidebar" role="navigation" aria-label="Main navigation">
+    <aside
+      className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+      role="navigation"
+      aria-label="Main navigation"
+    >
+      {/* Logo toggle */}
+      <button
+        className={`sidebar-logo-btn ${sidebarCollapsed ? 'flipped' : ''}`}
+        onClick={toggleSidebar}
+        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <svg className="sidebar-logo-svg" width="36" height="36" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+          <rect width="28" height="28" rx="8" fill="var(--accent)" />
+          <path d="M8 8h4v12H8V8zm6 0h4c2.2 0 4 1.8 4 4s-1.8 4-4 4h-4V8z" fill="var(--text-inverse, #fff)" />
+        </svg>
+        <span className="sidebar-brand">DysLex AI</span>
+      </button>
+
       {/* Writing Modes */}
       <div>
         <div className="sb-title">Writing Mode</div>
-        <div className="mode-selector">
-          {MODE_ITEMS.map((item) => (
+        <div className={`mode-selector ${sidebarCollapsed ? 'mode-selector-collapsed' : ''}`}>
+          {visibleModes.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -46,10 +69,12 @@ export function Sidebar() {
       <div className="sb-sep" />
 
       {/* Documents */}
-      <DocumentList />
+      <div className="sidebar-docs-wrap">
+        <DocumentList />
+      </div>
 
       {/* Theme Swatches */}
-      <div className="theme-row">
+      <div className={`theme-row ${sidebarCollapsed ? 'theme-row-collapsed' : ''}`}>
         <span className="theme-row-label">Theme</span>
         {THEMES.map((t) => (
           <button

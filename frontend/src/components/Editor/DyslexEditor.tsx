@@ -11,6 +11,7 @@ import { useEditorStore, Correction } from '../../stores/editorStore';
 import { CorrectionHighlightExtension } from './extensions/CorrectionHighlightExtension';
 import { FocusModeExtension } from './extensions/FocusModeExtension';
 import { TrackedChangesExtension } from './extensions/TrackedChangesExtension';
+import { PageBreakExtension } from './extensions/PageBreakExtension';
 import { useFrustrationDetector } from '../../hooks/useFrustrationDetector';
 import { CheckInPrompt } from './CheckInPrompt';
 
@@ -34,7 +35,11 @@ export function DyslexEditor({ mode = 'draft', onEditorReady, onCorrectionClick 
   // Build extensions based on mode
   const extensions = useMemo(() => {
     const baseExtensions = [
-      StarterKit,
+      StarterKit.configure({
+        heading: {
+          levels: [1, 2, 3],
+        },
+      }),
       Placeholder.configure({
         placeholder: 'Start writing...',
       }),
@@ -45,6 +50,7 @@ export function DyslexEditor({ mode = 'draft', onEditorReady, onCorrectionClick 
       CharacterCount,
       Highlight,
       FocusModeExtension,
+      PageBreakExtension,
     ];
 
     // Add mode-specific extensions

@@ -1,5 +1,7 @@
 """Integration tests for GDPR compliance features."""
 
+import uuid
+
 import pytest
 from datetime import date, datetime
 
@@ -28,7 +30,7 @@ async def test_user_with_data(db):
     """Create a test user with data in all tables."""
     # Create user
     user = User(
-        id="test-user-1",
+        id=str(uuid.uuid4()),
         email="test@example.com",
         name="Test User",
         password_hash="hash123",
@@ -211,7 +213,7 @@ async def test_export_data_with_no_activity(db):
     """Export should work even if user has no activity data."""
     # Create user with only default settings
     user = User(
-        id="test-user-2",
+        id=str(uuid.uuid4()),
         email="empty@example.com",
         name="Empty User",
         password_hash="hash123",
@@ -235,7 +237,7 @@ async def test_export_data_with_no_activity(db):
 async def test_settings_cascade_delete(db):
     """User settings should be cascade deleted with user."""
     user = User(
-        id="test-user-3",
+        id=str(uuid.uuid4()),
         email="settings@example.com",
         name="Settings User",
         password_hash="hash123",

@@ -9,9 +9,11 @@ interface ShareDialogProps {
 
 export const ShareDialog: React.FC<ShareDialogProps> = ({ isOpen, onClose }) => {
   const { showToast } = useToast();
-  const [shareableLink] = useState(
-    () => `https://dyslex.ai/doc/${crypto.randomUUID().split('-')[0]}`
-  );
+  const [shareableLink] = useState(() => {
+    const id = crypto.randomUUID?.()
+      ?? Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, '0')).join('');
+    return `https://dyslex.ai/doc/${id.split('-')[0]}`;
+  });
 
   const handleCopyLink = async () => {
     try {

@@ -4,6 +4,7 @@ Replaces hardcoded stubs with a real service that reads from normalized
 PostgreSQL tables and builds personalised LLM context for every prompt.
 """
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 
@@ -16,6 +17,7 @@ from app.db.repositories import (
     user_confusion_pair_repo,
     user_error_pattern_repo,
 )
+from app.db.repositories import progress_repo, settings_repo, document_repo
 from app.services.redis_client import cache_delete, cache_get, cache_set
 from app.models.error_log import (
     ErrorProfile,
@@ -123,6 +125,7 @@ class ErrorProfileService:
         """Build the context blob injected into every Nemotron prompt.
 
         Uses get_profile_data() to reduce queries: 1 (patterns) + 1 (pairs) + 1 (dict) = 3.
+        Then fetches enrichment data (trends, stats, streak, settings, documents) in parallel.
         Results are cached in Redis for 10 minutes.
         """
         cache_key = f"llm_context:{user_id}"
@@ -139,6 +142,57 @@ class ErrorProfileService:
         type_counts = profile_data["type_counts"]
 
         breakdown = self._build_breakdown(type_counts)
+
+        # Fetch enrichment data in parallel — all gracefully degradable
+        (
+            trends_result,
+            mastered_result,
+            stats_result,
+            streak_result,
+            top_errors_result,
+            user_settings_result,
+            docs_result,
+        ) = await asyncio.gather(
+            progress_repo.get_improvement_by_error_type(db, user_id),
+            progress_repo.get_mastered_words(db, user_id),
+            progress_repo.get_total_stats(db, user_id),
+            progress_repo.get_writing_streak(db, user_id),
+            progress_repo.get_top_errors(db, user_id),
+            settings_repo.get_settings_by_user_id(db, user_id),
+            document_repo.get_documents_by_user(db, user_id),
+            return_exceptions=True,
+        )
+
+        improvement_trends: list[dict] = []
+        if not isinstance(trends_result, BaseException):
+            improvement_trends = trends_result
+
+        mastered_words: list[str] = []
+        if not isinstance(mastered_result, BaseException):
+            mastered_words = [m["word"] for m in mastered_result]
+
+        total_stats: dict | None = None
+        if not isinstance(stats_result, BaseException):
+            total_stats = stats_result
+
+        writing_streak: dict | None = None
+        if not isinstance(streak_result, BaseException):
+            writing_streak = streak_result
+
+        recent_error_count: int | None = None
+        if not isinstance(top_errors_result, BaseException):
+            recent_error_count = len(top_errors_result)
+
+        correction_aggressiveness = 50
+        if not isinstance(user_settings_result, BaseException) and user_settings_result is not None:
+            correction_aggressiveness = user_settings_result.correction_aggressiveness
+
+        recent_document_topics: list[str] = []
+        if not isinstance(docs_result, BaseException):
+            recent_document_topics = [
+                d.title for d in docs_result[:10]
+                if d.title and d.title != "Untitled Document"
+            ]
 
         # Derive a rough writing level from total pattern count
         if total == 0:
@@ -158,6 +212,50 @@ class ErrorProfileService:
             context_notes.append("User has frequent letter reversals (b/d, p/q) — check carefully.")
         if breakdown.phonetic > 30:
             context_notes.append("User often writes phonetically — infer intended words from pronunciation.")
+        if breakdown.grammar > 20:
+            context_notes.append(
+                "User frequently makes grammar errors — check subject-verb agreement, "
+                "tense consistency, articles, and missing function words."
+            )
+
+        # Enriched context notes
+        if correction_aggressiveness < 30:
+            context_notes.append(
+                "User prefers minimal corrections — only flag clear, unambiguous errors. "
+                "Skip stylistic suggestions and borderline issues."
+            )
+        elif correction_aggressiveness > 70:
+            context_notes.append(
+                "User wants thorough correction — flag everything including stylistic issues, "
+                "word choice, and minor grammar imperfections."
+            )
+
+        if mastered_words:
+            context_notes.append(
+                f"User recently mastered these words (lower priority to flag): {', '.join(mastered_words[:10])}"
+            )
+
+        for trend in improvement_trends:
+            if trend.get("trend") == "needs_attention":
+                context_notes.append(
+                    f"Error type '{trend['error_type']}' is trending up ({trend['change_percent']:+.0f}%) — needs extra attention."
+                )
+            elif trend.get("trend") == "improving":
+                context_notes.append(
+                    f"Error type '{trend['error_type']}' is improving ({trend['change_percent']:+.0f}%) — positive reinforcement."
+                )
+
+        if writing_streak and writing_streak.get("current_streak", 0) >= 3:
+            context_notes.append(
+                f"User has a {writing_streak['current_streak']}-day writing streak — they're engaged and practicing."
+            )
+
+        # Extract grammar-specific patterns for prompt injection
+        grammar_subtypes = {"grammar", "subject_verb", "tense", "article", "word_order", "missing_word", "run_on"}
+        grammar_patterns = [
+            {"misspelling": p.misspelling, "correction": p.correction, "subtype": p.error_type, "frequency": p.frequency}
+            for p in top_patterns if p.error_type in grammar_subtypes
+        ][:10]
 
         result = LLMContext(
             top_errors=[
@@ -172,6 +270,14 @@ class ErrorProfileService:
             writing_level=writing_level,
             personal_dictionary=[e.word for e in dictionary],
             context_notes=context_notes,
+            grammar_patterns=grammar_patterns,
+            improvement_trends=improvement_trends,
+            mastered_words=mastered_words,
+            total_stats=total_stats,
+            writing_streak=writing_streak,
+            recent_error_count=recent_error_count,
+            recent_document_topics=recent_document_topics,
+            correction_aggressiveness=correction_aggressiveness,
         )
         await cache_set(cache_key, result.model_dump(), ttl_seconds=600)
         return result
@@ -426,7 +532,13 @@ def _normalize_error_type(error_type: str) -> str:
         "omission": "omission",
         "transposition": "transposition",
         "spelling": "other",
-        "grammar": "other",
+        "grammar": "grammar",
+        "subject_verb": "grammar",
+        "tense": "grammar",
+        "article": "grammar",
+        "word_order": "grammar",
+        "missing_word": "grammar",
+        "run_on": "grammar",
         "self-correction": "other",
     }
     return mapping.get(error_type.lower(), "other")

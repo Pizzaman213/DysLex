@@ -36,3 +36,4 @@ class ExtractIdeasRequest(BaseModel):
 class ExtractIdeasResponse(BaseModel):
     """Response containing extracted thought cards."""
     cards: List[ThoughtCard] = Field(default_factory=list, description="List of extracted idea cards")
+    topic: str = Field(default="", description="Central theme or topic of the extracted ideas")

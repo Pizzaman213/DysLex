@@ -1,5 +1,7 @@
 """Tests for user settings endpoints and repository."""
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +15,19 @@ from app.db.repositories.settings_repo import (
 )
 
 
+async def _create_test_user(db: AsyncSession) -> str:
+    """Create a test user and return its ID."""
+    user_id = str(uuid.uuid4())
+    user = UserORM(id=user_id, email=f"{user_id}@test.com", name="Test", password_hash="x")
+    db.add(user)
+    await db.flush()
+    return user_id
+
+
 @pytest.mark.asyncio
 async def test_create_default_settings(db_session: AsyncSession):
     """Test creating default settings for a user."""
-    user_id = "test-user-123"
+    user_id = await _create_test_user(db_session)
 
     settings = await create_default_settings(db_session, user_id)
 
@@ -34,7 +45,7 @@ async def test_create_default_settings(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_get_settings_by_user_id(db_session: AsyncSession):
     """Test retrieving settings by user ID."""
-    user_id = "test-user-456"
+    user_id = await _create_test_user(db_session)
 
     # Create settings first
     created = await create_default_settings(db_session, user_id)
@@ -50,14 +61,14 @@ async def test_get_settings_by_user_id(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_get_settings_nonexistent_user(db_session: AsyncSession):
     """Test retrieving settings for a user that doesn't exist."""
-    settings = await get_settings_by_user_id(db_session, "nonexistent-user")
+    settings = await get_settings_by_user_id(db_session, str(uuid.uuid4()))
     assert settings is None
 
 
 @pytest.mark.asyncio
 async def test_update_settings(db_session: AsyncSession):
     """Test updating user settings."""
-    user_id = "test-user-789"
+    user_id = await _create_test_user(db_session)
 
     # Create default settings
     await create_default_settings(db_session, user_id)
@@ -82,7 +93,7 @@ async def test_update_settings(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_get_or_create_settings_creates_if_missing(db_session: AsyncSession):
     """Test get_or_create creates settings if they don't exist."""
-    user_id = "test-user-new"
+    user_id = await _create_test_user(db_session)
 
     settings = await get_or_create_settings(db_session, user_id)
 
@@ -94,7 +105,7 @@ async def test_get_or_create_settings_creates_if_missing(db_session: AsyncSessio
 @pytest.mark.asyncio
 async def test_get_or_create_settings_returns_existing(db_session: AsyncSession):
     """Test get_or_create returns existing settings."""
-    user_id = "test-user-existing"
+    user_id = await _create_test_user(db_session)
 
     # Create settings with custom values
     created = await create_default_settings(db_session, user_id)

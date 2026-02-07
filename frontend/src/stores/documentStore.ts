@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Document, Folder } from '@/types/document';
+import {
+  syncCreateDocument,
+  syncDeleteDocument,
+  syncUpdateDocumentTitle,
+  syncUpdateDocumentContent,
+  syncCreateFolder,
+  syncDeleteFolder,
+  syncRenameFolder,
+  syncMoveDocument,
+  initializeFromServer as initSync,
+} from '@/services/documentSync';
 
 interface DocumentState {
   documents: Document[];
@@ -22,10 +33,14 @@ interface DocumentState {
   moveDocumentToFolder: (docId: string, folderId: string | null) => void;
   reorderRoot: (activeId: string, overId: string) => void;
   reorderInFolder: (folderId: string, activeId: string, overId: string) => void;
+
+  initializeFromServer: () => Promise<void>;
 }
 
+const DEFAULT_DOC_ID = '00000000-0000-4000-8000-000000000001';
+
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return crypto.randomUUID();
 }
 
 function arrayMove<T>(arr: T[], from: number, to: number): T[] {
@@ -40,7 +55,7 @@ export const useDocumentStore = create<DocumentState>()(
     (set, get) => ({
       documents: [
         {
-          id: 'default',
+          id: DEFAULT_DOC_ID,
           title: 'Untitled Document',
           content: '',
           mode: 'draft' as const,
@@ -49,9 +64,9 @@ export const useDocumentStore = create<DocumentState>()(
           folderId: null,
         },
       ],
-      activeDocumentId: 'default',
+      activeDocumentId: DEFAULT_DOC_ID,
       folders: [],
-      rootOrder: ['default'],
+      rootOrder: [DEFAULT_DOC_ID],
       folderOrders: {},
 
       createDocument: () => {
@@ -70,6 +85,7 @@ export const useDocumentStore = create<DocumentState>()(
           activeDocumentId: id,
           rootOrder: [...state.rootOrder, id],
         }));
+        syncCreateDocument(doc);
         return id;
       },
 
@@ -93,6 +109,7 @@ export const useDocumentStore = create<DocumentState>()(
           rootOrder: state.rootOrder.filter((rid) => rid !== id),
           folderOrders: newFolderOrders,
         }));
+        syncDeleteDocument(id);
       },
 
       switchDocument: (id: string) => {
@@ -105,6 +122,7 @@ export const useDocumentStore = create<DocumentState>()(
             d.id === id ? { ...d, title, updatedAt: Date.now() } : d
           ),
         }));
+        syncUpdateDocumentTitle(id, title);
       },
 
       updateDocumentContent: (id: string, content: string) => {
@@ -113,6 +131,7 @@ export const useDocumentStore = create<DocumentState>()(
             d.id === id ? { ...d, content, updatedAt: Date.now() } : d
           ),
         }));
+        syncUpdateDocumentContent(id, content);
       },
 
       createFolder: (name?: string) => {
@@ -128,6 +147,7 @@ export const useDocumentStore = create<DocumentState>()(
           rootOrder: [...state.rootOrder, id],
           folderOrders: { ...state.folderOrders, [id]: [] },
         }));
+        syncCreateFolder(folder);
         return id;
       },
 
@@ -149,6 +169,7 @@ export const useDocumentStore = create<DocumentState>()(
             docsInFolder.includes(d.id) ? { ...d, folderId: null } : d
           ),
         }));
+        syncDeleteFolder(id);
       },
 
       renameFolder: (id: string, name: string) => {
@@ -157,6 +178,7 @@ export const useDocumentStore = create<DocumentState>()(
             f.id === id ? { ...f, name } : f
           ),
         }));
+        syncRenameFolder(id, name);
       },
 
       toggleFolder: (id: string) => {
@@ -165,6 +187,7 @@ export const useDocumentStore = create<DocumentState>()(
             f.id === id ? { ...f, isExpanded: !f.isExpanded } : f
           ),
         }));
+        // toggleFolder is UI-only state (isExpanded) — no server sync needed
       },
 
       moveDocumentToFolder: (docId: string, folderId: string | null) => {
@@ -203,6 +226,7 @@ export const useDocumentStore = create<DocumentState>()(
           folderOrders: newFolderOrders,
           rootOrder: newRootOrder,
         });
+        syncMoveDocument(docId, folderId);
       },
 
       reorderRoot: (activeId: string, overId: string) => {
@@ -227,10 +251,20 @@ export const useDocumentStore = create<DocumentState>()(
           },
         });
       },
+
+      initializeFromServer: async () => {
+        await initSync(
+          () => ({
+            documents: get().documents,
+            folders: get().folders,
+          }),
+          (patch) => set(patch),
+        );
+      },
     }),
     {
       name: 'dyslex-documents',
-      version: 2,
+      version: 3,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
 
@@ -243,13 +277,44 @@ export const useDocumentStore = create<DocumentState>()(
           }));
           const rootOrder = migratedDocs.map((d) => d.id);
 
-          return {
-            ...state,
-            documents: migratedDocs,
-            folders: [],
-            rootOrder,
-            folderOrders: {},
-          };
+          state.documents = migratedDocs;
+          state.folders = [];
+          state.rootOrder = rootOrder;
+          state.folderOrders = {};
+        }
+
+        if (version < 3) {
+          // Migration from v2: replace non-UUID document IDs with valid UUIDs
+          const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const idMap: Record<string, string> = {};
+
+          const docs = (state.documents ?? []) as Document[];
+          const migratedDocs = docs.map((d) => {
+            if (!UUID_RE.test(d.id)) {
+              const newId = d.id === 'default' ? DEFAULT_DOC_ID : crypto.randomUUID();
+              idMap[d.id] = newId;
+              return { ...d, id: newId };
+            }
+            return d;
+          });
+          state.documents = migratedDocs;
+
+          if (state.activeDocumentId && idMap[state.activeDocumentId as string]) {
+            state.activeDocumentId = idMap[state.activeDocumentId as string];
+          }
+
+          if (Array.isArray(state.rootOrder)) {
+            state.rootOrder = (state.rootOrder as string[]).map(
+              (id) => idMap[id] ?? id
+            );
+          }
+
+          if (state.folderOrders && typeof state.folderOrders === 'object') {
+            const fo = state.folderOrders as Record<string, string[]>;
+            for (const key of Object.keys(fo)) {
+              fo[key] = fo[key].map((id) => idMap[id] ?? id);
+            }
+          }
         }
 
         return state;

@@ -74,6 +74,10 @@
   --color-correction-confusion: rgba(224, 123, 76, 0.15);
   --color-correction-phonetic: rgba(71, 168, 85, 0.15);
 
+  /* Desk & Page */
+  --bg-desk: #E8E4DD;
+  --shadow-page: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.10);
+
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.06);

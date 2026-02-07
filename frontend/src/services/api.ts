@@ -158,9 +158,24 @@ export const api = {
       title: string;
       body: string;
       sub_ideas?: Array<{ id: string; title: string; body: string }>;
-    }> }>(
+    }>; topic?: string; clusterNames?: Record<string, string> }>(
       '/api/v1/capture/extract-ideas',
       { method: 'POST', body: JSON.stringify({ transcript }) },
+    ),
+
+  extractIdeasFromImage: (imageBase64: string, mimeType: string = 'image/jpeg', hint?: string) =>
+    requestWithRetry<{ cards: Array<{
+      id: string;
+      title: string;
+      body: string;
+      sub_ideas?: Array<{ id: string; title: string; body: string }>;
+    }>; topic?: string }>(
+      '/api/v1/vision/extract-ideas',
+      {
+        method: 'POST',
+        body: JSON.stringify({ image_base64: imageBase64, mime_type: mimeType, hint }),
+        retry: true,
+      },
     ),
 
   // -----------------------------------------------------------------------
@@ -209,13 +224,14 @@ export const api = {
       };
     }
 
-    const response = await request<{
+    const response = await requestWithRetry<{
       status: string;
       data: { corrections: BackendCorrection[] };
       meta: { processing_time_ms: number; tier_used: string };
     }>('/api/v1/correct/document', {
       method: 'POST',
       body: JSON.stringify({ text, mode: 'document' }),
+      retry: true,
     });
 
     // Generate unique IDs
@@ -242,17 +258,20 @@ export const api = {
       return 'replace';
     };
 
-    // Map backend format to frontend TrackedChange format
-    return response.data.corrections.map((c) => ({
-      id: generateId(),
-      type: getChangeType(c.original, c.correction),
-      original: c.original,
-      text: c.correction,
-      start: c.position.start,
-      end: c.position.end,
-      explanation: c.explanation || `Suggested ${mapErrorTypeToCategory(c.error_type)} correction`,
-      category: mapErrorTypeToCategory(c.error_type),
-    }));
+    // Filter out corrections without position data (can't be applied without positions)
+    // and map backend format to frontend TrackedChange format
+    return response.data.corrections
+      .filter((c) => c.position && c.position.start != null && c.position.end != null)
+      .map((c) => ({
+        id: generateId(),
+        type: getChangeType(c.original, c.correction),
+        original: c.original,
+        text: c.correction,
+        start: c.position.start,
+        end: c.position.end,
+        explanation: c.explanation || `Suggested ${mapErrorTypeToCategory(c.error_type)} correction`,
+        category: mapErrorTypeToCategory(c.error_type),
+      }));
   },
 
   // -----------------------------------------------------------------------
@@ -301,6 +320,23 @@ export const api = {
     request<{ status: string; data: { audio_url: string } }>('/api/v1/voice/speak', {
       method: 'POST',
       body: JSON.stringify({ text, voice }),
+    }),
+
+  textToSpeechBatch: (
+    sentences: Array<{ index: number; text: string }>,
+    voice: string = 'default',
+    signal?: AbortSignal,
+  ) =>
+    requestWithRetry<{
+      status: string;
+      data: {
+        results: Array<{ index: number; audio_url: string; cached: boolean }>;
+      };
+    }>('/api/v1/voice/speak-batch', {
+      method: 'POST',
+      body: JSON.stringify({ sentences, voice }),
+      signal,
+      retry: true,
     }),
 
   transcribeVoice: async (audioBlob: Blob) => {
@@ -423,6 +459,117 @@ export const api = {
     request<any>(`/api/v1/users/${userId}`, { method: 'DELETE' }),
 
   // -----------------------------------------------------------------------
+  // Documents & Folders
+  // -----------------------------------------------------------------------
+  listDocuments: () =>
+    request<{
+      status: string;
+      data: {
+        documents: Array<{
+          id: string;
+          title: string;
+          content: string;
+          mode: string;
+          folder_id: string | null;
+          sort_order: number;
+          created_at: string | null;
+          updated_at: string | null;
+        }>;
+        folders: Array<{
+          id: string;
+          name: string;
+          sort_order: number;
+          created_at: string | null;
+          updated_at: string | null;
+        }>;
+      };
+    }>('/api/v1/documents'),
+
+  createDocument: (doc: {
+    id: string;
+    title?: string;
+    content?: string;
+    mode?: string;
+    folder_id?: string | null;
+    sort_order?: number;
+  }) =>
+    request<{ status: string; data: any }>('/api/v1/documents/docs', {
+      method: 'POST',
+      body: JSON.stringify(doc),
+    }),
+
+  updateDocument: (id: string, updates: {
+    title?: string;
+    content?: string;
+    mode?: string;
+    folder_id?: string | null;
+    sort_order?: number;
+  }) =>
+    request<{ status: string; data: any }>(`/api/v1/documents/docs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  deleteDocument: (id: string) =>
+    request<void>(`/api/v1/documents/docs/${id}`, { method: 'DELETE' }),
+
+  createFolder: (folder: {
+    id: string;
+    name?: string;
+    sort_order?: number;
+  }) =>
+    request<{ status: string; data: any }>('/api/v1/documents/folders', {
+      method: 'POST',
+      body: JSON.stringify(folder),
+    }),
+
+  updateFolder: (id: string, updates: { name?: string; sort_order?: number }) =>
+    request<{ status: string; data: any }>(`/api/v1/documents/folders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  deleteFolder: (id: string) =>
+    request<void>(`/api/v1/documents/folders/${id}`, { method: 'DELETE' }),
+
+  syncDocuments: (payload: {
+    documents: Array<{
+      id: string;
+      title: string;
+      content: string;
+      mode: string;
+      folder_id: string | null;
+      sort_order: number;
+    }>;
+    folders: Array<{
+      id: string;
+      name: string;
+      sort_order: number;
+    }>;
+  }) =>
+    request<{ status: string; data: { folders_synced: number; documents_synced: number } }>(
+      '/api/v1/documents/sync',
+      { method: 'PUT', body: JSON.stringify(payload) },
+    ),
+
+  // -----------------------------------------------------------------------
+  // Coach
+  // -----------------------------------------------------------------------
+  coachChat: (
+    message: string,
+    writingContext?: string,
+    sessionStats?: { totalWordsWritten: number; timeSpent: number; correctionsApplied: number },
+  ) =>
+    request<{ status: string; data: { reply: string } }>('/api/v1/coach/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        message,
+        writing_context: writingContext,
+        session_stats: sessionStats,
+      }),
+    }),
+
+  // -----------------------------------------------------------------------
   // Scaffold
   // -----------------------------------------------------------------------
   generateScaffold: (data: {
@@ -461,6 +608,7 @@ export const api = {
         description: string;
         confidence?: number;
       }>;
+      clusterNames?: Record<string, string>;
     }>('/api/v1/mindmap/suggest-connections', {
       method: 'POST',
       body: JSON.stringify({ nodes, edges }),

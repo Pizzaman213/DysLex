@@ -11,12 +11,14 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.routes import (
     auth,
     capture,
+    coach,
     corrections,
+    documents,
     learn,
     log_correction,
     profiles,
@@ -24,6 +26,7 @@ from app.api.routes import (
     scaffold,
     snapshots,
     users,
+    vision,
     voice,
 )
 from app.config import settings
@@ -58,13 +61,40 @@ async def periodic_cleanup():
 _cleanup_task: asyncio.Task | None = None
 
 
+async def _ensure_demo_user() -> None:
+    """Create the dev-mode demo user if it doesn't already exist."""
+    from app.api.dependencies import DEMO_USER_ID
+    from app.db.database import async_session_factory
+    from app.db.models import User
+
+    async with async_session_factory() as session:
+        from sqlalchemy import select
+        result = await session.execute(
+            select(User).where(User.id == DEMO_USER_ID)
+        )
+        if result.scalar_one_or_none() is None:
+            session.add(User(
+                id=DEMO_USER_ID,
+                email="demo@dyslex.local",
+                name="Demo User",
+                password_hash="!disabled",
+            ))
+            await session.commit()
+            logger.info("Created demo user %s", DEMO_USER_ID)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - handles startup and shutdown."""
     global _cleanup_task
     # Startup
     await get_redis()  # Initialize Redis connection pool
+    if settings.dev_mode:
+        await _ensure_demo_user()
     start_scheduler()  # Start background job scheduler
+    if settings.llm_tool_calling_enabled:
+        from app.core.llm_tools import preload_static_resources
+        preload_static_resources()
     _cleanup_task = asyncio.create_task(periodic_cleanup())
     yield
     # Shutdown
@@ -105,17 +135,36 @@ app.state.limiter = limiter
 # Security headers middleware
 # ---------------------------------------------------------------------------
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        if not settings.dev_mode:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=63072000; includeSubDomains"
-            )
-        return response
+class SecurityHeadersMiddleware:
+    """Add security headers to every response.
+
+    Uses pure ASGI instead of BaseHTTPMiddleware to avoid swallowing
+    response headers (including CORS) on error paths.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"x-content-type-options", b"nosniff"))
+                headers.append((b"x-frame-options", b"DENY"))
+                headers.append((b"x-xss-protection", b"1; mode=block"))
+                if not settings.dev_mode:
+                    headers.append((
+                        b"strict-transport-security",
+                        b"max-age=63072000; includeSubDomains",
+                    ))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
 
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -184,6 +233,9 @@ app.include_router(
 )
 app.include_router(progress.router, prefix="/api/v1/progress", tags=["progress"])
 app.include_router(scaffold.router, prefix="/api/v1/scaffold", tags=["scaffold"])
+app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(vision.router, prefix="/api/v1/vision", tags=["vision"])
+app.include_router(coach.router, prefix="/api/v1/coach", tags=["coach"])
 
 # ---------------------------------------------------------------------------
 # System endpoints

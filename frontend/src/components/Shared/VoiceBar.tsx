@@ -6,6 +6,10 @@ interface VoiceBarProps {
   onStopRecording: () => void;
   onTranscript?: (text: string) => void;
   compact?: boolean;
+  onReadAloud?: () => void;
+  isReadAloudPlaying?: boolean;
+  isReadAloudLoading?: boolean;
+  readAloudDisabled?: boolean;
 }
 
 export function VoiceBar({
@@ -14,6 +18,10 @@ export function VoiceBar({
   onStartRecording,
   onStopRecording,
   compact = false,
+  onReadAloud,
+  isReadAloudPlaying = false,
+  isReadAloudLoading = false,
+  readAloudDisabled = false,
 }: VoiceBarProps) {
   const handleToggle = () => {
     if (isRecording) {
@@ -79,6 +87,30 @@ export function VoiceBar({
 
       {isRecording && (
         <span className="vstatus">Listening...</span>
+      )}
+
+      {onReadAloud && (
+        <button
+          className={`vb vb-speaker${isReadAloudPlaying ? ' playing' : ''}${isReadAloudLoading ? ' loading' : ''}`}
+          onClick={onReadAloud}
+          disabled={isReadAloudLoading || readAloudDisabled}
+          aria-label={isReadAloudLoading ? 'Loading audio' : isReadAloudPlaying ? 'Stop reading' : 'Read aloud'}
+        >
+          <span className="voice-icon" aria-hidden="true">
+            {isReadAloudPlaying ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+            )}
+          </span>
+        </button>
       )}
     </div>
   );

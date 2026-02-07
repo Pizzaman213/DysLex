@@ -14,7 +14,7 @@ from app.middleware.rate_limiter import VOICE_LIMIT, limiter
 from app.models.envelope import success_response
 from app.services.streaming_transcription_service import StreamingTranscriptionService
 from app.services.transcription_service import transcription_service
-from app.services.tts_service import get_available_voices, text_to_speech
+from app.services.tts_service import batch_text_to_speech, get_available_voices, text_to_speech
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,16 @@ router = APIRouter()
 
 class SpeakRequest(BaseModel):
     text: str
+    voice: str = "default"
+
+
+class SentenceItem(BaseModel):
+    index: int
+    text: str
+
+
+class SpeakBatchRequest(BaseModel):
+    sentences: list[SentenceItem]
     voice: str = "default"
 
 
@@ -84,6 +94,25 @@ async def synthesize_speech(
     """Text-to-speech using MagpieTTS."""
     audio_url = await text_to_speech(body.text, body.voice)
     return success_response({"audio_url": audio_url})
+
+
+@router.post("/speak-batch")
+@limiter.limit(VOICE_LIMIT)
+async def synthesize_speech_batch(
+    request: Request,
+    body: SpeakBatchRequest,
+    user_id: CurrentUserId,
+) -> dict:
+    """Batch text-to-speech — synthesize multiple sentences in one request.
+
+    Counts as a single rate-limit hit regardless of sentence count.
+    """
+    if len(body.sentences) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 sentences per batch")
+
+    sentence_dicts = [{"index": s.index, "text": s.text} for s in body.sentences]
+    results = await batch_text_to_speech(sentence_dicts, body.voice)
+    return success_response({"results": results})
 
 
 @router.websocket("/stream")

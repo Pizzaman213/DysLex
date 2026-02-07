@@ -4,14 +4,25 @@
  * Runs the Quick Correction Model locally in the browser using ONNX Runtime Web.
  * Provides fast corrections (<100ms) without API calls.
  *
- * The model detects error positions (BIO labels). Corrections come from:
- * 1. A base dictionary extracted from training data (~37K entries)
- * 2. The user's personalized error profile (auto-built from passive learning)
+ * The model detects error positions (BIO labels). Corrections come from a
+ * three-tier fallback chain:
+ * 1. Dictionary lookup — base (~34K) + user personalized error profile (fastest)
+ * 2. SymSpell edit-distance — catches transpositions/omissions within distance 2
+ * 3. Phonetic matching — Double Metaphone for sound-alike errors
  */
 
 // Dynamic imports — loaded lazily to avoid crashing the app if ONNX backends
 // fail to register (e.g. missing WebGL/WASM support).
+// Import from 'onnxruntime-web/wasm' to only register the WASM backend,
+// avoiding registerBackend crashes from WebGL/WebGPU in v1.18+.
 let ort: typeof import('onnxruntime-web') | null = null;
+
+import {
+  initSymSpell,
+  suggestCorrection,
+  phoneticCorrection,
+  isKnownWord,
+} from './symspellService';
 
 export interface LocalCorrection {
   original: string;
@@ -82,10 +93,14 @@ export async function loadModel(): Promise<void> {
       };
     }
 
+    // Initialize SymSpell + phonetic index (runs in parallel with ONNX load)
+    // Non-blocking: if it fails, we still have dictionary-only mode
+    await initSymSpell();
+
     // Dynamically import onnxruntime-web (avoids registerBackend crash at startup)
     if (!ort) {
       try {
-        ort = await import('onnxruntime-web');
+        ort = await import('onnxruntime-web/wasm') as typeof import('onnxruntime-web');
       } catch (importErr) {
         console.warn('[ONNX] Failed to import onnxruntime-web:', importErr);
         state.error = 'ONNX Runtime not available — using dictionary-only mode';
@@ -143,34 +158,66 @@ export function getDictionarySize(): { base: number; user: number; total: number
 }
 
 /**
- * Look up a correction for a word.
- * User dictionary takes priority over base dictionary.
+ * Look up a correction for a word using three-tier fallback:
+ *   Tier 1: User + base dictionary (fastest, exact match)
+ *   Tier 2: SymSpell edit-distance (catches transpositions, omissions within edit distance 2)
+ *   Tier 3: Phonetic matching (catches sound-alike errors beyond edit distance 2)
  */
 function lookupCorrection(word: string): string | null {
   const lower = word.toLowerCase();
 
-  // User dictionary first (personalized from their error profile)
+  // Skip words in the personal dictionary (user explicitly said "not an error")
+  if (personalDictionary.has(lower)) {
+    return null;
+  }
+
+  // Tier 1: User dictionary first (personalized from their error profile)
   if (lower in state.userDictionary) {
     return state.userDictionary[lower];
   }
 
-  // Base dictionary (from training data)
+  // Tier 1: Base dictionary (from training data)
   if (lower in state.baseDictionary) {
     return state.baseDictionary[lower];
+  }
+
+  // Skip Tier 2/3 for very short words (≤2 chars) — edit distance and
+  // phonetic matching are unreliable at this length ("AI"→"A", "IT"→"I", etc.)
+  if (lower.length > 2) {
+    // Tier 2: SymSpell edit-distance lookup
+    const symspellResult = suggestCorrection(lower);
+    if (symspellResult) {
+      return symspellResult;
+    }
+
+    // Tier 3: Phonetic (Double Metaphone) fallback
+    const phoneticResult = phoneticCorrection(lower);
+    if (phoneticResult) {
+      return phoneticResult;
+    }
   }
 
   return null;
 }
 
 /**
- * Apply correction lookup with capitalization preservation
+ * Apply correction lookup with capitalization preservation.
+ * When called from dictionaryOnlyCorrections (no ONNX model), we skip
+ * words that are known valid English words to avoid false positives.
  */
-function applyCorrection(word: string): string | null {
+function applyCorrection(word: string, skipKnownWords = false): string | null {
   // Strip punctuation to look up the core word
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z]+)([^a-zA-Z]*)$/);
   if (!match) return null;
 
   const [, prefix, core, suffix] = match;
+
+  // In dictionary-only mode (no ONNX model), skip words that are in the
+  // frequency dictionary — they're valid English words, not errors.
+  if (skipKnownWords && isKnownWord(core)) {
+    return null;
+  }
+
   const corrected = lookupCorrection(core);
   if (!corrected) return null;
 
@@ -349,11 +396,12 @@ export async function runLocalCorrection(text: string): Promise<LocalCorrection[
     });
 
     // Convert to ONNX tensors
-    if (!ort) {
+    const ortModule = ort;
+    if (!ortModule) {
       return dictionaryOnlyCorrections(text);
     }
-    const inputIds = new ort.Tensor('int64', encoded.input_ids.data, encoded.input_ids.dims);
-    const attentionMask = new ort.Tensor('int64', encoded.attention_mask.data, encoded.attention_mask.dims);
+    const inputIds = new ortModule.Tensor('int64', encoded.input_ids.data, encoded.input_ids.dims);
+    const attentionMask = new ortModule.Tensor('int64', encoded.attention_mask.data, encoded.attention_mask.dims);
 
     // Run inference
     const outputs = await state.session.run({
@@ -388,7 +436,9 @@ export async function runLocalCorrection(text: string): Promise<LocalCorrection[
 
 /**
  * Dictionary-only correction mode (fallback when ONNX model isn't available).
- * Checks every word against the correction dictionaries.
+ * Checks every word against the three-tier correction chain.
+ * Uses skipKnownWords=true to prevent false positives on valid English words
+ * (since without the ONNX model we don't have error-position detection).
  */
 function dictionaryOnlyCorrections(text: string): LocalCorrection[] {
   const corrections: LocalCorrection[] = [];
@@ -401,7 +451,7 @@ function dictionaryOnlyCorrections(text: string): LocalCorrection[] {
       continue;
     }
 
-    const corrected = applyCorrection(segment);
+    const corrected = applyCorrection(segment, true);
     if (corrected && corrected !== segment) {
       corrections.push({
         original: segment,
@@ -416,6 +466,31 @@ function dictionaryOnlyCorrections(text: string): LocalCorrection[] {
   }
 
   return corrections;
+}
+
+/**
+ * Local personal dictionary — words the user has explicitly told us to skip.
+ * Persisted to localStorage so it survives page reloads.
+ */
+const PERSONAL_DICT_KEY = 'dyslex_personal_dictionary';
+const personalDictionary: Set<string> = new Set(
+  JSON.parse(localStorage.getItem(PERSONAL_DICT_KEY) || '[]') as string[]
+);
+
+/**
+ * Add a word to the local personal dictionary (skip list).
+ * The word will no longer be flagged as misspelled by local corrections.
+ */
+export function addToLocalDictionary(word: string): void {
+  personalDictionary.add(word.toLowerCase());
+  localStorage.setItem(PERSONAL_DICT_KEY, JSON.stringify([...personalDictionary]));
+}
+
+/**
+ * Check if a word is in the personal dictionary (should be skipped).
+ */
+export function isInPersonalDictionary(word: string): boolean {
+  return personalDictionary.has(word.toLowerCase());
 }
 
 /**

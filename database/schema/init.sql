@@ -14,17 +14,6 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Error profiles (adaptive brain)
-CREATE TABLE IF NOT EXISTS error_profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-    overall_score INTEGER DEFAULT 50,
-    patterns JSONB DEFAULT '[]'::jsonb,
-    confusion_pairs JSONB DEFAULT '[]'::jsonb,
-    achievements JSONB DEFAULT '[]'::jsonb,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Error logs for passive learning
 CREATE TABLE IF NOT EXISTS error_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -55,17 +44,6 @@ CREATE TABLE IF NOT EXISTS error_patterns (
     description TEXT NOT NULL,
     category VARCHAR(50) NOT NULL,
     examples JSONB DEFAULT '[]'::jsonb
-);
-
--- User progress tracking
-CREATE TABLE IF NOT EXISTS user_progress (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    date DATE NOT NULL,
-    words_written INTEGER DEFAULT 0,
-    corrections_made INTEGER DEFAULT 0,
-    accuracy_score FLOAT DEFAULT 0.0,
-    UNIQUE(user_id, date)
 );
 
 -- Source column on error_logs (detection source)
@@ -127,7 +105,6 @@ CREATE INDEX idx_error_logs_user_id ON error_logs(user_id);
 CREATE INDEX idx_error_logs_created_at ON error_logs(created_at);
 CREATE INDEX idx_error_logs_source ON error_logs(source);
 CREATE INDEX idx_confusion_pairs_language ON confusion_pairs(language);
-CREATE INDEX idx_user_progress_user_date ON user_progress(user_id, date);
 CREATE INDEX idx_user_error_patterns_user_id ON user_error_patterns(user_id);
 CREATE INDEX idx_user_error_patterns_user_freq ON user_error_patterns(user_id, frequency DESC);
 CREATE INDEX idx_user_confusion_pairs_user_id ON user_confusion_pairs(user_id);
@@ -139,6 +116,38 @@ CREATE INDEX idx_progress_snapshots_user_week ON progress_snapshots(user_id, wee
 CREATE INDEX IF NOT EXISTS idx_error_logs_user_created ON error_logs(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_error_patterns_user_type ON user_error_patterns(user_id, error_type);
 CREATE INDEX IF NOT EXISTS idx_user_error_patterns_user_lastseen ON user_error_patterns(user_id, last_seen);
+
+-- -------------------------------------------------------------------------
+-- Document & Folder persistence (added in migration 005)
+-- -------------------------------------------------------------------------
+
+-- Folders table
+CREATE TABLE IF NOT EXISTS folders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Documents table
+CREATE TABLE IF NOT EXISTS documents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES folders(id) ON DELETE SET NULL,
+    title VARCHAR(500) NOT NULL DEFAULT 'Untitled Document',
+    content TEXT NOT NULL DEFAULT '',
+    mode VARCHAR(20) NOT NULL DEFAULT 'draft',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_user_folder ON documents(user_id, folder_id);
+CREATE INDEX IF NOT EXISTS idx_documents_user_folder_sort ON documents(user_id, folder_id, sort_order);
 
 -- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -155,7 +164,12 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_error_profiles_updated_at
-    BEFORE UPDATE ON error_profiles
+CREATE TRIGGER update_folders_updated_at
+    BEFORE UPDATE ON folders
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_documents_updated_at
+    BEFORE UPDATE ON documents
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

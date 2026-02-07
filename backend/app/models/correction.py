@@ -1,6 +1,6 @@
 """Correction request/response models."""
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, model_validator
 
 
 class Position(BaseModel):
@@ -15,19 +15,24 @@ class Correction(BaseModel):
 
     original: str
     correction: str
-    error_type: str = "spelling"  # spelling, grammar, confusion, phonetic
+    error_type: str = "spelling"  # spelling, grammar, homophone, phonetic, subject_verb, tense, article, word_order, missing_word, run_on, clarity, style, word_choice
     position: Position | None = None
     confidence: float = 0.9
     explanation: str | None = None
     tier: str = "quick"  # "quick" | "deep"
 
-    @field_validator('correction', mode='before')
+    @model_validator(mode="before")
     @classmethod
-    def handle_suggested_field(cls, v, info):
-        """Handle LLM responses using 'suggested' instead of 'correction'."""
-        if v is None and info.data.get('suggested'):
-            return info.data['suggested']
-        return v
+    def remap_llm_fields(cls, data: dict) -> dict:
+        """Handle LLM responses that use different field names."""
+        if isinstance(data, dict):
+            # Map 'suggested' -> 'correction'
+            if "suggested" in data and "correction" not in data:
+                data["correction"] = data.pop("suggested")
+            # Map 'type' -> 'error_type'
+            if "type" in data and "error_type" not in data:
+                data["error_type"] = data.pop("type")
+        return data
 
 
 class CorrectionRequest(BaseModel):

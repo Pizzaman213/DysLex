@@ -37,7 +37,7 @@ export const TrackedChangesExtension = Extension.create<TrackedChangesOptions>({
             // Get suggestions from transaction metadata
             const suggestions = tr.getMeta('trackedChanges');
             if (suggestions !== undefined) {
-              return createDecorations(suggestions, extensionThis.options.onSuggestionClick);
+              return createDecorations(tr.doc, suggestions, extensionThis.options.onSuggestionClick);
             }
             // Map existing decorations through document changes
             return set.map(tr.mapping, tr.doc);
@@ -70,14 +70,21 @@ export const TrackedChangesExtension = Extension.create<TrackedChangesOptions>({
  * Create decorations for tracked changes
  */
 function createDecorations(
+  doc: any,
   suggestions: TrackedChange[],
   onSuggestionClick?: (suggestionId: string, position: { start: number; end: number }) => void
 ): DecorationSet {
   const decorations: Decoration[] = [];
+  const docSize = doc.content?.size ?? 0;
 
   suggestions.forEach((suggestion) => {
     // Skip applied or dismissed suggestions
     if (suggestion.isApplied || suggestion.isDismissed) {
+      return;
+    }
+
+    // Validate positions are within document bounds
+    if (suggestion.start < 0 || suggestion.end > docSize || suggestion.start >= suggestion.end) {
       return;
     }
 
@@ -131,20 +138,10 @@ function createDecorations(
         }
       );
       decorations.push(deletionDecoration);
-
-      // Note: Insertion decoration would be at same position
-      // For simplicity, we show only deletion with aria-description indicating replacement
     }
   });
 
-  return DecorationSet.create(
-    {
-      childCount: 0,
-      content: { size: 0 },
-      nodeSize: 0,
-    } as any,
-    decorations
-  );
+  return DecorationSet.create(doc, decorations);
 }
 
 /**

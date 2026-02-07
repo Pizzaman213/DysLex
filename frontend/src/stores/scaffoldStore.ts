@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { Scaffold as MindMapScaffold } from '@/components/WritingModes/MindMap/types';
 
 export interface ScaffoldSection {
   id: string;
@@ -17,6 +18,7 @@ interface ScaffoldState {
   setTopic: (topic: string) => void;
   setSections: (sections: Omit<ScaffoldSection, 'status'>[]) => void;
   updateSectionStatus: (id: string, status: ScaffoldSection['status']) => void;
+  importFromMindMap: (scaffold: MindMapScaffold) => void;
   clearScaffold: () => void;
 }
 
@@ -41,6 +43,22 @@ export const useScaffoldStore = create<ScaffoldState>((set) => ({
         s.id === id ? { ...s, status } : s
       ),
     })),
+
+  importFromMindMap: (scaffold) => {
+    const timestamp = Date.now();
+    set({
+      topic: scaffold.title,
+      sections: scaffold.sections.map((s, i) => ({
+        id: `mm-${i}-${timestamp}`,
+        title: s.heading,
+        type: 'body',
+        suggested_topic_sentence: s.suggestedContent,
+        hints: [s.hint],
+        order: i,
+        status: 'empty' as const,
+      })),
+    });
+  },
 
   clearScaffold: () =>
     set({

@@ -8,6 +8,7 @@ checking, colored log output, health monitoring, and graceful shutdown.
 
 Usage:
     python run.py                    # Development mode (backend + frontend)
+    python run.py --host 0.0.0.0     # Network accessible (other devices can connect)
     python run.py --docker           # Docker Compose mode
     python run.py --backend-only     # Backend only
     python run.py --frontend-only    # Frontend only
@@ -56,10 +57,11 @@ NODE_MIN_VERSION = (20, 0)
 
 DEFAULT_BACKEND_PORT = 8000
 DEFAULT_FRONTEND_PORT = 3000
+DEFAULT_HOST = 'localhost'
 POSTGRES_PORT = 5432
 REDIS_PORT = 6379
 
-BACKEND_HEALTH_ENDPOINT = "http://localhost:{}/health"
+BACKEND_HEALTH_ENDPOINT = "http://localhost:{}/health"  # Always check via localhost
 BACKEND_STARTUP_TIMEOUT = 30  # seconds
 FRONTEND_STARTUP_TIMEOUT = 10  # seconds
 HEALTH_CHECK_INTERVAL = 1  # seconds
@@ -820,6 +822,7 @@ class ServiceManager:
             raise RuntimeError("Backend virtual environment not found")
 
         port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
+        host = self.config.get('host', DEFAULT_HOST)
 
         cmd = [
             str(venv_python),
@@ -827,10 +830,10 @@ class ServiceManager:
             'app.main:app',
             '--reload',
             '--port', str(port),
-            '--host', '0.0.0.0'
+            '--host', host
         ]
 
-        await self.logger.info('backend', f"Starting backend on port {port}...")
+        await self.logger.info('backend', f"Starting backend on {host}:{port}...")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -852,14 +855,15 @@ class ServiceManager:
     async def start_frontend(self):
         """Start the Vite frontend dev server."""
         port = self.config.get('frontend_port', DEFAULT_FRONTEND_PORT)
+        host = self.config.get('host', DEFAULT_HOST)
 
         # Set environment variable for Vite port
         env = os.environ.copy()
         env['PORT'] = str(port)
 
-        cmd = ['npm', 'run', 'dev']
+        cmd = ['npm', 'run', 'dev', '--', '--host', host]
 
-        await self.logger.info('frontend', f"Starting frontend on port {port}...")
+        await self.logger.info('frontend', f"Starting frontend on {host}:{port}...")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -1059,6 +1063,16 @@ def print_banner(config: Dict[str, Any], color_enabled: bool = True):
     print(f"{colorize('=' * 60, Color.CYAN)}\n")
 
 
+def _get_local_ip() -> Optional[str]:
+    """Get the machine's local network IP address."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
+    except Exception:
+        return None
+
+
 def print_ready_banner(config: Dict[str, Any], color_enabled: bool = True):
     """Print ready banner with service URLs."""
     def colorize(text: str, color: str) -> str:
@@ -1067,8 +1081,11 @@ def print_ready_banner(config: Dict[str, Any], color_enabled: bool = True):
         return f"{color}{text}{Color.RESET}"
 
     mode = config['mode']
+    host = config.get('host', DEFAULT_HOST)
     backend_port = config.get('backend_port', DEFAULT_BACKEND_PORT)
     frontend_port = config.get('frontend_port', DEFAULT_FRONTEND_PORT)
+    network = host == '0.0.0.0'
+    local_ip = _get_local_ip() if network else None
 
     print(f"\n{colorize('=' * 60, Color.GREEN)}")
     print(f"{colorize('  🚀 DysLex AI is ready!', Color.GREEN + Color.BOLD)}")
@@ -1076,10 +1093,14 @@ def print_ready_banner(config: Dict[str, Any], color_enabled: bool = True):
 
     if mode in ['dev', 'frontend']:
         print(f"  {colorize('Frontend:', Color.BOLD)} http://localhost:{frontend_port}")
+        if network and local_ip:
+            print(f"  {colorize('Frontend (network):', Color.BOLD)} http://{local_ip}:{frontend_port}")
 
     if mode in ['dev', 'backend']:
         print(f"  {colorize('Backend API:', Color.BOLD)} http://localhost:{backend_port}")
         print(f"  {colorize('API Docs:', Color.BOLD)} http://localhost:{backend_port}/docs")
+        if network and local_ip:
+            print(f"  {colorize('Backend API (network):', Color.BOLD)} http://{local_ip}:{backend_port}")
 
     if mode == 'docker':
         print(f"  {colorize('Frontend:', Color.BOLD)} http://localhost:{frontend_port}")
@@ -1097,7 +1118,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run.py                    # Start backend + frontend
+  python run.py                    # Start backend + frontend (localhost only)
+  python run.py --host 0.0.0.0     # Start on all interfaces (network accessible)
   python run.py --docker           # Start with Docker Compose
   python run.py --backend-only     # Start only backend
   python run.py --frontend-only    # Start only frontend
@@ -1135,6 +1157,13 @@ For more information, see: https://github.com/anthropics/dyslex-ai
         '--skip-checks',
         action='store_true',
         help='Skip prerequisite checks (use with caution)'
+    )
+    parser.add_argument(
+        '--host',
+        type=str,
+        default=DEFAULT_HOST,
+        choices=['localhost', '0.0.0.0'],
+        help=f'Host to bind services to (default: {DEFAULT_HOST}). Use 0.0.0.0 for network access'
     )
     parser.add_argument(
         '--port-backend',
@@ -1202,6 +1231,7 @@ async def main():
     # Build configuration
     config = {
         'mode': mode,
+        'host': args.host,
         'backend_port': args.port_backend,
         'frontend_port': args.port_frontend,
         'verbose': args.verbose,

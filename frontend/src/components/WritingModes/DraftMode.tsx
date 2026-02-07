@@ -1,36 +1,57 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Editor } from '@tiptap/react';
 import { DyslexEditor } from '../Editor/DyslexEditor';
 import { EditorToolbar } from '../Editor/EditorToolbar';
 import { AICoachBar } from '../Editor/AICoachBar';
 import { CorrectionTooltip } from '../Editor/CorrectionTooltip';
+import { ContextMenu } from '../Layout/ContextMenu';
+import type { ContextMenuItem } from '../Layout/ContextMenu';
 import { ScaffoldPanel } from '../Panels/ScaffoldPanel';
-import { CorrectionsPanel } from '../Panels/CorrectionsPanel';
+import { RightPanel } from '../Panels/RightPanel';
 import { VoiceBar } from '../Shared/VoiceBar';
 import { StatusBar } from '../Shared/StatusBar';
 import { useSnapshotEngine } from '../../hooks/useSnapshotEngine';
 import { useAICoach } from '../../hooks/useAICoach';
-import { useMediaRecorder } from '../../hooks/useMediaRecorder';
+import { useCaptureVoice } from '../../hooks/useCaptureVoice';
 import { useReadAloud } from '../../hooks/useReadAloud';
 import { useEditorStore, Correction } from '../../stores/editorStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { getCorrections } from '../../services/correctionService';
-import { loadModel } from '../../services/onnxModel';
+import { loadModel, addToLocalDictionary } from '../../services/onnxModel';
+import { api } from '../../services/api';
 import { buildPlainToPMMap, mapRangeToPM } from '../../utils/positionMapper';
-
+import { PAGE_DIMENSIONS, PAGE_MARGIN, getContentHeight } from '../../constants/pageDimensions';
 export function DraftMode() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [tooltipCorrection, setTooltipCorrection] = useState<Correction | null>(null);
   const [tooltipRect, setTooltipRect] = useState<DOMRect | null>(null);
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
-
+  const [panelsVisible, setPanelsVisible] = useState(true);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; word: string } | null>(null);
   const { content, corrections, setCorrections, clearCorrections, applyCorrection, dismissCorrection } = useEditorStore();
+  const pageType = useSettingsStore((s) => s.pageType);
+  const viewMode = useSettingsStore((s) => s.viewMode);
+  const zoom = useSettingsStore((s) => s.zoom);
+  const pageNumbers = useSettingsStore((s) => s.pageNumbers);
+  const togglePageNumbers = useSettingsStore((s) => s.togglePageNumbers);
+
+  const pageStyle = useMemo(() => {
+    const dim = PAGE_DIMENSIONS[pageType];
+    return {
+      '--page-width': `${dim.width}px`,
+      '--page-height': `${dim.height}px`,
+      '--page-margin': `${PAGE_MARGIN}px`,
+      '--page-content-height': `${getContentHeight(pageType)}px`,
+    } as React.CSSProperties;
+  }, [pageType]);
   const { currentNudge, dismissNudge } = useAICoach(editor);
   const { startSession, recordCorrectionApplied, recordCorrectionDismissed } = useSessionStore();
-  const { isRecording, analyserNode, startRecording, stopRecording } = useMediaRecorder();
+  const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, start: startVoice, stop: stopVoice } = useCaptureVoice();
   const { speak, stop, isPlaying, isLoading } = useReadAloud();
   const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCheckedTextRef = useRef<string>('');
+  const lastInsertedVoiceRef = useRef<string>('');
 
   useEffect(() => {
     startSession();
@@ -42,6 +63,20 @@ export function DraftMode() {
   }, []);
 
   useSnapshotEngine(editor);
+
+  // Batch-insert finalized voice text into editor as it arrives
+  useEffect(() => {
+    if (!isRecording || !editor || interimText) return;
+
+    const lastInserted = lastInsertedVoiceRef.current;
+    if (voiceTranscript.length > lastInserted.length) {
+      const delta = voiceTranscript.slice(lastInserted.length);
+      if (delta.trim()) {
+        editor.chain().focus().insertContent(delta).run();
+        lastInsertedVoiceRef.current = voiceTranscript;
+      }
+    }
+  }, [isRecording, voiceTranscript, interimText, editor]);
 
   // Debounced correction: run 800ms after user stops typing
   useEffect(() => {
@@ -122,14 +157,28 @@ export function DraftMode() {
 
   const handleApplyCorrection = () => {
     if (!tooltipCorrection || !editor) return;
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(
-        { from: tooltipCorrection.start, to: tooltipCorrection.end },
-        tooltipCorrection.suggested
-      )
-      .run();
+
+    // Search for the original text in the document and replace it.
+    // This is more robust than using mapped positions which can drift.
+    const { doc } = editor.state;
+    let applied = false;
+    doc.descendants((node, pos) => {
+      if (applied) return false;
+      if (node.isText && node.text) {
+        const idx = node.text.indexOf(tooltipCorrection.original);
+        if (idx !== -1) {
+          const from = pos + idx;
+          const to = from + tooltipCorrection.original.length;
+          editor.chain().focus()
+            .insertContentAt({ from, to }, tooltipCorrection.suggested)
+            .run();
+          applied = true;
+          return false;
+        }
+      }
+      return true;
+    });
+
     applyCorrection(tooltipCorrection.id);
     recordCorrectionApplied();
     // Clear stale corrections — the debounced re-fetch will get fresh ones
@@ -155,25 +204,112 @@ export function DraftMode() {
     }
   };
 
+  // Right-click context menu — "Add to Dictionary"
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!editor) return;
+
+    // Get the word under the cursor from the browser selection
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !node.textContent) return;
+
+    const text = node.textContent;
+    const offset = range.startOffset;
+
+    // Find word boundaries around the cursor
+    let start = offset;
+    let end = offset;
+    while (start > 0 && /\w/.test(text[start - 1])) start--;
+    while (end < text.length && /\w/.test(text[end])) end++;
+
+    const word = text.slice(start, end).trim();
+    if (!word || word.length < 2) return;
+
+    // Only show custom menu if the word has an active correction
+    const hasCorrection = corrections.some(
+      (c) => c.original.toLowerCase() === word.toLowerCase()
+    );
+    if (!hasCorrection) return;
+
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, word });
+  }, [editor, corrections]);
+
+  const handleAddToDictionary = useCallback((word: string) => {
+    // Add to local dictionary (immediate, no API needed)
+    addToLocalDictionary(word);
+
+    // Dismiss all corrections for this word
+    corrections
+      .filter((c) => c.original.toLowerCase() === word.toLowerCase())
+      .forEach((c) => dismissCorrection(c.id));
+
+    // Re-trigger corrections to clear stale ones
+    lastCheckedTextRef.current = '';
+
+    // Also persist to backend (fire-and-forget)
+    const userId = '00000000-0000-0000-0000-000000000000';
+    api.addToDictionary(userId, word).catch(() => {
+      // Backend is optional — local dictionary is the source of truth
+    });
+
+    setContextMenu(null);
+  }, [corrections, dismissCorrection]);
+
+  const contextMenuItems: ContextMenuItem[] = contextMenu ? [
+    {
+      label: `Add "${contextMenu.word}" to Dictionary`,
+      onClick: () => handleAddToDictionary(contextMenu.word),
+    },
+  ] : [];
+
+  const handlePageDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (viewMode === 'continuous') return;
+
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const scale = zoom / 100;
+    const margin = PAGE_MARGIN * scale;
+
+    // Click position relative to the page container
+    const relativeY = e.clientY - rect.top;
+    const relativeBottom = rect.bottom - e.clientY;
+
+    // Check if click is in top or bottom margin
+    if (relativeY < margin || relativeBottom < margin) {
+      e.preventDefault();
+      togglePageNumbers();
+    }
+  }, [viewMode, zoom, togglePageNumbers]);
+
   return (
-    <div className="draft-mode-layout">
+    <div className={`draft-mode-layout${panelsVisible ? '' : ' panels-hidden'}`}>
       <ScaffoldPanel editor={editor} />
 
       <div className="draft-mode-center">
-        <div className="draft-mode-scroll">
+        <div className={`draft-mode-scroll view-${viewMode}`} style={{ '--editor-zoom': zoom / 100 } as React.CSSProperties}>
           <div className="draft-toolbar-row">
-            <EditorToolbar editor={editor} />
-            <button
-              onClick={handleReadAloud}
-              aria-label={isLoading ? 'Loading audio' : isPlaying ? 'Stop reading' : 'Read aloud'}
-              className="btn btn-secondary"
-              disabled={isLoading || !content.trim()}
-            >
-              {isLoading ? 'Loading...' : isPlaying ? 'Stop' : 'Read Aloud'}
-            </button>
+            <EditorToolbar
+              editor={editor}
+              panelsVisible={panelsVisible}
+              onTogglePanels={() => setPanelsVisible((v) => !v)}
+              onReadAloud={handleReadAloud}
+              isReadAloudPlaying={isPlaying}
+              isReadAloudLoading={isLoading}
+              readAloudDisabled={!content.trim()}
+            />
           </div>
 
-          <div className="draft-page">
+          <div
+            className="draft-page"
+            style={pageStyle}
+            data-page-numbers={pageNumbers}
+            onDoubleClick={handlePageDoubleClick}
+            onContextMenu={handleContextMenu}
+          >
             <DyslexEditor
               onEditorReady={setEditor}
               onCorrectionClick={handleCorrectionClick}
@@ -185,17 +321,33 @@ export function DraftMode() {
 
         <VoiceBar
           isRecording={isRecording}
-          isTranscribing={false}
+          isTranscribing={isTranscribing}
           analyserNode={analyserNode}
-          onStartRecording={startRecording}
-          onStopRecording={stopRecording}
+          onStartRecording={() => {
+            lastInsertedVoiceRef.current = '';
+            startVoice();
+          }}
+          onStopRecording={async () => {
+            const text = await stopVoice();
+            if (text && editor) {
+              const remaining = text.slice(lastInsertedVoiceRef.current.length);
+              if (remaining.trim()) {
+                editor.chain().focus().insertContent(remaining).run();
+              }
+            }
+            lastInsertedVoiceRef.current = '';
+          }}
           compact
+          onReadAloud={handleReadAloud}
+          isReadAloudPlaying={isPlaying}
+          isReadAloudLoading={isLoading}
+          readAloudDisabled={!content.trim()}
         />
 
         <StatusBar />
       </div>
 
-      <CorrectionsPanel editor={editor} />
+      <RightPanel editor={editor} />
 
       <CorrectionTooltip
         correction={tooltipCorrection}
@@ -205,6 +357,15 @@ export function DraftMode() {
         onApply={handleApplyCorrection}
         onDismiss={handleDismissCorrection}
       />
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

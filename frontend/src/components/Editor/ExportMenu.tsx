@@ -10,6 +10,7 @@ import {
   extractTitle,
   type ExportOptions,
 } from '../../services/exportService';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface ExportMenuProps {
   editor: Editor | null;
@@ -45,6 +46,11 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
         <path d="M14.727 6.727H14V0H4.91c-.905 0-1.637.732-1.637 1.636v20.728c0 .904.732 1.636 1.636 1.636h14.182c.904 0 1.636-.732 1.636-1.636V6.727h-6zm-.545 10.455H7.09v-1.364h7.09v1.364zm2.727-3.273H7.091v-1.364h9.818v1.364zm0-3.273H7.091V9.273h9.818v1.363zM14.727 6h6l-6-6v6z" />
       </svg>
     ),
+    print: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" />
+      </svg>
+    ),
     share: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="18" cy="5" r="3" />
@@ -62,6 +68,8 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
     { label: 'HTML', action: 'html' },
     { label: 'Plain Text (.txt)', action: 'txt' },
     { label: 'separator', action: 'separator' },
+    { label: 'Print', action: 'print' },
+    { label: 'separator', action: 'separator2' },
     { label: 'Share...', action: 'share' },
   ];
 
@@ -90,8 +98,6 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!isOpen) return;
 
-    const actionableItems = menuItems.filter((item) => item.action !== 'separator');
-
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
@@ -102,8 +108,8 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
         e.preventDefault();
         setFocusedIndex((prev) => {
           let next = prev + 1;
-          // Skip separator
-          if (menuItems[next]?.action === 'separator') next++;
+          // Skip separators
+          while (menuItems[next]?.action.startsWith('separator')) next++;
           return next >= menuItems.length ? 0 : next;
         });
         break;
@@ -111,16 +117,16 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
         e.preventDefault();
         setFocusedIndex((prev) => {
           let next = prev - 1;
-          // Skip separator
-          if (menuItems[next]?.action === 'separator') next--;
-          return next < 0 ? actionableItems.length - 1 : next;
+          // Skip separators
+          while (next >= 0 && menuItems[next]?.action.startsWith('separator')) next--;
+          return next < 0 ? menuItems.length - 1 : next;
         });
         break;
       case 'Enter':
       case ' ':
         e.preventDefault();
         const item = menuItems[focusedIndex];
-        if (item && item.action !== 'separator') {
+        if (item && !item.action.startsWith('separator')) {
           handleMenuAction(item.action);
         }
         break;
@@ -171,11 +177,40 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
     setIsOpen(false);
   };
 
+  const handlePrint = () => {
+    setIsOpen(false);
+    requestAnimationFrame(() => {
+      const { pageType } = useSettingsStore.getState();
+      const sizeMap: Record<string, string> = {
+        letter: 'letter',
+        a4: 'A4',
+        legal: 'legal',
+        a5: 'A5',
+        wide: 'letter landscape',
+      };
+      const pageSize = sizeMap[pageType] || 'A4';
+
+      const style = document.createElement('style');
+      style.textContent = `@page { size: ${pageSize}; margin: 2.54cm; }`;
+      document.head.appendChild(style);
+
+      const cleanup = () => {
+        style.remove();
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+
+      window.print();
+    });
+  };
+
   const handleMenuAction = (action: string) => {
     if (action === 'share') {
       setShareDialogOpen(true);
       setIsOpen(false);
-    } else if (action !== 'separator') {
+    } else if (action === 'print') {
+      handlePrint();
+    } else if (!action.startsWith('separator')) {
       handleExport(action);
     }
   };
@@ -204,7 +239,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
         {isOpen && (
           <div ref={menuRef} className="export-menu__dropdown" role="menu">
             {menuItems.map((item, index) => {
-              if (item.action === 'separator') {
+              if (item.action.startsWith('separator')) {
                 return <div key={index} className="export-menu__separator" role="separator" />;
               }
 

@@ -15,6 +15,7 @@ export const MindMapNode = memo(({ id, data }: NodeProps) => {
   const addNode = useMindMapStore((state) => state.addNode);
   const deleteNode = useMindMapStore((state) => state.deleteNode);
   const edges = useMindMapStore((state) => state.edges);
+  const clusterNames = useMindMapStore((state) => state.clusterNames);
 
   const isRoot = id === 'root';
 
@@ -108,8 +109,15 @@ export const MindMapNode = memo(({ id, data }: NodeProps) => {
       className={nodeClasses}
       onDoubleClick={handleDoubleClick}
     >
-      <Handle type="target" position={Position.Left} className="mindmap-handle" />
-      <Handle type="source" position={Position.Right} className="mindmap-handle" />
+      {/* Handles on all four sides so edges connect from the closest side */}
+      <Handle type="target" position={Position.Left} id="target-left" className="mindmap-handle" />
+      <Handle type="target" position={Position.Right} id="target-right" className="mindmap-handle" />
+      <Handle type="target" position={Position.Top} id="target-top" className="mindmap-handle" />
+      <Handle type="target" position={Position.Bottom} id="target-bottom" className="mindmap-handle" />
+      <Handle type="source" position={Position.Left} id="source-left" className="mindmap-handle" />
+      <Handle type="source" position={Position.Right} id="source-right" className="mindmap-handle" />
+      <Handle type="source" position={Position.Top} id="source-top" className="mindmap-handle" />
+      <Handle type="source" position={Position.Bottom} id="source-bottom" className="mindmap-handle" />
 
       {isEditing ? (
         <div className="mindmap-node-edit" onClick={(e) => e.stopPropagation()}>
@@ -133,16 +141,17 @@ export const MindMapNode = memo(({ id, data }: NodeProps) => {
             rows={2}
           />
           <div className="mindmap-node-cluster-picker">
-            <span className="cluster-label">Color:</span>
-            {[1, 2, 3, 4, 5].map((cluster) => (
+            <span className="cluster-label">Group:</span>
+            {([1, 2, 3, 4, 5] as const).map((cluster) => (
               <button
                 key={cluster}
                 type="button"
-                onClick={() => setEditCluster(cluster as 1 | 2 | 3 | 4 | 5)}
+                onClick={() => setEditCluster(cluster)}
                 className={`cluster-dot ${editCluster === cluster ? 'active' : ''}`}
                 style={{ backgroundColor: `var(--color-cluster-${cluster})` }}
-                aria-label={`Cluster ${cluster}`}
+                aria-label={clusterNames[cluster]}
                 aria-pressed={editCluster === cluster}
+                title={clusterNames[cluster]}
               />
             ))}
           </div>

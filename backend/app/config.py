@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     nvidia_nim_api_key: str = ""
     nvidia_nim_llm_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_nim_voice_url: str = "https://integrate.api.nvidia.com/v1"
-    nvidia_nim_llm_model: str = "nvidia/nemotron-mini-4b-instruct"
+    nvidia_nim_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b"
+    nvidia_nim_vision_model: str = "nvidia/cosmos-reason2-8b"
 
     # Transcription (local faster-whisper for desktop; not used when browser handles STT)
     transcription_url: str = "http://localhost:8786/v1"
@@ -45,6 +46,13 @@ class Settings(BaseSettings):
 
     # Correction Routing
     confidence_threshold: float = 0.85
+
+    # LLM Generation (Nemotron supports 32k context)
+    llm_max_tokens: int = 16384
+
+    # LLM Tool Calling
+    llm_tool_calling_enabled: bool = True
+    llm_tool_calling_max_rounds: int = 3
 
     # TTS Audio Storage
     tts_audio_dir: str = "storage/audio"

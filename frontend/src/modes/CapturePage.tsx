@@ -1,8 +1,8 @@
-import { useNavigate } from 'react-router-dom';
 import { CaptureMode } from '@/components/WritingModes/CaptureMode';
+import { useViewTransitionNavigate } from '@/hooks/useViewTransitionNavigate';
 
 export function CapturePage() {
-  const navigate = useNavigate();
+  const navigate = useViewTransitionNavigate();
 
   return <CaptureMode onNavigateToMindMap={() => navigate('/mindmap')} />;
 }

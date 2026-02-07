@@ -1,5 +1,7 @@
 """Tests for repository error handling."""
 
+import uuid
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -13,7 +15,7 @@ async def test_duplicate_user_email_raises_error(db):
     """Creating user with duplicate email should raise DuplicateRecordError."""
     # Create first user
     user1 = User(
-        id="test-user-1",
+        id=str(uuid.uuid4()),
         email="test@example.com",
         name="Alice",
         password_hash="hash123",
@@ -22,7 +24,7 @@ async def test_duplicate_user_email_raises_error(db):
 
     # Attempt duplicate - should raise custom exception
     user2 = User(
-        id="test-user-2",
+        id=str(uuid.uuid4()),
         email="test@example.com",  # Duplicate email
         name="Bob",
         password_hash="hash456",
@@ -40,7 +42,7 @@ async def test_repository_logs_errors(db, caplog):
 
     # Create first user
     user1 = User(
-        id="test-user-1",
+        id=str(uuid.uuid4()),
         email="test@example.com",
         name="Alice",
         password_hash="hash123",
@@ -49,7 +51,7 @@ async def test_repository_logs_errors(db, caplog):
 
     # Trigger duplicate error
     user2 = User(
-        id="test-user-2",
+        id=str(uuid.uuid4()),
         email="test@example.com",
         name="Bob",
         password_hash="hash456",
@@ -75,7 +77,7 @@ async def test_create_user_with_invalid_data_raises_database_error(db):
     """Creating user with invalid data should raise DatabaseError."""
     # Create user with None email (violates NOT NULL constraint)
     user = User(
-        id="test-user-1",
+        id=str(uuid.uuid4()),
         email=None,  # Invalid
         name="Alice",
         password_hash="hash123",
@@ -91,13 +93,13 @@ async def test_update_user_with_duplicate_email_raises_error(db):
     """Updating user to duplicate email should raise DuplicateRecordError."""
     # Create two users
     user1 = User(
-        id="test-user-1",
+        id=str(uuid.uuid4()),
         email="alice@example.com",
         name="Alice",
         password_hash="hash123",
     )
     user2 = User(
-        id="test-user-2",
+        id=str(uuid.uuid4()),
         email="bob@example.com",
         name="Bob",
         password_hash="hash456",
@@ -117,7 +119,7 @@ async def test_delete_user_handles_errors(db):
     """delete_user should handle errors gracefully."""
     # Create and delete user
     user = User(
-        id="test-user-1",
+        id=str(uuid.uuid4()),
         email="test@example.com",
         name="Alice",
         password_hash="hash123",
@@ -128,5 +130,5 @@ async def test_delete_user_handles_errors(db):
     await user_repo.delete_user(db, user)
 
     # Verify deletion
-    result = await user_repo.get_user_by_id(db, "test-user-1")
+    result = await user_repo.get_user_by_id(db, user.id)
     assert result is None

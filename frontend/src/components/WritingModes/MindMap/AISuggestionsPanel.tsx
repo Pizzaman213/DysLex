@@ -1,6 +1,14 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { useMindMapStore } from '../../../stores/mindMapStore';
-import { AISuggestion } from './types';
+import { AISuggestion, EdgeRelationship } from './types';
+
+const RELATIONSHIP_DISPLAY: Record<EdgeRelationship, string> = {
+  supports: 'supports',
+  contradicts: 'contradicts',
+  leads_to: 'leads to',
+  example_of: 'example of',
+  related_to: 'related to',
+};
 
 interface SuggestionCardProps {
   suggestion: AISuggestion;
@@ -23,6 +31,11 @@ function SuggestionCard({ suggestion, onAccept, onDismiss }: SuggestionCardProps
         <>
           <strong>Connect:</strong> "{getNodeTitle(suggestion.sourceNodeId)}" with "
           {getNodeTitle(suggestion.targetNodeId)}"
+          {suggestion.suggestedRelationship && (
+            <div className="mm-suggestion-relationship">
+              {RELATIONSHIP_DISPLAY[suggestion.suggestedRelationship]}
+            </div>
+          )}
           <div className="mm-suggestion-reason">{suggestion.description}</div>
         </>
       );
@@ -111,7 +124,69 @@ function SuggestionCard({ suggestion, onAccept, onDismiss }: SuggestionCardProps
 }
 
 const CLUSTER_COLORS = ['var(--accent)', 'var(--green)', 'var(--blue)', 'var(--yellow)', 'var(--purple)'];
-const CLUSTER_NAMES = ['Cluster 1', 'Cluster 2', 'Cluster 3', 'Cluster 4', 'Cluster 5'];
+
+interface ClusterNameEditorProps {
+  cluster: 1 | 2 | 3 | 4 | 5;
+  name: string;
+  onRename: (cluster: 1 | 2 | 3 | 4 | 5, name: string) => void;
+}
+
+function ClusterNameEditor({ cluster, name, onRename }: ClusterNameEditorProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleSave = () => {
+    const trimmed = editValue.trim();
+    if (trimmed) {
+      onRename(cluster, trimmed);
+    } else {
+      setEditValue(name);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setEditValue(name);
+      setIsEditing(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        className="cluster-name-input"
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+        aria-label={`Rename cluster ${cluster}`}
+      />
+    );
+  }
+
+  return (
+    <span
+      className="cluster-name-text"
+      onDoubleClick={() => setIsEditing(true)}
+      title="Double-click to rename"
+    >
+      {name}
+    </span>
+  );
+}
 
 interface AISuggestionsPanelProps {
   onSuggest: () => void;
@@ -120,7 +195,7 @@ interface AISuggestionsPanelProps {
 }
 
 export function AISuggestionsPanel({ onSuggest, onBuildScaffold, isScaffoldLoading }: AISuggestionsPanelProps) {
-  const { suggestions, isSuggestionsLoading, acceptSuggestion, dismissSuggestion, nodes } =
+  const { suggestions, isSuggestionsLoading, acceptSuggestion, dismissSuggestion, nodes, clusterNames, setClusterName } =
     useMindMapStore();
 
   const handleAccept = useCallback(
@@ -139,7 +214,7 @@ export function AISuggestionsPanel({ onSuggest, onBuildScaffold, isScaffoldLoadi
 
   // Build cluster summary from nodes
   const clusters = useMemo(() => {
-    const clusterMap = new Map<number, { count: number; title: string }>();
+    const clusterMap = new Map<number, { count: number }>();
     nodes.forEach((node) => {
       if (node.id === 'root') return;
       const c = node.data.cluster;
@@ -147,18 +222,18 @@ export function AISuggestionsPanel({ onSuggest, onBuildScaffold, isScaffoldLoadi
       if (existing) {
         existing.count++;
       } else {
-        clusterMap.set(c, { count: 1, title: node.data.title });
+        clusterMap.set(c, { count: 1 });
       }
     });
     return Array.from(clusterMap.entries())
       .sort(([a], [b]) => a - b)
       .map(([cluster, info]) => ({
-        cluster,
+        cluster: cluster as 1 | 2 | 3 | 4 | 5,
         color: CLUSTER_COLORS[cluster - 1] || CLUSTER_COLORS[0],
-        name: info.count === 1 ? info.title : CLUSTER_NAMES[cluster - 1],
+        name: clusterNames[cluster as 1 | 2 | 3 | 4 | 5],
         count: info.count,
       }));
-  }, [nodes]);
+  }, [nodes, clusterNames]);
 
   const nonRootCount = nodes.filter((n) => n.id !== 'root').length;
 
@@ -218,7 +293,7 @@ export function AISuggestionsPanel({ onSuggest, onBuildScaffold, isScaffoldLoadi
             {clusters.map(({ cluster, color, name, count }) => (
               <div key={cluster} className="cluster-item">
                 <div className="cluster-item-dot" style={{ background: color }} />
-                <span>{name}</span>
+                <ClusterNameEditor cluster={cluster} name={name} onRename={setClusterName} />
                 <span className="cluster-item-count">
                   {count} {count === 1 ? 'idea' : 'ideas'}
                 </span>

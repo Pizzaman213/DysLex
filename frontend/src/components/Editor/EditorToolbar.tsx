@@ -1,13 +1,20 @@
+import { useState } from 'react';
 import { Editor } from '@tiptap/react';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { ExportMenu } from './ExportMenu';
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  panelsVisible?: boolean;
+  onTogglePanels?: () => void;
+  onReadAloud?: () => void;
+  isReadAloudPlaying?: boolean;
+  isReadAloudLoading?: boolean;
+  readAloudDisabled?: boolean;
 }
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
-  const { font, setFont, focusMode, setFocusMode } = useSettingsStore();
+export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAloud, isReadAloudPlaying, isReadAloudLoading, readAloudDisabled }: EditorToolbarProps) {
+  const { font, setFont, fontSize, setFontSize, zoom, setZoom, showZoom } = useSettingsStore();
+  const [sizeInput, setSizeInput] = useState(String(fontSize));
 
   if (!editor) {
     return null;
@@ -207,31 +214,89 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             </option>
           ))}
         </select>
-      </div>
 
-      {/* Export group */}
-      <div className="editor-toolbar__group">
-        <ExportMenu editor={editor} />
-      </div>
-
-      {/* Focus mode - pushed to far right */}
-      <div className="editor-toolbar__group" style={{ marginLeft: 'auto' }}>
-        <button
-          className={`editor-toolbar__btn ${focusMode ? 'is-active' : ''}`}
-          onClick={() => {
-            const newFocusMode = !focusMode;
-            setFocusMode(newFocusMode);
-            editor.commands.setFocusMode(newFocusMode);
+        <input
+          className="editor-toolbar__size-input"
+          type="text"
+          inputMode="numeric"
+          value={sizeInput}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^0-9]/g, '');
+            setSizeInput(raw);
           }}
-          aria-label="Focus mode"
-          aria-pressed={focusMode}
-          title="Focus mode - dim other paragraphs"
-          type="button"
-        >
-          <span className="editor-toolbar__icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span>
-          <span className="editor-toolbar__label">Focus</span>
-        </button>
+          onBlur={() => {
+            const n = parseInt(sizeInput, 10);
+            if (!isNaN(n) && n >= 8 && n <= 72) {
+              setFontSize(n);
+              setSizeInput(String(n));
+            } else {
+              setSizeInput(String(fontSize));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          aria-label="Font size"
+          title="Font size — type a value (8–72)"
+        />
       </div>
+
+      {/* Zoom group (toggled via Settings > Appearance) */}
+      {showZoom && (
+        <div className="editor-toolbar__group editor-toolbar__zoom">
+          <button
+            className="editor-toolbar__btn"
+            onClick={() => setZoom(zoom - 10)}
+            disabled={zoom <= 25}
+            aria-label="Zoom out"
+            title="Zoom out"
+            type="button"
+          >
+            <span className="editor-toolbar__icon">−</span>
+          </button>
+
+          <span className="editor-toolbar__zoom-label">{zoom}%</span>
+
+          <button
+            className="editor-toolbar__btn"
+            onClick={() => setZoom(zoom + 10)}
+            disabled={zoom >= 200}
+            aria-label="Zoom in"
+            title="Zoom in"
+            type="button"
+          >
+            <span className="editor-toolbar__icon">+</span>
+          </button>
+        </div>
+      )}
+
+      {/* Read aloud + Toggle panels - pushed to far right */}
+      {(onReadAloud || onTogglePanels) && (
+        <div className="editor-toolbar__group" style={{ marginLeft: 'auto' }}>
+
+          {onTogglePanels && (
+            <button
+              className={`editor-toolbar__btn ${panelsVisible ? 'is-active' : ''}`}
+              onClick={onTogglePanels}
+              aria-label={panelsVisible ? 'Hide panels' : 'Show panels'}
+              aria-pressed={panelsVisible}
+              title={panelsVisible ? 'Hide scaffold & suggestions' : 'Show scaffold & suggestions'}
+              type="button"
+            >
+              <span className="editor-toolbar__icon">
+                {panelsVisible ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                )}
+              </span>
+              <span className="editor-toolbar__label">Panels</span>
+            </button>
+          )}
+        </div>
+      )}
 
     </div>
   );

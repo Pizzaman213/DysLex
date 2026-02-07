@@ -1,15 +1,46 @@
 import { useState } from 'react';
 import { Editor } from '@tiptap/react';
-import { usePolishStore } from '../../stores/polishStore';
+import { Node as PMNode } from '@tiptap/pm/model';
+import { usePolishStore, TrackedChange } from '../../stores/polishStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { SuggestionCard } from './SuggestionCard';
 import { ReadabilityScore } from './ReadabilityScore';
 import { SessionSummary } from './SessionSummary';
 import { analyzeText } from '../../utils/readabilityUtils';
 import { api } from '../../services/api';
+import { ApiError } from '../../services/apiErrors';
 
 interface PolishPanelProps {
   editor: Editor | null;
+}
+
+/**
+ * Search for `text` inside a ProseMirror document and return the PM positions.
+ * `searchFrom` advances the cursor so duplicate words get distinct matches.
+ */
+function findInDocument(
+  doc: PMNode,
+  text: string,
+  searchFrom: number = 0,
+): { from: number; to: number } | null {
+  if (!text) return null;
+  let found: { from: number; to: number } | null = null;
+
+  doc.descendants((node, pos) => {
+    if (found) return false;
+    if (!node.isText || !node.text) return;
+    // Skip nodes entirely before our search cursor
+    if (pos + node.text.length <= searchFrom) return;
+
+    const startInNode = Math.max(0, searchFrom - pos);
+    const idx = node.text.indexOf(text, startInNode);
+    if (idx !== -1) {
+      found = { from: pos + idx, to: pos + idx + text.length };
+      return false;
+    }
+  });
+
+  return found;
 }
 
 export function PolishPanel({ editor }: PolishPanelProps) {
@@ -35,7 +66,11 @@ export function PolishPanel({ editor }: PolishPanelProps) {
   );
 
   const handleDeepAnalysis = async () => {
-    if (!editor || isAnalyzing) return;
+    if (!editor) {
+      setError('Editor is still loading. Please try again in a moment.');
+      return;
+    }
+    if (isAnalyzing) return;
 
     try {
       setError(null);
@@ -50,18 +85,49 @@ export function PolishPanel({ editor }: PolishPanelProps) {
       }
 
       const results = await api.deepAnalysis(text);
-      setSuggestions(results);
+
+      // Recompute positions using ProseMirror document so decorations
+      // and apply/dismiss target the correct ranges.
+      const doc = editor.state.doc;
+      let searchFrom = 0;
+      const positioned: TrackedChange[] = [];
+
+      for (const result of results) {
+        const found = findInDocument(doc, result.original ?? '', searchFrom);
+        if (found) {
+          positioned.push({ ...result, start: found.from, end: found.to });
+          searchFrom = found.to;
+        } else {
+          // Retry from start (LLM may return out of document order)
+          const retry = findInDocument(doc, result.original ?? '', 0);
+          if (retry) {
+            positioned.push({ ...result, start: retry.from, end: retry.to });
+          }
+        }
+      }
+
+      setSuggestions(positioned);
 
       if ((editor.commands as any).setTrackedChanges) {
-        (editor.commands as any).setTrackedChanges(results);
+        (editor.commands as any).setTrackedChanges(positioned);
       }
 
       const metrics = analyzeText(text);
       setReadabilityMetrics(metrics);
 
+      if (positioned.length === 0 && results.length === 0) {
+        setError('No issues found — your writing looks great!');
+      }
+
     } catch (err) {
       console.error('Deep analysis failed:', err);
-      setError('Unable to analyze document. Please try again.');
+      if (err instanceof ApiError) {
+        setError(err.getUserMessage());
+      } else if (err instanceof TypeError && (err as any).message?.includes('fetch')) {
+        setError('Cannot reach the server. Please check that the backend is running.');
+      } else {
+        setError('Unable to analyze document. Please try again.');
+      }
     } finally {
       setIsAnalyzing(false);
     }

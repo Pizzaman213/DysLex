@@ -136,9 +136,13 @@ class TestClassifyErrorType:
         assert _classify_error_type("there", "their") == "homophone"
         assert _classify_error_type("your", "you're") == "homophone"
 
+    def test_omission(self):
+        # Missing vowel classified as omission
+        assert _classify_error_type("wrng", "wrong") == "omission"
+
     def test_default_spelling(self):
         # Unrecognized pattern defaults to spelling
-        assert _classify_error_type("wrng", "wrong") == "spelling"
+        assert _classify_error_type("fredom", "random") == "spelling"
 
 
 class TestHasLetterReversal:

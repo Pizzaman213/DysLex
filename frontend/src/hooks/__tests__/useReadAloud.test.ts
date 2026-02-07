@@ -1,45 +1,78 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useReadAloud } from '../useReadAloud';
 import { api } from '@/services/api';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 // Mock dependencies
-jest.mock('@/services/api');
-jest.mock('@/stores/settingsStore');
+vi.mock('@/services/api');
+vi.mock('@/stores/settingsStore');
+vi.mock('@/services/ttsSentenceCache', () => ({
+  splitIntoSentences: (text: string) => (text.trim() ? [text] : []),
+  hashSentence: async () => 'mock-hash',
+  sentenceAudioCache: {
+    get: () => undefined,
+    set: () => {},
+    clear: () => {},
+  },
+}));
 
 describe('useReadAloud', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.resetAllMocks();
 
     // Mock settings store
-    (useSettingsStore as jest.Mock).mockReturnValue({
+    (useSettingsStore as any).mockReturnValue({
       ttsSpeed: 1.0,
       voiceEnabled: true,
     });
 
     // Mock AudioContext
-    global.AudioContext = jest.fn().mockImplementation(() => ({
-      createBufferSource: jest.fn(() => ({
+    global.AudioContext = vi.fn().mockImplementation(() => ({
+      createBufferSource: vi.fn(() => ({
         buffer: null,
         playbackRate: { value: 1.0 },
-        connect: jest.fn(),
-        start: jest.fn(),
-        stop: jest.fn(),
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
         onended: null,
       })),
-      decodeAudioData: jest.fn(() => Promise.resolve({})),
+      decodeAudioData: vi.fn(() =>
+        Promise.resolve({
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          length: 100,
+          getChannelData: vi.fn(() => new Float32Array(100)),
+        }),
+      ),
       destination: {},
       currentTime: 0,
-      close: jest.fn(),
+      state: 'running',
+      close: vi.fn(),
+      resume: vi.fn(() => Promise.resolve()),
+    })) as any;
+
+    // Mock SpeechSynthesisUtterance
+    global.SpeechSynthesisUtterance = vi.fn().mockImplementation((text: string) => ({
+      text,
+      rate: 1,
+      onstart: null,
+      onend: null,
+      onerror: null,
     })) as any;
 
     // Mock SpeechSynthesis
     global.speechSynthesis = {
-      speak: jest.fn(),
-      cancel: jest.fn(),
-      pause: jest.fn(),
-      resume: jest.fn(),
+      speak: vi.fn((utterance: any) => {
+        utterance.onstart?.();
+      }),
+      cancel: vi.fn(),
+      pause: vi.fn(() => {
+        (global as any).speechSynthesis.paused = true;
+      }),
+      resume: vi.fn(() => {
+        (global as any).speechSynthesis.paused = false;
+      }),
       paused: false,
     } as any;
   });
@@ -57,16 +90,17 @@ describe('useReadAloud', () => {
 
   describe('MagpieTTS Backend', () => {
     it('uses MagpieTTS by default', async () => {
-      const mockAudioUrl = 'http://localhost:8000/audio/test.mp3';
-      (api.textToSpeech as jest.Mock).mockResolvedValue({
-        data: { audio_url: mockAudioUrl },
+      (api.textToSpeechBatch as any).mockResolvedValue({
+        data: {
+          results: [{ index: 0, audio_url: 'http://localhost:8000/audio/test.mp3' }],
+        },
       });
 
-      global.fetch = jest.fn(() =>
+      global.fetch = vi.fn(() =>
         Promise.resolve({
           arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
         } as Response)
-      ) as jest.Mock;
+      ) as any;
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -74,11 +108,11 @@ describe('useReadAloud', () => {
         await result.current.speak('Hello world');
       });
 
-      expect(api.textToSpeech).toHaveBeenCalledWith('Hello world', undefined);
+      expect(api.textToSpeechBatch).toHaveBeenCalled();
     });
 
     it('falls back to browser TTS on MagpieTTS error', async () => {
-      (api.textToSpeech as jest.Mock).mockRejectedValue(new Error('Network error'));
+      (api.textToSpeech as any).mockRejectedValue(new Error('Network error'));
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -92,7 +126,7 @@ describe('useReadAloud', () => {
 
   describe('Browser TTS Fallback', () => {
     it('uses browser TTS when MagpieTTS fails', async () => {
-      (api.textToSpeech as jest.Mock).mockRejectedValue(new Error('Server error'));
+      (api.textToSpeech as any).mockRejectedValue(new Error('Server error'));
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -101,17 +135,17 @@ describe('useReadAloud', () => {
       });
 
       expect(speechSynthesis.speak).toHaveBeenCalled();
-      const utterance = (speechSynthesis.speak as jest.Mock).mock.calls[0][0];
+      const utterance = (speechSynthesis.speak as any).mock.calls[0][0];
       expect(utterance.text).toBe('Test text');
     });
 
     it('respects TTS speed setting', async () => {
-      (useSettingsStore as jest.Mock).mockReturnValue({
+      (useSettingsStore as any).mockReturnValue({
         ttsSpeed: 1.5,
         voiceEnabled: true,
       });
 
-      (api.textToSpeech as jest.Mock).mockRejectedValue(new Error('Fallback'));
+      (api.textToSpeech as any).mockRejectedValue(new Error('Fallback'));
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -119,7 +153,7 @@ describe('useReadAloud', () => {
         await result.current.speak('Fast speech');
       });
 
-      const utterance = (speechSynthesis.speak as jest.Mock).mock.calls[0][0];
+      const utterance = (speechSynthesis.speak as any).mock.calls[0][0];
       expect(utterance.rate).toBe(1.5);
     });
   });
@@ -141,10 +175,19 @@ describe('useReadAloud', () => {
     });
 
     it('resumes playback', async () => {
-      (speechSynthesis as any).paused = true;
-
       const { result } = renderHook(() => useReadAloud());
 
+      // Get to playing state via browser TTS fallback
+      await act(async () => {
+        await result.current.speak('Test');
+      });
+
+      // Pause to reach paused state
+      act(() => {
+        result.current.pause();
+      });
+
+      // Now resume
       act(() => {
         result.current.resume();
       });
@@ -166,7 +209,7 @@ describe('useReadAloud', () => {
 
   describe('Settings Integration', () => {
     it('does not speak when voice disabled', async () => {
-      (useSettingsStore as jest.Mock).mockReturnValue({
+      (useSettingsStore as any).mockReturnValue({
         ttsSpeed: 1.0,
         voiceEnabled: false,
       });
@@ -185,7 +228,7 @@ describe('useReadAloud', () => {
   describe('Error Handling', () => {
     it('sets error when TTS not supported', async () => {
       delete (global as any).speechSynthesis;
-      (api.textToSpeech as jest.Mock).mockRejectedValue(new Error('Fallback'));
+      (api.textToSpeech as any).mockRejectedValue(new Error('Fallback'));
 
       const { result } = renderHook(() => useReadAloud());
 

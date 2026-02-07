@@ -3,13 +3,14 @@
 import time
 import uuid
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from app.api.dependencies import CurrentUserId, DbSession
 from app.core.llm_orchestrator import auto_route, deep_only, document_review, quick_only
 from app.middleware.rate_limiter import LLM_LIMIT, limiter
 from app.models.correction import CorrectionRequest
 from app.models.envelope import success_response
+from app.services.nemotron_client import DeepAnalysisError
 
 router = APIRouter()
 
@@ -62,9 +63,13 @@ async def deep_correction_endpoint(
 ) -> dict:
     """Full LLM-powered deep analysis only (Tier 2)."""
     start = time.perf_counter()
-    corrections = await deep_only(
-        text=body.text, user_id=user_id, context=body.context, db=db,
-    )
+    try:
+        corrections = await deep_only(
+            text=body.text, user_id=user_id, context=body.context, db=db,
+            raise_on_error=True,
+        )
+    except DeepAnalysisError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     meta = _correction_meta(corrections, "deep", start, profile_loaded=True)
     return success_response(
         {"corrections": [c.model_dump() for c in corrections]},
@@ -103,9 +108,12 @@ async def document_correction_endpoint(
 ) -> dict:
     """Full-document deep review (Tier 2 only)."""
     start = time.perf_counter()
-    corrections = await document_review(
-        text=body.text, user_id=user_id, context=body.context, db=db,
-    )
+    try:
+        corrections = await document_review(
+            text=body.text, user_id=user_id, context=body.context, db=db,
+        )
+    except DeepAnalysisError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     meta = _correction_meta(corrections, "deep", start, profile_loaded=True)
     return success_response(
         {"corrections": [c.model_dump() for c in corrections]},

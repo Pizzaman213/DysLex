@@ -17,6 +17,81 @@
       "frequency": "very_high"
     },
     {
+      "words": ["whose", "who's"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["hear", "here"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["know", "no"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["right", "write"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["by", "buy", "bye"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["wear", "where", "were"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["sea", "see"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["one", "won"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["would", "wood"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["new", "knew"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["our", "hour"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["for", "four"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["rode", "road"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["made", "maid"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["son", "sun"],
+      "category": "homophone",
+      "frequency": "very_high"
+    },
+    {
       "words": ["to", "too", "two"],
       "category": "homophone",
       "frequency": "high"
@@ -29,6 +104,106 @@
     {
       "words": ["affect", "effect"],
       "category": "similar",
+      "frequency": "high"
+    },
+    {
+      "words": ["through", "threw"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["piece", "peace"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["sight", "site", "cite"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["brake", "break"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["bare", "bear"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["tail", "tale"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["weight", "wait"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["night", "knight"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["steel", "steal"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["pair", "pear", "pare"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["which", "witch"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["whole", "hole"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["waist", "waste"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["plain", "plane"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["rain", "reign", "rein"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["quiet", "quite"],
+      "category": "near_homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["were", "we're", "where"],
+      "category": "near_homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["breath", "breathe"],
+      "category": "near_homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["lead", "led"],
+      "category": "near_homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["passed", "past"],
+      "category": "near_homophone",
       "frequency": "high"
     },
     {
@@ -48,6 +223,56 @@
     },
     {
       "words": ["principal", "principle"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["conscience", "conscious"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["farther", "further"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["lay", "lie"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["council", "counsel"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["device", "devise"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["compliment", "complement"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["stationary", "stationery"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["desert", "dessert"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["aloud", "allowed"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["cereal", "serial"],
       "category": "homophone",
       "frequency": "medium"
     }
