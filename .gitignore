@@ -34,10 +34,22 @@ npm-debug.log*
 *.db
 *.sqlite
 
-# ML models (use Git LFS or external storage)
-ml/models/*.onnx
-ml/models/*.pt
-ml/models/*.bin
+# ML models & training artifacts (use Git LFS or external storage)
+ml/models/
+ml/datasets/
+ml/quick_correction/models/
+ml/datasets/raw/
+ml/datasets/processed/
+ml/quick_correction/data/
+
+# ONNX WASM runtime
+frontend/public/onnx/*.wasm
+
+# Experiment tracking
+wandb/
+
+# Test artifacts
+*.wav
 
 # Claude Code local files
 .claude/settings.local.json
