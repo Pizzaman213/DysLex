@@ -55,6 +55,25 @@ function mapContextCorrection(cc: ContextCorrection): Correction {
 }
 
 /**
+ * Map an API correction to the UI Correction format.
+ * Filters out corrections without valid position data.
+ */
+function mapApiCorrection(c: any): Correction | null {
+  const start = c.position?.start;
+  const end = c.position?.end;
+  if (typeof start !== 'number' || typeof end !== 'number' || start === end) return null;
+  return {
+    original: c.original || '',
+    suggested: c.correction || c.suggested || '',
+    type: c.error_type || c.type || 'spelling',
+    start,
+    end,
+    confidence: c.confidence ?? 0.9,
+    explanation: c.explanation,
+  };
+}
+
+/**
  * Merge corrections from multiple sources, removing overlapping ranges.
  * Priority: spelling > context > grammar (earlier in the array wins).
  * When corrections overlap at the same start position, larger spans are preferred
@@ -87,37 +106,24 @@ function mergeCorrections(...groups: Correction[][]): Correction[] {
 export async function getCorrections(text: string): Promise<Correction[]> {
   if (!text.trim()) return [];
 
-  // Run all local checks in parallel
-  const [localCorrections, grammarResults, contextResults] = await Promise.all([
+  // Run local checks and API call in parallel — AI always participates
+  const [localCorrections, grammarResults, contextResults, apiCorrections] = await Promise.all([
     runLocalCorrection(text),
     Promise.resolve(checkGrammar(text)),
     Promise.resolve(checkContextualConfusions(text)),
+    api.getCorrections(text)
+      .then((res) =>
+        res.data.corrections
+          .map(mapApiCorrection)
+          .filter((c): c is Correction => c !== null)
+      )
+      .catch(() => [] as Correction[]),
   ]);
 
   const spelling = localCorrections.map(mapLocalCorrection);
   const context = contextResults.map(mapContextCorrection);
   const grammar = grammarResults.map(mapGrammarCorrection);
 
-  // Merge with priority: spelling > context > grammar
-  const merged = mergeCorrections(spelling, context, grammar);
-
-  if (merged.length > 0) {
-    return merged;
-  }
-
-  // Fall back to cloud API for deeper analysis only if local checks found nothing
-  try {
-    const response = await api.getCorrections(text);
-    return response.data.corrections.map((c: any) => ({
-      original: c.original || '',
-      suggested: c.correction || c.suggested || '',
-      type: c.error_type || c.type || 'spelling',
-      start: c.position?.start ?? 0,
-      end: c.position?.end ?? 0,
-      confidence: c.confidence ?? 0.9,
-      explanation: c.explanation,
-    })) as Correction[];
-  } catch {
-    return [];
-  }
+  // Merge with priority: AI > spelling > context > grammar
+  return mergeCorrections(apiCorrections, spelling, context, grammar);
 }

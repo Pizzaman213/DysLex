@@ -1,21 +1,16 @@
 /**
  * ONNX Model Service - Browser-based Quick Correction
  *
- * Runs the Quick Correction Model locally in the browser using ONNX Runtime Web.
- * Provides fast corrections (<100ms) without API calls.
+ * Runs the Quick Correction Model locally in the browser using
+ * @xenova/transformers (T5-small seq2seq). The model directly generates
+ * corrected text, eliminating the dictionary-lookup bottleneck of the
+ * previous BIO-tagging approach.
  *
- * The model detects error positions (BIO labels). Corrections come from a
- * three-tier fallback chain:
+ * Fallback chain (when the model can't load or for supplementary corrections):
  * 1. Dictionary lookup — base (~34K) + user personalized error profile (fastest)
  * 2. SymSpell edit-distance — catches transpositions/omissions within distance 2
  * 3. Phonetic matching — Double Metaphone for sound-alike errors
  */
-
-// Dynamic imports — loaded lazily to avoid crashing the app if ONNX backends
-// fail to register (e.g. missing WebGL/WASM support).
-// Import from 'onnxruntime-web/wasm' to only register the WASM backend,
-// avoiding registerBackend crashes from WebGL/WebGPU in v1.18+.
-let ort: typeof import('onnxruntime-web') | null = null;
 
 import {
   initSymSpell,
@@ -36,8 +31,7 @@ export interface LocalCorrection {
 }
 
 interface OnnxModelState {
-  session: any | null; // ort.InferenceSession when loaded
-  tokenizer: any | null;
+  pipeline: any | null;
   loading: boolean;
   error: string | null;
   baseDictionary: Record<string, string>;
@@ -45,21 +39,20 @@ interface OnnxModelState {
 }
 
 const state: OnnxModelState = {
-  session: null,
-  tokenizer: null,
+  pipeline: null,
   loading: false,
   error: null,
   baseDictionary: {},
   userDictionary: {},
 };
 
-const MODEL_PATH = '/models/quick_correction_base_v1';
+const MODEL_PATH = '/models/quick_correction_seq2seq_v1';
 
 /**
- * Load the ONNX model, tokenizer, and base correction dictionary
+ * Load the T5 seq2seq pipeline, and base correction dictionary
  */
 export async function loadModel(): Promise<void> {
-  if (state.session && state.tokenizer) {
+  if (state.pipeline) {
     return; // Already loaded
   }
 
@@ -75,11 +68,11 @@ export async function loadModel(): Promise<void> {
   state.error = null;
 
   try {
-    console.log('[ONNX] Loading Quick Correction Model...');
+    console.log('[ONNX] Loading Quick Correction Seq2Seq Model...');
 
-    // Load base correction dictionary
+    // Load base correction dictionary (still useful for fallback + confidence boosting)
     try {
-      const dictResponse = await fetch(`${MODEL_PATH}/correction_dict.json`);
+      const dictResponse = await fetch('/models/quick_correction_base_v1/correction_dict.json');
       if (dictResponse.ok) {
         state.baseDictionary = await dictResponse.json();
         console.log(`[ONNX] Loaded base dictionary: ${Object.keys(state.baseDictionary).length} entries`);
@@ -93,44 +86,32 @@ export async function loadModel(): Promise<void> {
       };
     }
 
-    // Initialize SymSpell + phonetic index (runs in parallel with ONNX load)
-    // Non-blocking: if it fails, we still have dictionary-only mode
+    // Initialize SymSpell + phonetic index (runs in parallel with model load)
     await initSymSpell();
 
-    // Dynamically import onnxruntime-web (avoids registerBackend crash at startup)
-    if (!ort) {
-      try {
-        ort = await import('onnxruntime-web/wasm') as typeof import('onnxruntime-web');
-      } catch (importErr) {
-        console.warn('[ONNX] Failed to import onnxruntime-web:', importErr);
-        state.error = 'ONNX Runtime not available — using dictionary-only mode';
-        state.loading = false;
-        return;
-      }
+    // Load the T5 text2text-generation pipeline via @xenova/transformers
+    try {
+      const transformers = await import('@xenova/transformers');
+      transformers.env.allowRemoteModels = false;
+      transformers.env.allowLocalModels = true;
+
+      state.pipeline = await transformers.pipeline(
+        'text2text-generation',
+        MODEL_PATH + '/',
+        { local_files_only: true }
+      );
+
+      console.log('[ONNX] Seq2Seq pipeline loaded successfully');
+      console.log('[ONNX] Quick Correction ready for inference');
+    } catch (pipelineErr) {
+      console.warn('[ONNX] Failed to load seq2seq pipeline:', pipelineErr);
+      state.error = 'Seq2seq pipeline not available — using dictionary-only mode';
     }
-
-    // Load ONNX session
-    state.session = await ort.InferenceSession.create(`${MODEL_PATH}/model.onnx`, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
-    });
-
-    console.log('[ONNX] Model loaded successfully');
-
-    // Dynamically import tokenizer
-    const { AutoTokenizer } = await import('@xenova/transformers');
-    state.tokenizer = await AutoTokenizer.from_pretrained(MODEL_PATH + '/');
-
-    console.log('[ONNX] Tokenizer loaded successfully');
-    console.log('[ONNX] Quick Correction ready for inference');
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.warn('[ONNX] Failed to load model:', errorMessage);
     state.error = errorMessage;
-
-    // Clear partial state
-    state.session = null;
-    state.tokenizer = null;
+    state.pipeline = null;
   } finally {
     state.loading = false;
   }
@@ -152,7 +133,6 @@ export function updateUserDictionary(entries: Record<string, string>): void {
 export function getDictionarySize(): { base: number; user: number; total: number } {
   const base = Object.keys(state.baseDictionary).length;
   const user = Object.keys(state.userDictionary).length;
-  // User dict entries override base, so total is base + unique user entries
   const merged = new Set([...Object.keys(state.baseDictionary), ...Object.keys(state.userDictionary)]);
   return { base, user, total: merged.size };
 }
@@ -181,8 +161,7 @@ function lookupCorrection(word: string): string | null {
     return state.baseDictionary[lower];
   }
 
-  // Skip Tier 2/3 for very short words (≤2 chars) — edit distance and
-  // phonetic matching are unreliable at this length ("AI"→"A", "IT"→"I", etc.)
+  // Skip Tier 2/3 for very short words (<=2 chars)
   if (lower.length > 2) {
     // Tier 2: SymSpell edit-distance lookup
     const symspellResult = suggestCorrection(lower);
@@ -202,18 +181,15 @@ function lookupCorrection(word: string): string | null {
 
 /**
  * Apply correction lookup with capitalization preservation.
- * When called from dictionaryOnlyCorrections (no ONNX model), we skip
+ * When called from dictionaryOnlyCorrections (no model), we skip
  * words that are known valid English words to avoid false positives.
  */
 function applyCorrection(word: string, skipKnownWords = false): string | null {
-  // Strip punctuation to look up the core word
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z]+)([^a-zA-Z]*)$/);
   if (!match) return null;
 
   const [, prefix, core, suffix] = match;
 
-  // In dictionary-only mode (no ONNX model), skip words that are in the
-  // frequency dictionary — they're valid English words, not errors.
   if (skipKnownWords && isKnownWord(core)) {
     return null;
   }
@@ -234,151 +210,115 @@ function applyCorrection(word: string, skipKnownWords = false): string | null {
 }
 
 /**
- * Compute softmax over logits to get confidence
+ * Compute Levenshtein similarity between two strings (0..1)
  */
-function softmax(logits: number[]): number[] {
-  const maxLogit = Math.max(...logits);
-  const exps = logits.map(l => Math.exp(l - maxLogit));
-  const sumExps = exps.reduce((a, b) => a + b, 0);
-  return exps.map(e => e / sumExps);
-}
+function levenshteinSimilarity(a: string, b: string): number {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1.0;
 
-/**
- * Decode model predictions into corrections
- */
-function decodeCorrections(
-  text: string,
-  predictions: Float32Array,
-  tokens: string[],
-  offsetMapping: number[][]
-): LocalCorrection[] {
-  const corrections: LocalCorrection[] = [];
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
 
-  // Find error tokens (label != 0)
-  let currentError: {
-    tokens: string[];
-    offsets: number[][];
-    confidences: number[];
-  } | null = null;
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
 
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-
-    // Skip special tokens
-    if (token === '[CLS]' || token === '[SEP]' || token === '[PAD]') {
-      if (currentError) {
-        const correction = createCorrection(text, currentError);
-        if (correction) corrections.push(correction);
-        currentError = null;
-      }
-      continue;
-    }
-
-    // Get prediction via softmax for proper confidence
-    const startIdx = i * 3; // 3 labels: O, B-ERROR, I-ERROR
-    const logits = [
-      predictions[startIdx],
-      predictions[startIdx + 1],
-      predictions[startIdx + 2],
-    ];
-    const probs = softmax(logits);
-    const maxIdx = probs.indexOf(Math.max(...probs));
-    const confidence = probs[maxIdx];
-
-    const isBError = maxIdx === 1;
-    const isIError = maxIdx === 2;
-
-    if (isBError) {
-      // B-ERROR: start new error (flush previous if any)
-      if (currentError) {
-        const correction = createCorrection(text, currentError);
-        if (correction) corrections.push(correction);
-      }
-      currentError = {
-        tokens: [token],
-        offsets: [offsetMapping[i]],
-        confidences: [confidence],
-      };
-    } else if (isIError && currentError) {
-      // I-ERROR: continue current error
-      currentError.tokens.push(token);
-      currentError.offsets.push(offsetMapping[i]);
-      currentError.confidences.push(confidence);
-    } else {
-      // O label: end current error
-      if (currentError) {
-        const correction = createCorrection(text, currentError);
-        if (correction) corrections.push(correction);
-        currentError = null;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = Math.min(dp[i - 1][j - 1] + 1, dp[i][j - 1] + 1, dp[i - 1][j] + 1);
       }
     }
   }
 
-  // Handle error at end
-  if (currentError) {
-    const correction = createCorrection(text, currentError);
-    if (correction) {
-      corrections.push(correction);
+  return 1.0 - dp[m][n] / maxLen;
+}
+
+/**
+ * Convert diffs between input text and model-generated text into LocalCorrection[].
+ *
+ * Word-level diff: for each word that differs between input and output,
+ * if the words are similar enough (>0.3 similarity), treat it as a targeted
+ * spelling correction. Complete rewrites (low similarity) are skipped.
+ */
+function diffToCorrections(inputText: string, generatedText: string): LocalCorrection[] {
+  const corrections: LocalCorrection[] = [];
+
+  const inputWords = inputText.split(/\s+/).filter(Boolean);
+  const outputWords = generatedText.split(/\s+/).filter(Boolean);
+
+  // Simple word-by-word alignment when lengths match or are close
+  // For more complex diffs we could use the full LCS-based diffEngine,
+  // but for spelling correction the model rarely changes word count.
+  const minLen = Math.min(inputWords.length, outputWords.length);
+
+  // Build character offset map for input words
+  let charOffset = 0;
+  const wordOffsets: number[] = [];
+  const parts = inputText.split(/(\s+)/);
+  let wordIdx = 0;
+  for (const part of parts) {
+    if (/^\s+$/.test(part)) {
+      charOffset += part.length;
+    } else {
+      wordOffsets[wordIdx] = charOffset;
+      charOffset += part.length;
+      wordIdx++;
     }
+  }
+
+  for (let i = 0; i < minLen; i++) {
+    const inputWord = inputWords[i];
+    const outputWord = outputWords[i];
+
+    if (inputWord === outputWord) continue;
+
+    // Strip punctuation for comparison
+    const inputCore = inputWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+    const outputCore = outputWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+
+    if (!inputCore || !outputCore) continue;
+    if (inputCore.toLowerCase() === outputCore.toLowerCase()) continue;
+
+    const similarity = levenshteinSimilarity(
+      inputCore.toLowerCase(),
+      outputCore.toLowerCase()
+    );
+
+    // Only include changes where similarity > 0.3 (skip complete rewrites)
+    if (similarity <= 0.3) continue;
+
+    // Skip if the word is in the personal dictionary
+    if (personalDictionary.has(inputCore.toLowerCase())) continue;
+
+    const start = wordOffsets[i] ?? 0;
+    const end = start + inputWord.length;
+
+    corrections.push({
+      original: inputWord,
+      correction: outputWord,
+      position: { start, end },
+      confidence: similarity, // Higher similarity = more confident it's a targeted fix
+      errorType: 'spelling',
+    });
   }
 
   return corrections;
 }
 
 /**
- * Create correction from error tokens
- */
-function createCorrection(
-  text: string,
-  error: {
-    tokens: string[];
-    offsets: number[][];
-    confidences: number[];
-  }
-): LocalCorrection | null {
-  if (error.tokens.length === 0 || error.offsets.length === 0) {
-    return null;
-  }
-
-  // Get position in text
-  const start = error.offsets[0][0];
-  const end = error.offsets[error.offsets.length - 1][1];
-  const original = text.slice(start, end);
-
-  if (!original.trim()) return null;
-
-  // Look up correction in dictionaries
-  const corrected = applyCorrection(original);
-
-  if (!corrected || corrected === original) {
-    // No correction found in dictionary — still report the error position
-    // but without a suggestion (UI can show "possible error" indicator)
-    return null;
-  }
-
-  // Average confidence
-  const avgConfidence = error.confidences.reduce((a, b) => a + b, 0) / error.confidences.length;
-
-  return {
-    original,
-    correction: corrected,
-    position: { start, end },
-    confidence: avgConfidence,
-    errorType: 'spelling',
-  };
-}
-
-/**
- * Run local correction on text
+ * Run local correction on text using the T5 seq2seq pipeline
  */
 export async function runLocalCorrection(text: string): Promise<LocalCorrection[]> {
   // Ensure model is loaded
-  if (!state.session || !state.tokenizer) {
+  if (!state.pipeline) {
     await loadModel();
   }
 
-  // Check if model loaded successfully
-  if (!state.session || !state.tokenizer) {
+  // Check if pipeline loaded successfully
+  if (!state.pipeline) {
     // Fallback: dictionary-only mode when model isn't available
     return dictionaryOnlyCorrections(text);
   }
@@ -386,59 +326,37 @@ export async function runLocalCorrection(text: string): Promise<LocalCorrection[
   try {
     const startTime = performance.now();
 
-    // Tokenize
-    const encoded = await state.tokenizer(text, {
-      padding: true,
-      truncation: true,
+    // Run seq2seq generation
+    const result = await state.pipeline('correct: ' + text, {
       max_length: 128,
-      return_tensors: 'onnx',
-      return_offsets_mapping: true,
     });
 
-    // Convert to ONNX tensors
-    const ortModule = ort;
-    if (!ortModule) {
+    const generatedText: string = result[0]?.generated_text ?? '';
+
+    if (!generatedText) {
       return dictionaryOnlyCorrections(text);
     }
-    const inputIds = new ortModule.Tensor('int64', encoded.input_ids.data, encoded.input_ids.dims);
-    const attentionMask = new ortModule.Tensor('int64', encoded.attention_mask.data, encoded.attention_mask.dims);
 
-    // Run inference
-    const outputs = await state.session.run({
-      input_ids: inputIds,
-      attention_mask: attentionMask,
-    });
-
-    // Get predictions
-    const logits = outputs.logits;
-    const predictions = logits.data as Float32Array;
-
-    // Get tokens
-    const tokens = encoded.input_ids.data.map((id: number) =>
-      state.tokenizer!.decode([id], { skip_special_tokens: false })
-    );
-
-    // Decode corrections
-    const corrections = decodeCorrections(text, predictions, tokens, encoded.offset_mapping);
+    // Diff input vs output to find corrections
+    const corrections = diffToCorrections(text, generatedText);
 
     const elapsedMs = performance.now() - startTime;
     if (corrections.length > 0) {
-      console.log(`[ONNX] Inference: ${elapsedMs.toFixed(1)}ms, ${corrections.length} corrections found`);
+      console.log(`[ONNX] Seq2Seq inference: ${elapsedMs.toFixed(1)}ms, ${corrections.length} corrections found`);
     }
 
     return corrections;
   } catch (error) {
-    console.error('[ONNX] Inference failed:', error);
+    console.error('[ONNX] Seq2Seq inference failed:', error);
     // Fallback to dictionary-only mode
     return dictionaryOnlyCorrections(text);
   }
 }
 
 /**
- * Dictionary-only correction mode (fallback when ONNX model isn't available).
+ * Dictionary-only correction mode (fallback when model isn't available).
  * Checks every word against the three-tier correction chain.
- * Uses skipKnownWords=true to prevent false positives on valid English words
- * (since without the ONNX model we don't have error-position detection).
+ * Uses skipKnownWords=true to prevent false positives on valid English words.
  */
 function dictionaryOnlyCorrections(text: string): LocalCorrection[] {
   const corrections: LocalCorrection[] = [];
@@ -497,7 +415,7 @@ export function isInPersonalDictionary(word: string): boolean {
  * Check if model is loaded
  */
 export function isModelLoaded(): boolean {
-  return state.session !== null && state.tokenizer !== null;
+  return state.pipeline !== null;
 }
 
 /**

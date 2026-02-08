@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useMicPermission } from '@/hooks/useMicPermission';
 import type { Language } from '@/types';
 
 export function GeneralTab() {
@@ -28,6 +29,7 @@ export function GeneralTab() {
     focusMode,
     setFocusMode,
   } = useSettingsStore();
+  const { isDenied: micDenied } = useMicPermission();
 
   const languages: { value: Language; label: string }[] = [
     { value: 'en', label: 'English' },
@@ -205,6 +207,11 @@ export function GeneralTab() {
           <label htmlFor="voice-toggle">
             <span className="setting-label">Voice Input</span>
             <span className="setting-help">Use your microphone for voice-to-text in Capture mode</span>
+            {micDenied && voiceEnabled && (
+              <span className="setting-help" style={{ color: 'var(--accent)' }}>
+                Microphone is blocked by your browser. Look for the lock icon in your address bar to allow it.
+              </span>
+            )}
           </label>
           <button
             id="voice-toggle"

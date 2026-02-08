@@ -21,6 +21,7 @@ from app.api.routes import (
     documents,
     learn,
     log_correction,
+    mindmap,
     profiles,
     progress,
     scaffold,
@@ -209,7 +210,7 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"] if settings.dev_mode else settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
@@ -233,6 +234,7 @@ app.include_router(
 )
 app.include_router(progress.router, prefix="/api/v1/progress", tags=["progress"])
 app.include_router(scaffold.router, prefix="/api/v1/scaffold", tags=["scaffold"])
+app.include_router(mindmap.router, prefix="/api/v1/mindmap", tags=["mindmap"])
 app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
 app.include_router(vision.router, prefix="/api/v1/vision", tags=["vision"])
 app.include_router(coach.router, prefix="/api/v1/coach", tags=["coach"])

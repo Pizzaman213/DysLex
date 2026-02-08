@@ -29,7 +29,7 @@ export function PolishMode() {
       '--page-content-height': `${getContentHeight(pageType)}px`,
     } as React.CSSProperties;
   }, [pageType]);
-  const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, start: startVoice, stop: stopVoice } = useCaptureVoice();
+  const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, micDenied, start: startVoice, stop: stopVoice } = useCaptureVoice();
   const { speak, stop, isPlaying, isLoading } = useReadAloud();
   const [editor, setEditor] = useState<Editor | null>(null);
   const lastInsertedVoiceRef = useRef<string>('');
@@ -147,6 +147,7 @@ export function PolishMode() {
             isReadAloudPlaying={isPlaying}
             isReadAloudLoading={isLoading}
             readAloudDisabled={!content.trim()}
+            micDenied={micDenied}
           />
 
           <StatusBar />

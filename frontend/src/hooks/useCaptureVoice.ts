@@ -8,6 +8,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useVoiceInput } from './useVoiceInput';
 import { useMediaRecorder } from './useMediaRecorder';
+import { useMicPermission } from './useMicPermission';
 import { api } from '../services/api';
 
 interface UseCaptureVoiceReturn {
@@ -18,6 +19,8 @@ interface UseCaptureVoiceReturn {
   isSupported: boolean;
   /** True when fallback path is transcribing after stop */
   isTranscribing: boolean;
+  /** True when microphone access is denied in browser */
+  micDenied: boolean;
   start: () => Promise<void>;
   stop: () => Promise<string>;
   resetTranscript: () => void;
@@ -26,6 +29,7 @@ interface UseCaptureVoiceReturn {
 export function useCaptureVoice(): UseCaptureVoiceReturn {
   const voice = useVoiceInput({ continuous: true });
   const recorder = useMediaRecorder();
+  const { isDenied, checkPermission, recordGranted, recordDenied } = useMicPermission();
 
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
   const [fallbackTranscript, setFallbackTranscript] = useState('');
@@ -36,10 +40,20 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
   const usingWebSpeech = voice.isSupported;
 
   const start = useCallback(async () => {
+    // Check mic permission before attempting getUserMedia
+    const permState = await checkPermission();
+
+    if (permState === 'denied') {
+      // Don't attempt getUserMedia — it will fail.
+      // Text entry is still available via the textarea.
+      return;
+    }
+
     // Open mic for waveform visualisation (both paths need this)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      recordGranted();
 
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(stream);
@@ -48,8 +62,12 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
       source.connect(analyser);
       audioContextRef.current = ctx;
       setAnalyserNode(analyser);
-    } catch {
-      // Mic access denied — still allow text entry, just no waveform
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        recordDenied();
+        return;
+      }
+      // Other error — still allow text entry, just no waveform
     }
 
     if (usingWebSpeech) {
@@ -59,7 +77,7 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
       setFallbackTranscript('');
       await recorder.startRecording();
     }
-  }, [usingWebSpeech, voice, recorder]);
+  }, [usingWebSpeech, voice, recorder, checkPermission, recordGranted, recordDenied]);
 
   const stop = useCallback(async (): Promise<string> => {
     // Tear down audio context / stream
@@ -102,6 +120,7 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
     analyserNode,
     isSupported: true, // Always supported — fallback uses MediaRecorder
     isTranscribing,
+    micDenied: isDenied,
     start,
     stop,
     resetTranscript,

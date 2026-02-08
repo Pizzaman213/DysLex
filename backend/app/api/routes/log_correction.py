@@ -3,7 +3,7 @@
 import logging
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.api.dependencies import CurrentUserId, DbSession
 from app.core.error_profile import error_profile_service
@@ -13,8 +13,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _to_camel(name: str) -> str:
+    parts = name.split("_")
+    return parts[0] + "".join(w.title() for w in parts[1:])
+
+
 class LogCorrectionRequest(BaseModel):
     """Request model for logging a correction."""
+
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
 
     original_text: str
     corrected_text: str

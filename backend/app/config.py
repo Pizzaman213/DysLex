@@ -23,7 +23,14 @@ class Settings(BaseSettings):
     snapshot_ttl_hours: int = 24  # Ephemeral snapshots expire after 24 hours
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://localhost:3000",
+        "https://localhost:5173",
+        "http://192.168.1.248:3000",
+        "https://192.168.1.248:3000",
+    ]
 
     # NVIDIA NIM API
     nvidia_nim_api_key: str = ""

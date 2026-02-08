@@ -5,6 +5,7 @@ export type PageType = 'a4' | 'letter' | 'a5' | 'legal' | 'wide';
 export type ViewMode = 'paper' | 'continuous';
 export type SettingsTab = 'general' | 'appearance' | 'accessibility' | 'privacy' | 'docs';
 export type Language = 'en' | 'es' | 'fr' | 'de';
+export type MicPermission = 'granted' | 'denied' | 'prompt' | 'unknown';
 
 export interface UserSettings {
   // General
@@ -38,6 +39,7 @@ export interface UserSettings {
 
   // Accessibility
   voiceEnabled: boolean;
+  micPermission: MicPermission;
   autoCorrect: boolean;
   focusMode: boolean;
   ttsSpeed: number;

@@ -35,6 +35,7 @@ License:
 
 import asyncio
 import argparse
+import ssl
 import sys
 import os
 import signal
@@ -44,7 +45,7 @@ import platform
 import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
 from urllib.error import URLError
 
 
@@ -57,11 +58,11 @@ NODE_MIN_VERSION = (20, 0)
 
 DEFAULT_BACKEND_PORT = 8000
 DEFAULT_FRONTEND_PORT = 3000
-DEFAULT_HOST = 'localhost'
+DEFAULT_HOST = '0.0.0.0'
 POSTGRES_PORT = 5432
 REDIS_PORT = 6379
 
-BACKEND_HEALTH_ENDPOINT = "http://localhost:{}/health"  # Always check via localhost
+BACKEND_HEALTH_ENDPOINT = "{protocol}://localhost:{port}/health"  # Always check via localhost
 BACKEND_STARTUP_TIMEOUT = 30  # seconds
 FRONTEND_STARTUP_TIMEOUT = 10  # seconds
 HEALTH_CHECK_INTERVAL = 1  # seconds
@@ -781,8 +782,15 @@ class HealthMonitor:
 
     def _sync_http_check(self, url: str):
         """Synchronous HTTP check helper."""
-        with urlopen(url, timeout=2) as response:
-            return response.status == 200
+        if url.startswith("https://"):
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            with urlopen(url, timeout=2, context=ctx) as response:
+                return response.status == 200
+        else:
+            with urlopen(url, timeout=2) as response:
+                return response.status == 200
 
 
 # ============================================================================
@@ -833,7 +841,15 @@ class ServiceManager:
             '--host', host
         ]
 
-        await self.logger.info('backend', f"Starting backend on {host}:{port}...")
+        # Append SSL args when HTTPS is enabled
+        if self.config.get('https'):
+            ssl_cert = self.config.get('ssl_cert')
+            ssl_key = self.config.get('ssl_key')
+            if ssl_cert and ssl_key:
+                cmd.extend(['--ssl-certfile', ssl_cert, '--ssl-keyfile', ssl_key])
+
+        protocol = "https" if self.config.get('https') else "http"
+        await self.logger.info('backend', f"Starting backend on {protocol}://{host}:{port}...")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -861,9 +877,15 @@ class ServiceManager:
         env = os.environ.copy()
         env['PORT'] = str(port)
 
+        # Pass HTTPS configuration to Vite
+        if self.config.get('https'):
+            env['VITE_ENABLE_HTTPS'] = 'true'
+            # VITE_API_URL is not set here — api.ts auto-detects using window.location.hostname
+
         cmd = ['npm', 'run', 'dev', '--', '--host', host]
 
-        await self.logger.info('frontend', f"Starting frontend on {host}:{port}...")
+        protocol = "https" if self.config.get('https') else "http"
+        await self.logger.info('frontend', f"Starting frontend on {protocol}://{host}:{port}...")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -912,10 +934,11 @@ class ServiceManager:
     async def _wait_for_health(self):
         """Wait for all services to become healthy."""
         mode = self.config['mode']
+        protocol = "https" if self.config.get('https') else "http"
 
         if mode in ['dev', 'backend']:
             port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
-            url = BACKEND_HEALTH_ENDPOINT.format(port)
+            url = BACKEND_HEALTH_ENDPOINT.format(protocol=protocol, port=port)
             success = await self.health_monitor.wait_for_service(
                 'Backend',
                 url,
@@ -933,7 +956,7 @@ class ServiceManager:
             # Wait for docker services
             await asyncio.sleep(5)
             port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
-            url = BACKEND_HEALTH_ENDPOINT.format(port)
+            url = BACKEND_HEALTH_ENDPOINT.format(protocol="http", port=port)
             await self.health_monitor.wait_for_service(
                 'Docker stack',
                 url,
@@ -1086,21 +1109,22 @@ def print_ready_banner(config: Dict[str, Any], color_enabled: bool = True):
     frontend_port = config.get('frontend_port', DEFAULT_FRONTEND_PORT)
     network = host == '0.0.0.0'
     local_ip = _get_local_ip() if network else None
+    protocol = "https" if config.get('https') else "http"
 
     print(f"\n{colorize('=' * 60, Color.GREEN)}")
     print(f"{colorize('  🚀 DysLex AI is ready!', Color.GREEN + Color.BOLD)}")
     print(f"{colorize('=' * 60, Color.GREEN)}")
 
     if mode in ['dev', 'frontend']:
-        print(f"  {colorize('Frontend:', Color.BOLD)} http://localhost:{frontend_port}")
+        print(f"  {colorize('Frontend:', Color.BOLD)} {protocol}://localhost:{frontend_port}")
         if network and local_ip:
-            print(f"  {colorize('Frontend (network):', Color.BOLD)} http://{local_ip}:{frontend_port}")
+            print(f"  {colorize('Frontend (network):', Color.BOLD)} {protocol}://{local_ip}:{frontend_port}")
 
     if mode in ['dev', 'backend']:
-        print(f"  {colorize('Backend API:', Color.BOLD)} http://localhost:{backend_port}")
-        print(f"  {colorize('API Docs:', Color.BOLD)} http://localhost:{backend_port}/docs")
+        print(f"  {colorize('Backend API:', Color.BOLD)} {protocol}://localhost:{backend_port}")
+        print(f"  {colorize('API Docs:', Color.BOLD)} {protocol}://localhost:{backend_port}/docs")
         if network and local_ip:
-            print(f"  {colorize('Backend API (network):', Color.BOLD)} http://{local_ip}:{backend_port}")
+            print(f"  {colorize('Backend API (network):', Color.BOLD)} {protocol}://{local_ip}:{backend_port}")
 
     if mode == 'docker':
         print(f"  {colorize('Frontend:', Color.BOLD)} http://localhost:{frontend_port}")
@@ -1198,6 +1222,32 @@ For more information, see: https://github.com/anthropics/dyslex-ai
         help='Automatically kill processes using required ports'
     )
 
+    # HTTPS / SSL (enabled by default)
+    parser.add_argument(
+        '--https',
+        action='store_true',
+        default=True,
+        help='Enable HTTPS (default: enabled)'
+    )
+    parser.add_argument(
+        '--no-https',
+        action='store_false',
+        dest='https',
+        help='Disable HTTPS and use plain HTTP'
+    )
+    parser.add_argument(
+        '--ssl-cert',
+        type=str,
+        default=None,
+        help='Path to SSL certificate file (default: certs/dev/localhost+2.pem)'
+    )
+    parser.add_argument(
+        '--ssl-key',
+        type=str,
+        default=None,
+        help='Path to SSL private key file (default: certs/dev/localhost+2-key.pem)'
+    )
+
     return parser
 
 
@@ -1228,6 +1278,22 @@ async def main():
     else:
         mode = 'dev'
 
+    # Resolve SSL certificate paths
+    ssl_cert = args.ssl_cert
+    ssl_key = args.ssl_key
+    if args.https and not ssl_cert:
+        ssl_cert = str(Path('certs/dev/localhost+2.pem').resolve())
+    if args.https and not ssl_key:
+        ssl_key = str(Path('certs/dev/localhost+2-key.pem').resolve())
+
+    if args.https:
+        if not Path(ssl_cert).exists() or not Path(ssl_key).exists():
+            print(f"\n{Color.YELLOW}SSL certificates not found — falling back to HTTP.{Color.RESET}")
+            print(f"  To enable HTTPS, run: bash scripts/generate-dev-certs.sh\n")
+            args.https = False
+            ssl_cert = None
+            ssl_key = None
+
     # Build configuration
     config = {
         'mode': mode,
@@ -1238,6 +1304,9 @@ async def main():
         'color_enabled': not args.no_color and sys.stdout.isatty(),
         'auto_setup': args.auto_setup,
         'kill_ports': args.kill_ports,
+        'https': args.https,
+        'ssl_cert': ssl_cert,
+        'ssl_key': ssl_key,
     }
 
     # Print banner

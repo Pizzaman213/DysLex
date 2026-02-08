@@ -1,0 +1,36 @@
+# Docker Compose override for production HTTPS with Let's Encrypt.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.ssl.yml up
+#
+# Before first run, bootstrap certificates:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.ssl.yml \
+#     run --rm certbot certonly --webroot -w /var/www/certbot \
+#     -d your-domain.com --email you@example.com --agree-tos --no-eff-email
+
+services:
+  dyslex-web:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../docker/nginx/nginx.ssl.conf:/etc/nginx/templates/default.conf.template
+      - letsencrypt-certs:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - letsencrypt-certs:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done'"
+    depends_on:
+      - dyslex-web
+    networks:
+      - dyslex-network
+
+volumes:
+  letsencrypt-certs:
+  certbot-webroot:

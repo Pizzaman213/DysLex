@@ -27,6 +27,7 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
   const setError = useCaptureStore((s) => s.setError);
 
   const voice = useCaptureVoice();
+  const micDenied = voice.micDenied;
   const { speak, stop: stopReadAloud, isPlaying, isLoading } = useReadAloud();
   const prevTranscriptRef = useRef(voice.transcript);
 
@@ -128,6 +129,17 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
         <div className={`big-wave ${isRecording ? 'active' : ''}`} aria-hidden="true">
           <span /><span /><span /><span /><span /><span /><span />
         </div>
+
+        {micDenied && (
+          <div className="capture-mic-hint" role="status">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <line x1="1" y1="1" x2="23" y2="23" />
+            </svg>
+            <p>Microphone access is blocked. To re-enable, click the lock icon in your browser's address bar and allow microphone access, then reload the page.</p>
+          </div>
+        )}
 
         {isRecording && (
           <span className="vstatus anim">Listening...</span>
@@ -233,6 +245,7 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
         analyserNode={voice.analyserNode}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
+        micDenied={micDenied}
         compact
       />
       <StatusBar />

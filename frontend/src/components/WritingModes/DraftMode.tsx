@@ -47,7 +47,7 @@ export function DraftMode() {
   }, [pageType]);
   const { currentNudge, dismissNudge } = useAICoach(editor);
   const { startSession, recordCorrectionApplied, recordCorrectionDismissed } = useSessionStore();
-  const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, start: startVoice, stop: stopVoice } = useCaptureVoice();
+  const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, micDenied, start: startVoice, stop: stopVoice } = useCaptureVoice();
   const { speak, stop, isPlaying, isLoading } = useReadAloud();
   const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCheckedTextRef = useRef<string>('');
@@ -342,6 +342,7 @@ export function DraftMode() {
           isReadAloudPlaying={isPlaying}
           isReadAloudLoading={isLoading}
           readAloudDisabled={!content.trim()}
+          micDenied={micDenied}
         />
 
         <StatusBar />

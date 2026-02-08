@@ -61,6 +61,20 @@ def _validate_and_fix_cards(cards: List[ThoughtCard], original_text: str = "") -
     return fixed
 
 
+def _fix_raw_card(card_dict: dict) -> dict:
+    """Fill in missing required fields on raw card dicts before Pydantic validation."""
+    for sub in card_dict.get("sub_ideas", []):
+        if isinstance(sub, dict) and not sub.get("title"):
+            # Derive title from body (first ~8 words) or fall back to id
+            body = sub.get("body", "")
+            if body:
+                words = body.split()
+                sub["title"] = " ".join(words[:8]) + ("..." if len(words) > 8 else "")
+            else:
+                sub["title"] = sub.get("id", "Untitled")
+    return card_dict
+
+
 class IdeaExtractionService:
     """Extracts thought cards from transcripts using Nemotron via NIM."""
 
@@ -101,7 +115,7 @@ class IdeaExtractionService:
                 }
             ],
             "temperature": 0.4,
-            "max_tokens": 2048
+            "max_tokens": settings.llm_max_tokens
         }
 
         try:
@@ -127,10 +141,10 @@ class IdeaExtractionService:
                     if isinstance(parsed, dict):
                         topic = parsed.get("topic", "")
                         raw_cards = parsed.get("cards", [])
-                        cards = [ThoughtCard(**c) if isinstance(c, dict) else c for c in raw_cards]
+                        cards = [ThoughtCard(**_fix_raw_card(c)) if isinstance(c, dict) else c for c in raw_cards]
                     elif isinstance(parsed, list):
                         # Backward compat: LLM returned a plain array
-                        cards = [ThoughtCard(**c) if isinstance(c, dict) else c for c in parsed]
+                        cards = [ThoughtCard(**_fix_raw_card(c)) if isinstance(c, dict) else c for c in parsed]
                 except (json.JSONDecodeError, TypeError):
                     # Fall back to the existing parser
                     cards = parse_json_from_llm_response(
@@ -150,8 +164,8 @@ class IdeaExtractionService:
                 return cards, topic
 
         except httpx.HTTPError as e:
-            logger.error(f"Idea extraction failed: {e}")
-            raise
+            logger.error(f"Idea extraction API error: {e}")
+            return [], ""
         except (KeyError, IndexError) as e:
             logger.error(f"Failed to parse LLM response: {e}")
             return [], ""

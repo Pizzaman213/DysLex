@@ -50,6 +50,12 @@ secrets/
 *.pem
 *.key
 
+# SSL certificates (keep directory structure via .gitkeep)
+certs/dev/*
+certs/prod/*
+!certs/dev/.gitkeep
+!certs/prod/.gitkeep
+
 # Temporary files
 tmp/
 temp/

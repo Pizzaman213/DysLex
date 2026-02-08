@@ -2,7 +2,7 @@ import { ApiError } from './apiErrors';
 import { apiRequestManager } from './apiRequestManager';
 import type { ApiResponse, CorrectionBatchResponse } from '@/types/api';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
 const TOKEN_KEY = 'dyslex-auth-token';
 
 /**
@@ -589,7 +589,11 @@ export const api = {
       transitions?: string[];
     }>('/api/v1/scaffold', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        topic: data.topic,
+        essay_type: data.essayType,
+        existing_ideas: data.existingIdeas,
+      }),
     }),
 
   // -----------------------------------------------------------------------

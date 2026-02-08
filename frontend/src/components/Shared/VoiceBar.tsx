@@ -10,6 +10,7 @@ interface VoiceBarProps {
   isReadAloudPlaying?: boolean;
   isReadAloudLoading?: boolean;
   readAloudDisabled?: boolean;
+  micDenied?: boolean;
 }
 
 export function VoiceBar({
@@ -22,6 +23,7 @@ export function VoiceBar({
   isReadAloudPlaying = false,
   isReadAloudLoading = false,
   readAloudDisabled = false,
+  micDenied = false,
 }: VoiceBarProps) {
   const handleToggle = () => {
     if (isRecording) {
@@ -39,7 +41,7 @@ export function VoiceBar({
         className={compact ? 'vb' : 'voice-btn'}
         onClick={handleToggle}
         disabled={isTranscribing}
-        aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+        aria-label={micDenied ? 'Microphone access is blocked' : isRecording ? 'Stop recording' : 'Start recording'}
         aria-pressed={isRecording}
       >
         <span className="voice-icon" aria-hidden="true">

@@ -56,7 +56,7 @@ interface MindMapModeProps {
 
 export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
   const [isScaffoldLoading, setIsScaffoldLoading] = useState(false);
-  const { isRecording, analyserNode, isTranscribing, start: startVoice, stop: stopVoice } = useCaptureVoice();
+  const { isRecording, analyserNode, isTranscribing, micDenied, start: startVoice, stop: stopVoice } = useCaptureVoice();
 
   const captureCards = useCaptureStore((s) => s.cards);
   const resetCapture = useCaptureStore((s) => s.reset);
@@ -329,6 +329,7 @@ export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
           analyserNode={analyserNode}
           onStartRecording={startVoice}
           onStopRecording={handleVoiceStop}
+          micDenied={micDenied}
           compact
         />
         <StatusBar />

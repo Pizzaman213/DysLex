@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Theme, FontFamily, PageType, ViewMode, Language, UserSettings } from '@/types';
+import type { Theme, FontFamily, PageType, ViewMode, Language, MicPermission, UserSettings } from '@/types';
 import { api } from '@/services/api';
 
 interface SettingsState extends UserSettings {
@@ -43,6 +43,7 @@ interface SettingsState extends UserSettings {
 
   // Accessibility setters
   setVoiceEnabled: (enabled: boolean) => void;
+  setMicPermission: (micPermission: MicPermission) => void;
   setAutoCorrect: (enabled: boolean) => void;
   setFocusMode: (enabled: boolean) => void;
   setTtsSpeed: (speed: number) => void;
@@ -81,6 +82,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   lineSpacing: 1.75,
   letterSpacing: 0.05,
   voiceEnabled: true,
+  micPermission: 'unknown',
   autoCorrect: true,
   focusMode: false,
   ttsSpeed: 1.0,
@@ -196,6 +198,10 @@ export const useSettingsStore = create<SettingsState>()(
         set({ voiceEnabled });
         if (get().cloudSync) get().syncToBackend();
       },
+      setMicPermission: (micPermission) => {
+        set({ micPermission });
+        // No syncToBackend — mic permission is per-browser/device
+      },
       setAutoCorrect: (autoCorrect) => {
         set({ autoCorrect });
         if (get().cloudSync) get().syncToBackend();
@@ -298,11 +304,14 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'dyslex-settings',
-      version: 1,
+      version: 2,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
           state.pageNumbers = true;
+        }
+        if (version < 2) {
+          state.micPermission = 'unknown';
         }
         return state as unknown as SettingsState;
       },

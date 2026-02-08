@@ -1759,6 +1759,31 @@ textarea::placeholder {
   width: 100%;
 }
 
+.capture-mic-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-8);
+  padding: var(--sp-12) var(--sp-16);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg1));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--r-md);
+  color: var(--text2);
+  max-width: 480px;
+  width: 100%;
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+.capture-mic-hint svg {
+  flex-shrink: 0;
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+.capture-mic-hint p {
+  margin: 0;
+}
+
 .capture-content {
   display: grid;
   grid-template-columns: 1fr 1fr;

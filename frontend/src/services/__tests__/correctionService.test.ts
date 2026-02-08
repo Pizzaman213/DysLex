@@ -38,6 +38,10 @@ describe('getCorrections', () => {
     mockCheckGrammar.mockReturnValue([]);
     mockCheckContext.mockReturnValue([]);
     mockIsPersonal.mockReturnValue(false);
+    // Default: API returns no corrections (overridden per-test as needed)
+    mockApiCorrections.mockResolvedValue({
+      data: { corrections: [] },
+    } as any);
   });
 
   // ── Empty / whitespace ──────────────────────────────────────────────
@@ -174,8 +178,23 @@ describe('getCorrections', () => {
     expect(spelling).toBeUndefined();
   });
 
-  // ── Cloud API fallback ─────────────────────────────────────────────
-  it('falls back to cloud API when all local checks return empty', async () => {
+  // ── Cloud API (always called in parallel) ──────────────────────────
+  it('always calls cloud API, even when local corrections exist', async () => {
+    mockRunLocal.mockResolvedValue([
+      {
+        original: 'teh',
+        correction: 'the',
+        confidence: 0.9,
+        position: { start: 0, end: 3 },
+        errorType: 'spelling',
+      },
+    ]);
+
+    await getCorrections('teh cat');
+    expect(mockApiCorrections).toHaveBeenCalledWith('teh cat');
+  });
+
+  it('returns API corrections when local checks find nothing', async () => {
     mockApiCorrections.mockResolvedValue({
       data: {
         corrections: [
@@ -197,14 +216,8 @@ describe('getCorrections', () => {
     expect(result[0].suggested).toBe('because');
   });
 
-  it('returns [] when cloud API throws', async () => {
+  it('returns local corrections when cloud API throws', async () => {
     mockApiCorrections.mockRejectedValue(new Error('Network error'));
-
-    const result = await getCorrections('becuase');
-    expect(result).toEqual([]);
-  });
-
-  it('does NOT call cloud API when local corrections are found', async () => {
     mockRunLocal.mockResolvedValue([
       {
         original: 'teh',
@@ -215,8 +228,99 @@ describe('getCorrections', () => {
       },
     ]);
 
-    await getCorrections('teh cat');
-    expect(mockApiCorrections).not.toHaveBeenCalled();
+    const result = await getCorrections('teh cat');
+    expect(result.length).toBe(1);
+    expect(result[0].suggested).toBe('the');
+  });
+
+  it('returns [] when both local and API find nothing', async () => {
+    mockApiCorrections.mockResolvedValue({
+      data: { corrections: [] },
+    } as any);
+
+    const result = await getCorrections('hello world');
+    expect(result).toEqual([]);
+  });
+
+  // ── AI merge priority ──────────────────────────────────────────────
+  it('AI correction overrides local at same position', async () => {
+    mockRunLocal.mockResolvedValue([
+      {
+        original: 'teh',
+        correction: 'tea',
+        confidence: 0.7,
+        position: { start: 0, end: 3 },
+        errorType: 'spelling',
+      },
+    ]);
+    mockApiCorrections.mockResolvedValue({
+      data: {
+        corrections: [
+          {
+            original: 'teh',
+            correction: 'the',
+            error_type: 'spelling',
+            position: { start: 0, end: 3 },
+            confidence: 0.95,
+          },
+        ],
+      },
+    } as any);
+
+    const result = await getCorrections('teh cat');
+    const atZero = result.filter((c) => c.start === 0);
+    expect(atZero.length).toBe(1);
+    expect(atZero[0].suggested).toBe('the');
+    expect(atZero[0].confidence).toBe(0.95);
+  });
+
+  it('AI catches severe misspellings that local methods miss', async () => {
+    // Local finds nothing for "estomashons"
+    mockApiCorrections.mockResolvedValue({
+      data: {
+        corrections: [
+          {
+            original: 'estomashons',
+            correction: 'estimations',
+            error_type: 'spelling',
+            position: { start: 7, end: 18 },
+            confidence: 0.92,
+          },
+        ],
+      },
+    } as any);
+
+    const result = await getCorrections('I made estomashons about the results');
+    expect(result.length).toBe(1);
+    expect(result[0].original).toBe('estomashons');
+    expect(result[0].suggested).toBe('estimations');
+  });
+
+  it('filters out API corrections without valid position data', async () => {
+    mockApiCorrections.mockResolvedValue({
+      data: {
+        corrections: [
+          {
+            original: 'bad',
+            correction: 'good',
+            error_type: 'spelling',
+            // no position
+            confidence: 0.9,
+          },
+          {
+            original: 'teh',
+            correction: 'the',
+            error_type: 'spelling',
+            position: { start: 0, end: 3 },
+            confidence: 0.9,
+          },
+        ],
+      },
+    } as any);
+
+    const result = await getCorrections('teh test');
+    expect(result.length).toBe(1);
+    expect(result[0].original).toBe('teh');
   });
 
   // ── Overlap removal ────────────────────────────────────────────────

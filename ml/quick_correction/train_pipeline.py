@@ -11,6 +11,10 @@ Or run individual stages:
     python ml/quick_correction/train_pipeline.py --evaluate
     python ml/quick_correction/train_pipeline.py --export
 
+Model types:
+    --model-type bio       BIO token classification (DistilBERT, default)
+    --model-type seq2seq   Seq2seq text correction (T5-small)
+
 Stages: download -> process -> combine -> train -> evaluate -> export
 """
 
@@ -34,6 +38,8 @@ PROCESSED_DIR = DATASETS_DIR / "processed"
 DATA_DIR = Path(__file__).parent / "data"
 MODEL_DIR = Path(__file__).parent / "models" / "quick_correction_base_v1"
 ONNX_DIR = ML_DIR / "models" / "quick_correction_base_v1"
+SEQ2SEQ_MODEL_DIR = Path(__file__).parent / "models" / "quick_correction_seq2seq_v1"
+SEQ2SEQ_ONNX_DIR = ML_DIR / "models" / "quick_correction_seq2seq_v1"
 
 # Add project root to path for imports
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -229,6 +235,152 @@ def stage_export(quantize: bool = False) -> bool:
     return True
 
 
+def stage_process_seq2seq() -> bool:
+    """Stage 2 (seq2seq): Process downloaded datasets into seq2seq training format."""
+    logger.info("=" * 60)
+    logger.info("STAGE 2: Process Datasets (seq2seq)")
+    logger.info("=" * 60)
+
+    if not RAW_DIR.exists() or not list(RAW_DIR.iterdir()):
+        logger.error(f"No raw data found in {RAW_DIR}. Run --download first.")
+        return False
+
+    from ml.datasets.process_datasets import process_all_seq2seq
+
+    results = process_all_seq2seq(
+        raw_dir=RAW_DIR,
+        output_dir=PROCESSED_DIR,
+    )
+    total = sum(results.values())
+
+    if total == 0:
+        logger.error("No seq2seq samples generated. Check raw data files.")
+        return False
+
+    logger.info(f"Seq2seq processing stage complete: {total} total samples")
+    return True
+
+
+def stage_combine_seq2seq(target_total: int = 80000) -> bool:
+    """Stage 3 (seq2seq): Combine real and synthetic data into seq2seq train/val/test splits."""
+    logger.info("=" * 60)
+    logger.info("STAGE 3: Combine Datasets (seq2seq)")
+    logger.info("=" * 60)
+
+    from ml.datasets.combine_datasets import combine_and_split_seq2seq
+
+    results = combine_and_split_seq2seq(
+        processed_dir=PROCESSED_DIR,
+        output_dir=DATA_DIR,
+        target_total=target_total,
+    )
+    total = sum(results.values())
+
+    if total == 0:
+        logger.error("No combined seq2seq data generated.")
+        return False
+
+    logger.info(f"Seq2seq combine stage complete: {total} total samples")
+    return True
+
+
+def stage_train_seq2seq(
+    model_name: str = "t5-small",
+    epochs: int = 5,
+    batch_size: int = 32,
+    learning_rate: float = 3e-4,
+    patience: int = 3,
+) -> bool:
+    """Stage 4 (seq2seq): Fine-tune T5-small on the combined seq2seq dataset."""
+    logger.info("=" * 60)
+    logger.info("STAGE 4: Train Seq2Seq Model")
+    logger.info("=" * 60)
+
+    train_file = DATA_DIR / "train_seq2seq.jsonl"
+    if not train_file.exists():
+        logger.error(f"Seq2seq training data not found at {train_file}. Run --combine first.")
+        return False
+
+    from ml.quick_correction.train_seq2seq import train_seq2seq_model
+
+    train_seq2seq_model(
+        data_dir=DATA_DIR,
+        output_dir=SEQ2SEQ_MODEL_DIR,
+        model_name=model_name,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        patience=patience,
+    )
+
+    logger.info("Seq2seq training stage complete")
+    return True
+
+
+def stage_evaluate_seq2seq() -> bool:
+    """Stage 5 (seq2seq): Evaluate the trained seq2seq model on held-out test data."""
+    logger.info("=" * 60)
+    logger.info("STAGE 5: Evaluate Seq2Seq Model")
+    logger.info("=" * 60)
+
+    if not SEQ2SEQ_MODEL_DIR.exists():
+        logger.error(f"Trained seq2seq model not found at {SEQ2SEQ_MODEL_DIR}. Run --train first.")
+        return False
+
+    test_file = DATA_DIR / "test_seq2seq.jsonl"
+    if not test_file.exists():
+        logger.error(f"Seq2seq test data not found at {test_file}. Run --combine first.")
+        return False
+
+    from ml.quick_correction.evaluate_seq2seq import evaluate_seq2seq_model
+
+    results = evaluate_seq2seq_model(
+        model_dir=SEQ2SEQ_MODEL_DIR,
+        test_file=test_file,
+        output_file=SEQ2SEQ_MODEL_DIR / "eval_report.json",
+    )
+
+    if not results:
+        logger.error("Seq2seq evaluation failed")
+        return False
+
+    logger.info("Seq2seq evaluation stage complete")
+    return True
+
+
+def stage_export_seq2seq(quantize: bool = True) -> bool:
+    """Stage 6 (seq2seq): Export trained seq2seq model to ONNX format.
+
+    Args:
+        quantize: Whether to apply INT8 quantization (default: True)
+    """
+    logger.info("=" * 60)
+    logger.info("STAGE 6: Export Seq2Seq to ONNX")
+    logger.info("=" * 60)
+
+    if not SEQ2SEQ_MODEL_DIR.exists():
+        logger.error(f"Trained seq2seq model not found at {SEQ2SEQ_MODEL_DIR}. Run --train first.")
+        return False
+
+    from ml.quick_correction.export_onnx_seq2seq import (
+        export_seq2seq_to_onnx,
+        test_onnx_seq2seq_inference,
+    )
+
+    export_seq2seq_to_onnx(
+        model_path=SEQ2SEQ_MODEL_DIR,
+        output_path=SEQ2SEQ_ONNX_DIR,
+        quantize=quantize,
+    )
+
+    # Run inference test
+    test_onnx_seq2seq_inference(SEQ2SEQ_ONNX_DIR)
+
+    logger.info(f"Seq2seq ONNX model exported to {SEQ2SEQ_ONNX_DIR}")
+    logger.info("Seq2seq export stage complete")
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -236,8 +388,11 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run everything
+  # Run everything (BIO model, default)
   python ml/quick_correction/train_pipeline.py --all
+
+  # Run everything (seq2seq T5 model)
+  python ml/quick_correction/train_pipeline.py --all --model-type seq2seq
 
   # Download and process only
   python ml/quick_correction/train_pipeline.py --download --process
@@ -248,6 +403,15 @@ Examples:
   # Evaluate and export
   python ml/quick_correction/train_pipeline.py --evaluate --export
         """,
+    )
+
+    # Model type selection
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        choices=["bio", "seq2seq"],
+        default="bio",
+        help="Model architecture: 'bio' (DistilBERT token classifier, default) or 'seq2seq' (T5 text-to-text)",
     )
 
     # Stage selection
@@ -332,13 +496,20 @@ def main():
         args.evaluate = True
         args.export = True
 
-    logger.info("Quick Correction Model Training Pipeline")
+    is_seq2seq = args.model_type == "seq2seq"
+    model_type_label = "Seq2Seq (T5)" if is_seq2seq else "BIO (DistilBERT)"
+
+    logger.info(f"Quick Correction Model Training Pipeline [{model_type_label}]")
     logger.info(f"  Project root: {PROJECT_ROOT}")
     logger.info(f"  Raw data: {RAW_DIR}")
     logger.info(f"  Processed data: {PROCESSED_DIR}")
     logger.info(f"  Training data: {DATA_DIR}")
-    logger.info(f"  Model output: {MODEL_DIR}")
-    logger.info(f"  ONNX output: {ONNX_DIR}")
+    if is_seq2seq:
+        logger.info(f"  Model output: {SEQ2SEQ_MODEL_DIR}")
+        logger.info(f"  ONNX output: {SEQ2SEQ_ONNX_DIR}")
+    else:
+        logger.info(f"  Model output: {MODEL_DIR}")
+        logger.info(f"  ONNX output: {ONNX_DIR}")
 
     # Run stages in order
     stage_results = {}
@@ -350,7 +521,10 @@ def main():
             logger.warning("Download had failures, continuing with available data...")
 
     if args.process:
-        success = stage_process()
+        if is_seq2seq:
+            success = stage_process_seq2seq()
+        else:
+            success = stage_process()
         stage_results["process"] = success
         if not success:
             logger.error("Processing failed. Cannot continue.")
@@ -358,7 +532,10 @@ def main():
             return
 
     if args.combine:
-        success = stage_combine(target_total=args.target_samples)
+        if is_seq2seq:
+            success = stage_combine_seq2seq(target_total=args.target_samples)
+        else:
+            success = stage_combine(target_total=args.target_samples)
         stage_results["combine"] = success
         if not success:
             logger.error("Combination failed. Cannot continue.")
@@ -366,13 +543,25 @@ def main():
             return
 
     if args.train:
-        success = stage_train(
-            model_name=args.model_name,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.lr,
-            patience=args.patience,
-        )
+        if is_seq2seq:
+            # Use seq2seq defaults if user didn't override
+            model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "t5-small"
+            lr = args.lr if args.lr != 2e-5 else 3e-4
+            success = stage_train_seq2seq(
+                model_name=model_name,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                learning_rate=lr,
+                patience=args.patience,
+            )
+        else:
+            success = stage_train(
+                model_name=args.model_name,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                learning_rate=args.lr,
+                patience=args.patience,
+            )
         stage_results["train"] = success
         if not success:
             logger.error("Training failed. Cannot continue.")
@@ -380,11 +569,19 @@ def main():
             return
 
     if args.evaluate:
-        success = stage_evaluate()
+        if is_seq2seq:
+            success = stage_evaluate_seq2seq()
+        else:
+            success = stage_evaluate()
         stage_results["evaluate"] = success
 
     if args.export:
-        success = stage_export(quantize=args.quantize)
+        if is_seq2seq:
+            # Seq2seq uses INT8 quantization by default; --quantize flag is
+            # shared with BIO but for seq2seq it's always on
+            success = stage_export_seq2seq(quantize=True)
+        else:
+            success = stage_export(quantize=args.quantize)
         stage_results["export"] = success
 
     _print_summary(stage_results)
