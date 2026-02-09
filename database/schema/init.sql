@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -118,6 +118,63 @@ CREATE INDEX IF NOT EXISTS idx_user_error_patterns_user_type ON user_error_patte
 CREATE INDEX IF NOT EXISTS idx_user_error_patterns_user_lastseen ON user_error_patterns(user_id, last_seen);
 
 -- -------------------------------------------------------------------------
+-- User settings for application customization (added in migration 002)
+-- -------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS user_settings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+
+    -- General
+    language VARCHAR(10) NOT NULL DEFAULT 'en',
+
+    -- Writing Modes
+    mind_map_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    draft_mode_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    polish_mode_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+
+    -- AI Features
+    passive_learning BOOLEAN NOT NULL DEFAULT TRUE,
+    ai_coaching BOOLEAN NOT NULL DEFAULT TRUE,
+    inline_corrections BOOLEAN NOT NULL DEFAULT TRUE,
+
+    -- Tools
+    progress_tracking BOOLEAN NOT NULL DEFAULT TRUE,
+    read_aloud BOOLEAN NOT NULL DEFAULT TRUE,
+
+    -- Appearance
+    theme VARCHAR(20) NOT NULL DEFAULT 'cream',
+    font VARCHAR(50) NOT NULL DEFAULT 'OpenDyslexic',
+    page_type VARCHAR(20) NOT NULL DEFAULT 'a4',
+    view_mode VARCHAR(20) NOT NULL DEFAULT 'paper',
+    zoom INTEGER NOT NULL DEFAULT 100,
+    show_zoom BOOLEAN NOT NULL DEFAULT FALSE,
+    page_numbers BOOLEAN NOT NULL DEFAULT TRUE,
+    font_size INTEGER NOT NULL DEFAULT 18,
+    line_spacing FLOAT NOT NULL DEFAULT 1.75,
+    letter_spacing FLOAT NOT NULL DEFAULT 0.05,
+
+    -- Accessibility
+    voice_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    auto_correct BOOLEAN NOT NULL DEFAULT TRUE,
+    focus_mode BOOLEAN NOT NULL DEFAULT FALSE,
+    tts_speed FLOAT NOT NULL DEFAULT 1.0,
+    correction_aggressiveness INTEGER NOT NULL DEFAULT 50,
+
+    -- Privacy
+    anonymized_data_collection BOOLEAN NOT NULL DEFAULT FALSE,
+    cloud_sync BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Advanced
+    developer_mode BOOLEAN NOT NULL DEFAULT FALSE,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
+
+-- -------------------------------------------------------------------------
 -- Document & Folder persistence (added in migration 005)
 -- -------------------------------------------------------------------------
 
@@ -164,6 +221,11 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_user_settings_updated_at
+    BEFORE UPDATE ON user_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_folders_updated_at
     BEFORE UPDATE ON folders
     FOR EACH ROW
@@ -173,3 +235,21 @@ CREATE TRIGGER update_documents_updated_at
     BEFORE UPDATE ON documents
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- -------------------------------------------------------------------------
+-- Passkey credentials for WebAuthn authentication (added in migration 006)
+-- -------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS passkey_credentials (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_id BYTEA UNIQUE NOT NULL,
+    public_key BYTEA NOT NULL,
+    sign_count INTEGER NOT NULL DEFAULT 0,
+    transports VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_passkey_credentials_credential_id ON passkey_credentials(credential_id);

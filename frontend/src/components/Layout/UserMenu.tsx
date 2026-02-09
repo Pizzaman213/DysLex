@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '@/stores/userStore';
+import { performLogout } from '@/services/authLifecycle';
 
 export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
@@ -8,7 +9,7 @@ export function UserMenu() {
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
-  const { user, isAuthenticated, logout } = useUserStore();
+  const { user, isAuthenticated } = useUserStore();
 
   const menuItems = [
     { label: 'Settings', action: 'settings' },
@@ -77,13 +78,14 @@ export function UserMenu() {
     }
   };
 
-  const handleMenuAction = (action: string) => {
+  const handleMenuAction = async (action: string) => {
     switch (action) {
       case 'settings':
         navigate('/settings');
         break;
       case 'logout':
-        logout();
+        await performLogout();
+        navigate('/login');
         break;
     }
     setIsOpen(false);

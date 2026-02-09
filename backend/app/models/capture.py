@@ -31,6 +31,7 @@ class ThoughtCard(BaseModel):
 class ExtractIdeasRequest(BaseModel):
     """Request to extract idea cards from a transcript."""
     transcript: str = Field(..., description="The transcript text to analyze")
+    existing_titles: List[str] = Field(default_factory=list, description="Titles already extracted (for dedup in incremental extraction)")
 
 
 class ExtractIdeasResponse(BaseModel):

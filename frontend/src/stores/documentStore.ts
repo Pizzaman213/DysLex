@@ -11,6 +11,7 @@ import {
   syncRenameFolder,
   syncMoveDocument,
   initializeFromServer as initSync,
+  resetSync,
 } from '@/services/documentSync';
 
 interface DocumentState {
@@ -34,6 +35,7 @@ interface DocumentState {
   reorderRoot: (activeId: string, overId: string) => void;
   reorderInFolder: (folderId: string, activeId: string, overId: string) => void;
 
+  resetDocuments: () => void;
   initializeFromServer: () => Promise<void>;
 }
 
@@ -252,14 +254,30 @@ export const useDocumentStore = create<DocumentState>()(
         });
       },
 
+      resetDocuments: () => {
+        resetSync();
+        const freshId = generateId();
+        set({
+          documents: [
+            {
+              id: freshId,
+              title: 'Untitled Document',
+              content: '',
+              mode: 'draft' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              folderId: null,
+            },
+          ],
+          activeDocumentId: freshId,
+          folders: [],
+          rootOrder: [freshId],
+          folderOrders: {},
+        });
+      },
+
       initializeFromServer: async () => {
-        await initSync(
-          () => ({
-            documents: get().documents,
-            folders: get().folders,
-          }),
-          (patch) => set(patch),
-        );
+        await initSync((patch) => set(patch));
       },
     }),
     {

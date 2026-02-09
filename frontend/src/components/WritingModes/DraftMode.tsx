@@ -17,6 +17,8 @@ import { useReadAloud } from '../../hooks/useReadAloud';
 import { useEditorStore, Correction } from '../../stores/editorStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useFormatStore } from '../../stores/formatStore';
+import { PAPER_FORMATS } from '../../constants/paperFormats';
 import { getCorrections } from '../../services/correctionService';
 import { loadModel, addToLocalDictionary } from '../../services/onnxModel';
 import { api } from '../../services/api';
@@ -35,6 +37,10 @@ export function DraftMode() {
   const zoom = useSettingsStore((s) => s.zoom);
   const pageNumbers = useSettingsStore((s) => s.pageNumbers);
   const togglePageNumbers = useSettingsStore((s) => s.togglePageNumbers);
+  const activeFormat = useFormatStore((s) => s.activeFormat);
+  const authorLastName = useFormatStore((s) => s.authorLastName);
+  const shortenedTitle = useFormatStore((s) => s.shortenedTitle);
+  const runningHeaderType = activeFormat !== 'none' ? PAPER_FORMATS[activeFormat]?.runningHeaderType || '' : '';
 
   const pageStyle = useMemo(() => {
     const dim = PAGE_DIMENSIONS[pageType];
@@ -307,6 +313,9 @@ export function DraftMode() {
             className="draft-page"
             style={pageStyle}
             data-page-numbers={pageNumbers}
+            data-running-header-type={runningHeaderType}
+            data-header-last-name={authorLastName}
+            data-header-title={shortenedTitle}
             onDoubleClick={handlePageDoubleClick}
             onContextMenu={handleContextMenu}
           >

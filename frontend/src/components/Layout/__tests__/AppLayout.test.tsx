@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AppLayout } from '../AppLayout';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useDocumentStore } from '@/stores/documentStore';
+import { useUserStore } from '@/stores/userStore';
 
 vi.mock('@/components/Layout/Topbar', () => ({
   Topbar: () => <div data-testid="topbar" />,
@@ -27,6 +28,7 @@ vi.mock('@/services/documentSync', () => ({
   syncRenameFolder: vi.fn(),
   syncMoveDocument: vi.fn(),
   initializeFromServer: vi.fn(),
+  resetSync: vi.fn(),
 }));
 
 const renderLayout = () =>
@@ -38,7 +40,11 @@ const renderLayout = () =>
 
 describe('AppLayout', () => {
   beforeEach(() => {
-    useSettingsStore.setState({ sidebarCollapsed: false });
+    useSettingsStore.setState({ sidebarCollapsed: false, loadFromBackend: vi.fn() });
+    useUserStore.setState({
+      user: { id: '11111111-1111-1111-1111-111111111111', email: 'test@test.com', name: 'Test' },
+      isAuthenticated: true,
+    });
   });
 
   it('renders the Topbar component', () => {

@@ -2,7 +2,7 @@ import { ApiError } from './apiErrors';
 import { apiRequestManager } from './apiRequestManager';
 import type { ApiResponse, CorrectionBatchResponse } from '@/types/api';
 
-const API_BASE = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+const API_BASE = import.meta.env.VITE_API_URL || '';
 const TOKEN_KEY = 'dyslex-auth-token';
 
 /**
@@ -128,6 +128,33 @@ export const api = {
     ),
 
   // -----------------------------------------------------------------------
+  // Passkey (WebAuthn)
+  // -----------------------------------------------------------------------
+  passkeyRegisterStart: (email: string, name: string) =>
+    request<{ status: string; data: Record<string, unknown> }>(
+      '/api/v1/auth/passkey/register/options',
+      { method: 'POST', body: JSON.stringify({ email, name }) },
+    ),
+
+  passkeyRegisterComplete: (email: string, credential: Record<string, unknown>) =>
+    request<{ status: string; data: { access_token: string; user_id: string; user_name: string; user_email: string } }>(
+      '/api/v1/auth/passkey/register/complete',
+      { method: 'POST', body: JSON.stringify({ email, credential }) },
+    ),
+
+  passkeyLoginStart: (email?: string) =>
+    request<{ status: string; data: Record<string, unknown> }>(
+      '/api/v1/auth/passkey/login/options',
+      { method: 'POST', body: JSON.stringify({ email: email || null }) },
+    ),
+
+  passkeyLoginComplete: (sessionId: string, credential: Record<string, unknown>) =>
+    request<{ status: string; data: { access_token: string; user_id: string; user_name: string; user_email: string } }>(
+      '/api/v1/auth/passkey/login/complete',
+      { method: 'POST', body: JSON.stringify({ session_id: sessionId, credential }) },
+    ),
+
+  // -----------------------------------------------------------------------
   // Capture Mode
   // -----------------------------------------------------------------------
   transcribeAudio: async (audioBlob: Blob): Promise<{ transcript: string; language?: string; duration?: number }> => {
@@ -152,7 +179,7 @@ export const api = {
     return response.json();
   },
 
-  extractIdeas: (transcript: string) =>
+  extractIdeas: (transcript: string, existingTitles?: string[]) =>
     request<{ cards: Array<{
       id: string;
       title: string;
@@ -160,7 +187,13 @@ export const api = {
       sub_ideas?: Array<{ id: string; title: string; body: string }>;
     }>; topic?: string; clusterNames?: Record<string, string> }>(
       '/api/v1/capture/extract-ideas',
-      { method: 'POST', body: JSON.stringify({ transcript }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          transcript,
+          ...(existingTitles && existingTitles.length > 0 ? { existing_titles: existingTitles } : {}),
+        }),
+      },
     ),
 
   extractIdeasFromImage: (imageBase64: string, mimeType: string = 'image/jpeg', hint?: string) =>
@@ -174,6 +207,37 @@ export const api = {
       {
         method: 'POST',
         body: JSON.stringify({ image_base64: imageBase64, mime_type: mimeType, hint }),
+        retry: true,
+      },
+    ),
+
+  brainstormTurn: (
+    userUtterance: string,
+    conversationHistory: Array<{ role: string; content: string }>,
+    existingCards: Array<{ id: string; title: string; body: string }>,
+    transcriptSoFar: string,
+  ) =>
+    requestWithRetry<{
+      reply: string;
+      audio_url: string;
+      new_sub_ideas: Array<{ id: string; title: string; body: string }>;
+      suggested_parent_card_id: string | null;
+      suggested_new_card: {
+        id: string;
+        title: string;
+        body: string;
+        sub_ideas: Array<{ id: string; title: string; body: string }>;
+      } | null;
+    }>(
+      '/api/v1/capture/brainstorm/turn',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          user_utterance: userUtterance,
+          conversation_history: conversationHistory,
+          existing_cards: existingCards,
+          transcript_so_far: transcriptSoFar,
+        }),
         retry: true,
       },
     ),

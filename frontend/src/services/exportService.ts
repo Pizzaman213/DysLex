@@ -1,9 +1,20 @@
 import { saveAs } from 'file-saver';
 
+export interface PaperFormatExport {
+  fontFamilyCss: string;
+  fontSize: number;
+  lineSpacing: number;
+  margins: string;
+  firstLineIndent: string;
+}
+
 export interface ExportOptions {
   title?: string;
   author?: string;
   includeMetadata?: boolean;
+  paperFormat?: PaperFormatExport;
+  authorLastName?: string;
+  shortenedTitle?: string;
 }
 
 export interface ExportResult {
@@ -63,7 +74,16 @@ export function addDocumentMetadata(html: string, options: ExportOptions): strin
 /**
  * Create complete HTML document with embedded styles
  */
-function createFullHTMLDocument(html: string, title: string): string {
+function createFullHTMLDocument(html: string, title: string, options: ExportOptions = {}): string {
+  const fmt = options.paperFormat;
+  const fontFamily = fmt
+    ? fmt.fontFamilyCss
+    : "'OpenDyslexic', 'Atkinson Hyperlegible', 'Lexie Readable', -apple-system, BlinkMacSystemFont, sans-serif";
+  const fontSize = fmt ? `${fmt.fontSize}pt` : '16px';
+  const lineHeight = fmt ? fmt.lineSpacing : 1.6;
+  const padding = fmt ? fmt.margins : '2rem';
+  const textIndent = fmt ? fmt.firstLineIndent : '0';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -72,14 +92,14 @@ function createFullHTMLDocument(html: string, title: string): string {
   <title>${title}</title>
   <style>
     body {
-      font-family: 'OpenDyslexic', 'Atkinson Hyperlegible', 'Lexie Readable', -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: 16px;
-      line-height: 1.6;
+      font-family: ${fontFamily};
+      font-size: ${fontSize};
+      line-height: ${lineHeight};
       color: #2D2A24;
-      background-color: #FAF6EE;
-      max-width: 800px;
+      background-color: ${fmt ? '#fff' : '#FAF6EE'};
+      max-width: ${fmt ? 'none' : '800px'};
       margin: 0 auto;
-      padding: 2rem;
+      padding: ${padding};
     }
     h1, h2, h3, h4, h5, h6 {
       margin-top: 1.5em;
@@ -91,6 +111,7 @@ function createFullHTMLDocument(html: string, title: string): string {
     h3 { font-size: 1.25em; }
     p {
       margin-bottom: 1em;
+      text-indent: ${textIndent};
     }
     ul, ol {
       margin-bottom: 1em;
@@ -146,11 +167,18 @@ export async function exportDOCX(
     // (html-to-docx uses Node.js modules that fail as top-level imports)
     // @ts-ignore - no types available
     const { default: HTMLtoDOCX } = await import('html-to-docx');
-    const docxBlob = await HTMLtoDOCX(contentWithMetadata, null, {
+    const fmt = options.paperFormat;
+    const docxOptions: any = {
       table: { row: { cantSplit: true } },
       footer: true,
       pageNumber: true,
-    });
+    };
+    if (fmt) {
+      docxOptions.font = fmt.fontFamilyCss.split(',')[0].replace(/'/g, '').trim();
+      docxOptions.fontSize = fmt.fontSize * 2; // half-points
+      docxOptions.margins = { top: 1440, right: 1440, bottom: 1440, left: 1440 }; // 1" = 1440 twips
+    }
+    const docxBlob = await HTMLtoDOCX(contentWithMetadata, null, docxOptions);
 
     // Download the file
     const filename = generateFilename(title, 'docx');
@@ -177,23 +205,34 @@ export async function exportPDF(
     const title = options.title || extractTitle(html);
     const contentWithMetadata = addDocumentMetadata(html, { ...options, title });
 
+    const fmt = options.paperFormat;
+
     // Create a temporary container for PDF generation
     const container = document.createElement('div');
     container.innerHTML = contentWithMetadata;
-    container.style.fontFamily =
-      "'OpenDyslexic', 'Atkinson Hyperlegible', 'Lexie Readable', sans-serif";
-    container.style.fontSize = '14px';
-    container.style.lineHeight = '1.6';
+    container.style.fontFamily = fmt
+      ? fmt.fontFamilyCss
+      : "'OpenDyslexic', 'Atkinson Hyperlegible', 'Lexie Readable', sans-serif";
+    container.style.fontSize = fmt ? `${fmt.fontSize}pt` : '14px';
+    container.style.lineHeight = fmt ? String(fmt.lineSpacing) : '1.6';
     container.style.color = '#2D2A24';
     container.style.padding = '20px';
 
-    // PDF configuration
+    if (fmt) {
+      // Apply first-line indent to paragraphs
+      container.querySelectorAll('p').forEach((p) => {
+        (p as HTMLElement).style.textIndent = fmt.firstLineIndent;
+      });
+    }
+
+    // PDF configuration — academic formats use letter size with 1" margins
+    const pdfMargin = fmt ? 25.4 : 15; // 1 inch = 25.4mm
     const pdfOptions: any = {
-      margin: [15, 15, 15, 15],
+      margin: [pdfMargin, pdfMargin, pdfMargin, pdfMargin],
       filename: generateFilename(title, 'pdf'),
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      jsPDF: { unit: 'mm', format: fmt ? 'letter' : 'a4', orientation: 'portrait' },
     };
 
     // Dynamically import to avoid browser compatibility issues at load time
@@ -221,7 +260,7 @@ export async function exportHTML(
   try {
     const title = options.title || extractTitle(html);
     const contentWithMetadata = addDocumentMetadata(html, { ...options, title });
-    const fullHTML = createFullHTMLDocument(contentWithMetadata, title);
+    const fullHTML = createFullHTMLDocument(contentWithMetadata, title, options);
 
     // Create blob and download
     const blob = new Blob([fullHTML], { type: 'text/html;charset=utf-8' });

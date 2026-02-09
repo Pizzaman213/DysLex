@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { DyslexEditor } from '../Editor/DyslexEditor';
 import { EditorToolbar } from '../Editor/EditorToolbar';
+import { CoachPanel } from '../Panels/CoachPanel';
 import { PolishPanel } from '../Panels/PolishPanel';
 import { VoiceBar } from '../Shared/VoiceBar';
 import { StatusBar } from '../Shared/StatusBar';
@@ -10,6 +11,8 @@ import { useReadAloud } from '../../hooks/useReadAloud';
 import { useEditorStore } from '../../stores/editorStore';
 import { usePolishStore } from '../../stores/polishStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useFormatStore } from '../../stores/formatStore';
+import { PAPER_FORMATS } from '../../constants/paperFormats';
 import { PAGE_DIMENSIONS, PAGE_MARGIN, getContentHeight } from '../../constants/pageDimensions';
 export function PolishMode() {
   const { content } = useEditorStore();
@@ -19,6 +22,10 @@ export function PolishMode() {
   const zoom = useSettingsStore((s) => s.zoom);
   const pageNumbers = useSettingsStore((s) => s.pageNumbers);
   const togglePageNumbers = useSettingsStore((s) => s.togglePageNumbers);
+  const activeFormat = useFormatStore((s) => s.activeFormat);
+  const authorLastName = useFormatStore((s) => s.authorLastName);
+  const shortenedTitle = useFormatStore((s) => s.shortenedTitle);
+  const runningHeaderType = activeFormat !== 'none' ? PAPER_FORMATS[activeFormat]?.runningHeaderType || '' : '';
 
   const pageStyle = useMemo(() => {
     const dim = PAGE_DIMENSIONS[pageType];
@@ -97,6 +104,10 @@ export function PolishMode() {
   return (
     <div className="polish-mode">
       <div className={`polish-layout${showAnalysis ? '' : ' panel-hidden'}`}>
+        <div className="polish-coach-panel">
+          <CoachPanel editor={editor} />
+        </div>
+
         <div className="polish-editor-area">
           <div className="draft-toolbar-row">
             <EditorToolbar
@@ -115,6 +126,9 @@ export function PolishMode() {
               className="editor-page"
               style={pageStyle}
               data-page-numbers={pageNumbers}
+              data-running-header-type={runningHeaderType}
+              data-header-last-name={authorLastName}
+              data-header-title={shortenedTitle}
               onDoubleClick={handlePageDoubleClick}
             >
               <DyslexEditor

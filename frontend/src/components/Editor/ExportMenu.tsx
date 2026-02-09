@@ -11,6 +11,9 @@ import {
   type ExportOptions,
 } from '../../services/exportService';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useFormatStore } from '../../stores/formatStore';
+import { PAPER_FORMATS } from '../../constants/paperFormats';
+import type { PaperFormatExport } from '../../services/exportService';
 
 interface ExportMenuProps {
   editor: Editor | null;
@@ -143,9 +146,25 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({ editor }) => {
     const text = editor.getText();
     const title = extractTitle(html);
 
+    const { activeFormat, authorLastName, shortenedTitle } = useFormatStore.getState();
+    let paperFormat: PaperFormatExport | undefined;
+    if (activeFormat !== 'none') {
+      const fmt = PAPER_FORMATS[activeFormat];
+      paperFormat = {
+        fontFamilyCss: fmt.fontFamilyCss,
+        fontSize: fmt.fontSize,
+        lineSpacing: fmt.lineSpacing,
+        margins: fmt.margins,
+        firstLineIndent: fmt.firstLineIndent,
+      };
+    }
+
     const options: ExportOptions = {
       title,
       includeMetadata: true,
+      paperFormat,
+      authorLastName,
+      shortenedTitle,
     };
 
     let result;

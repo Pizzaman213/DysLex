@@ -1,4 +1,9 @@
-"""Text-to-speech service using MagpieTTS via NVIDIA Riva TTS NIM."""
+"""Text-to-speech service using MagpieTTS via NVIDIA Riva TTS NIM.
+
+Supports two modes:
+  - Cloud API (integrate.api.nvidia.com): Uses gRPC via grpc_tts_client
+  - Self-hosted Riva NIM (e.g. localhost:9000): Uses HTTP /audio/synthesize
+"""
 
 import asyncio
 import hashlib
@@ -14,6 +19,9 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Cloud API hostnames that require gRPC instead of HTTP
+_CLOUD_HOSTS = {"integrate.api.nvidia.com", "api.nvidia.com", "api.nvcf.nvidia.com"}
 
 # Map friendly voice IDs to NVIDIA Riva voice names
 _VOICE_MAP: dict[str, str] = {
@@ -36,10 +44,21 @@ def _content_hash(text: str, voice: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def _is_cloud_url(voice_url: str) -> bool:
+    """Check if the voice URL points at NVIDIA's cloud API (requires gRPC)."""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(voice_url).hostname or ""
+        return host in _CLOUD_HOSTS
+    except Exception:
+        return False
+
+
 async def _generate_and_cache(text: str, voice: str, content_hash: str) -> str:
     """Call NVIDIA Riva TTS API, save as {hash}.wav, return audio URL.
 
     If the file already exists on disk (cache hit), skips the API call.
+    Auto-detects cloud vs self-hosted and uses the appropriate protocol.
     """
     filename = f"{content_hash}.wav"
     filepath = os.path.join(settings.tts_audio_dir, filename)
@@ -50,18 +69,25 @@ async def _generate_and_cache(text: str, voice: str, content_hash: str) -> str:
         return f"{settings.tts_audio_base_url}/{filename}"
 
     # Cache miss — call API
+    is_cloud = _is_cloud_url(settings.nvidia_nim_voice_url)
+    logger.info("TTS cache miss for %s — using %s path", content_hash[:12], "cloud gRPC" if is_cloud else "self-hosted HTTP")
     try:
-        response = await _call_tts_api(text, voice)
-    except TtsUnavailableError:
+        if is_cloud:
+            audio_bytes = await _call_tts_api_cloud(text, voice)
+        else:
+            response = await _call_tts_api_selfhosted(text, voice)
+            audio_bytes = response.content
+    except TtsUnavailableError as e:
+        logger.warning("TTS unavailable: %s", e)
         return ""
-    except Exception:
-        logger.warning("TTS call failed after retries", exc_info=True)
+    except Exception as e:
+        logger.error("TTS call failed: %s: %s", type(e).__name__, e, exc_info=True)
         return ""
 
     os.makedirs(settings.tts_audio_dir, exist_ok=True)
 
     async with aiofiles.open(filepath, "wb") as f:
-        await f.write(response.content)
+        await f.write(audio_bytes)
 
     # Metadata for cleanup
     async with aiofiles.open(f"{filepath}.meta", "w") as f:
@@ -138,6 +164,42 @@ async def batch_text_to_speech(
 
 # Track whether we've already logged the TTS unavailable warning
 _tts_unavailable_logged = False
+_cloud_tts_logged = False
+
+
+async def _call_tts_api_cloud(text: str, voice: str) -> bytes:
+    """Call NVIDIA Cloud Riva TTS via gRPC.
+
+    The NVIDIA cloud API (integrate.api.nvidia.com) only supports gRPC
+    for TTS — the HTTP endpoint does not exist. This function uses the
+    grpc_tts_client module to make the call.
+    """
+    global _cloud_tts_logged, _tts_unavailable_logged
+    from app.services.grpc_tts_client import synthesize_cloud
+
+    if not _cloud_tts_logged:
+        logger.info("Using NVIDIA Cloud gRPC for TTS (Magpie-TTS-Multilingual)")
+        _cloud_tts_logged = True
+
+    try:
+        return await synthesize_cloud(
+            text=text,
+            voice=voice,
+            api_key=settings.nvidia_nim_api_key,
+        )
+    except Exception as e:
+        error_str = str(e)
+        # Check for authentication or function-not-found errors
+        if "UNAUTHENTICATED" in error_str or "PERMISSION_DENIED" in error_str:
+            if not _tts_unavailable_logged:
+                logger.warning(
+                    "TTS gRPC auth failed — check NVIDIA_NIM_API_KEY. "
+                    "Error: %s",
+                    error_str[:200],
+                )
+                _tts_unavailable_logged = True
+            raise TtsUnavailableError("Cloud gRPC auth failed")
+        raise
 
 
 @retry(
@@ -145,15 +207,11 @@ _tts_unavailable_logged = False
     wait=wait_exponential(min=1, max=5),
     retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException)),
 )
-async def _call_tts_api(text: str, voice: str) -> httpx.Response:
-    """Call NVIDIA Riva TTS HTTP API with retry logic.
+async def _call_tts_api_selfhosted(text: str, voice: str) -> httpx.Response:
+    """Call self-hosted Riva TTS NIM via HTTP.
 
     Uses the Riva TTS /v1/audio/synthesize endpoint with multipart form data.
-    Requires a self-hosted Riva TTS NIM container — the NVIDIA cloud API
-    (integrate.api.nvidia.com) does not expose HTTP TTS endpoints.
-
-    Set NVIDIA_NIM_VOICE_URL to point at your Riva TTS instance
-    (e.g. http://localhost:9000/v1).
+    For self-hosted Riva TTS NIM containers (e.g. http://localhost:9000/v1).
     """
     global _tts_unavailable_logged
     url = f"{settings.nvidia_nim_voice_url}/audio/synthesize"
@@ -174,10 +232,8 @@ async def _call_tts_api(text: str, voice: str) -> httpx.Response:
             if not _tts_unavailable_logged:
                 logger.warning(
                     "TTS endpoint returned 404 at %s. "
-                    "NVIDIA cloud API does not support HTTP TTS — "
-                    "set NVIDIA_NIM_VOICE_URL to a self-hosted Riva TTS NIM "
-                    "(e.g. http://localhost:9000/v1). "
-                    "TTS will be disabled until a valid endpoint is configured.",
+                    "Set NVIDIA_NIM_VOICE_URL to a self-hosted Riva TTS NIM "
+                    "(e.g. http://localhost:9000/v1).",
                     url,
                 )
                 _tts_unavailable_logged = True

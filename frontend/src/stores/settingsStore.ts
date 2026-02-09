@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Theme, FontFamily, PageType, ViewMode, Language, MicPermission, UserSettings } from '@/types';
 import { api } from '@/services/api';
+import { useUserStore } from '@/stores/userStore';
 
 interface SettingsState extends UserSettings {
   isLoading: boolean;
@@ -55,6 +56,9 @@ interface SettingsState extends UserSettings {
 
   // Advanced setters
   setDeveloperMode: (enabled: boolean) => void;
+
+  // Reset
+  resetSettings: () => void;
 
   // Sync methods
   loadFromBackend: () => Promise<void>;
@@ -238,12 +242,18 @@ export const useSettingsStore = create<SettingsState>()(
         if (get().cloudSync) get().syncToBackend();
       },
 
+      // Reset to defaults (used on logout)
+      resetSettings: () => {
+        set({ ...DEFAULT_SETTINGS, isLoading: false, isSyncing: false });
+      },
+
       // Load settings from backend
       loadFromBackend: async () => {
+        const userId = useUserStore.getState().user?.id;
+        if (!userId) return;
+
         set({ isLoading: true });
         try {
-          // TODO: Get actual user ID from auth store
-          const userId = '00000000-0000-0000-0000-000000000000';
           const response = await api.getSettings(userId);
           if (response.data) {
             set({ ...response.data, isLoading: false });
@@ -261,10 +271,11 @@ export const useSettingsStore = create<SettingsState>()(
         const state = get();
         if (state.isSyncing) return; // Prevent concurrent syncs
 
+        const userId = useUserStore.getState().user?.id;
+        if (!userId) return;
+
         set({ isSyncing: true });
         try {
-          // TODO: Get actual user ID from auth store
-          const userId = '00000000-0000-0000-0000-000000000000';
           const settings: Partial<UserSettings> = {
             language: state.language,
             mindMapEnabled: state.mindMapEnabled,

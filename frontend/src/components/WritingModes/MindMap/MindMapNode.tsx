@@ -99,7 +99,7 @@ export const MindMapNode = memo(({ id, data }: NodeProps) => {
   const nodeClasses = [
     'mindmap-node',
     isRoot ? 'central' : '',
-    `n${nodeData.cluster}`,
+    !isRoot ? `n${nodeData.cluster}` : '',
     isSub ? 'sub' : '',
     isEditing ? 'editing' : '',
   ].filter(Boolean).join(' ');

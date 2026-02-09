@@ -55,12 +55,16 @@ Output ONLY valid JSON. No markdown fences. No extra text."""
 _MAX_TRANSCRIPT_CHARS = 128_000
 
 
-def build_extract_ideas_prompt(transcript: str) -> str:
+def build_extract_ideas_prompt(
+    transcript: str,
+    existing_titles: list[str] | None = None,
+) -> str:
     """
     Build the user prompt for idea extraction.
 
     Args:
         transcript: The voice transcript to analyze
+        existing_titles: Titles already extracted (for incremental dedup)
 
     Returns:
         Formatted prompt string
@@ -69,7 +73,16 @@ def build_extract_ideas_prompt(transcript: str) -> str:
     if len(transcript) > _MAX_TRANSCRIPT_CHARS:
         transcript = transcript[:_MAX_TRANSCRIPT_CHARS] + "…"
 
-    return f"""EXAMPLE 1 (no sub_ideas):
+    dedup_section = ""
+    if existing_titles:
+        titles_str = ", ".join(f'"{t}"' for t in existing_titles)
+        dedup_section = f"""
+ALREADY EXTRACTED (do NOT regenerate these — only output NEW ideas):
+{titles_str}
+
+"""
+
+    return f"""{dedup_section}EXAMPLE 1 (no sub_ideas):
 
 Input: "Nvidia makes gpus. Microsoft makes software."
 

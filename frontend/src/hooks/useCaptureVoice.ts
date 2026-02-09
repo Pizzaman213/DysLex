@@ -3,6 +3,9 @@
  *
  * Primary path: Web Speech API (real-time browser transcription) + AudioContext for waveform.
  * Fallback path: MediaRecorder + backend /capture/transcribe (for browsers without Speech API).
+ *
+ * In both paths a background MediaRecorder runs on the same stream to capture
+ * audio blobs for playback.
  */
 
 import { useState, useRef, useCallback } from 'react';
@@ -21,9 +24,27 @@ interface UseCaptureVoiceReturn {
   isTranscribing: boolean;
   /** True when microphone access is denied in browser */
   micDenied: boolean;
+  /** Last recorded audio blob (available after stop) */
+  lastBlob: Blob | null;
   start: () => Promise<void>;
   stop: () => Promise<string>;
   resetTranscript: () => void;
+}
+
+/**
+ * Returns the best supported MIME type for background MediaRecorder.
+ */
+function getBgMimeType(): string {
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+  for (const t of types) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
 }
 
 export function useCaptureVoice(): UseCaptureVoiceReturn {
@@ -34,9 +55,12 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
   const [fallbackTranscript, setFallbackTranscript] = useState('');
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [lastBlob, setLastBlob] = useState<Blob | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const bgRecorderRef = useRef<MediaRecorder | null>(null);
+  const bgChunksRef = useRef<Blob[]>([]);
   const usingWebSpeech = voice.isSupported;
 
   const start = useCallback(async () => {
@@ -62,6 +86,20 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
       source.connect(analyser);
       audioContextRef.current = ctx;
       setAnalyserNode(analyser);
+
+      // Start background MediaRecorder for blob capture
+      try {
+        const mimeType = getBgMimeType();
+        const bgRec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        bgChunksRef.current = [];
+        bgRec.ondataavailable = (e) => {
+          if (e.data.size > 0) bgChunksRef.current.push(e.data);
+        };
+        bgRec.start();
+        bgRecorderRef.current = bgRec;
+      } catch {
+        // Background recorder is non-critical — continue without it
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
         recordDenied();
@@ -80,6 +118,21 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
   }, [usingWebSpeech, voice, recorder, checkPermission, recordGranted, recordDenied]);
 
   const stop = useCallback(async (): Promise<string> => {
+    // Collect background recorder blob
+    const bgRec = bgRecorderRef.current;
+    if (bgRec && bgRec.state !== 'inactive') {
+      await new Promise<void>((resolve) => {
+        bgRec.onstop = () => {
+          const blob = new Blob(bgChunksRef.current, { type: bgRec.mimeType });
+          setLastBlob(blob);
+          bgChunksRef.current = [];
+          resolve();
+        };
+        bgRec.stop();
+      });
+    }
+    bgRecorderRef.current = null;
+
     // Tear down audio context / stream
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -121,6 +174,7 @@ export function useCaptureVoice(): UseCaptureVoiceReturn {
     isSupported: true, // Always supported — fallback uses MediaRecorder
     isTranscribing,
     micDenied: isDenied,
+    lastBlob,
     start,
     stop,
     resetTranscript,

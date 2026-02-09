@@ -53,7 +53,7 @@ async def get_user(
     settings = await get_or_create_settings(db, user_id)
     return success_response({
         "user": User(id=user.id, email=user.email, name=user.name).model_dump(),
-        "settings": UserSettings.model_validate(settings).model_dump(),
+        "settings": UserSettings.model_validate(settings).model_dump(by_alias=True),
     })
 
 
@@ -66,7 +66,7 @@ async def get_settings(
     """Get user settings only."""
     _assert_own_user(user_id, current_user)
     settings = await get_or_create_settings(db, user_id)
-    return success_response(UserSettings.model_validate(settings).model_dump())
+    return success_response(UserSettings.model_validate(settings).model_dump(by_alias=True))
 
 
 @router.put("/{user_id}/settings")
@@ -89,7 +89,7 @@ async def update_settings(
     if not settings:
         raise HTTPException(status_code=404, detail="Settings not found")
 
-    return success_response(UserSettings.model_validate(settings).model_dump())
+    return success_response(UserSettings.model_validate(settings).model_dump(by_alias=True))
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -140,8 +140,21 @@ async def export_user_data(
         },
         "settings": {
             "language": settings.language,
+            "mind_map_enabled": settings.mind_map_enabled,
+            "draft_mode_enabled": settings.draft_mode_enabled,
+            "polish_mode_enabled": settings.polish_mode_enabled,
+            "passive_learning": settings.passive_learning,
+            "ai_coaching": settings.ai_coaching,
+            "inline_corrections": settings.inline_corrections,
+            "progress_tracking": settings.progress_tracking,
+            "read_aloud": settings.read_aloud,
             "theme": settings.theme,
             "font": settings.font,
+            "page_type": settings.page_type,
+            "view_mode": settings.view_mode,
+            "zoom": settings.zoom,
+            "show_zoom": settings.show_zoom,
+            "page_numbers": settings.page_numbers,
             "font_size": settings.font_size,
             "line_spacing": settings.line_spacing,
             "letter_spacing": settings.letter_spacing,

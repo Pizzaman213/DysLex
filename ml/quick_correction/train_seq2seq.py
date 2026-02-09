@@ -132,6 +132,9 @@ def compute_metrics(eval_pred: tuple[np.ndarray, np.ndarray], tokenizer: Any) ->
     """
     predictions, labels = eval_pred
 
+    # Replace any negative values in predictions with pad token id
+    predictions = np.where(predictions >= 0, predictions, tokenizer.pad_token_id)
+
     # Decode predictions
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
 
@@ -311,7 +314,7 @@ def train_seq2seq_model(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=data_collator,
         compute_metrics=metrics_fn,
         callbacks=callbacks,

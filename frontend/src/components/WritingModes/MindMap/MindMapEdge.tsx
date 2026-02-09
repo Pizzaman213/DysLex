@@ -7,7 +7,7 @@ const RELATIONSHIP_COLORS: Record<EdgeRelationship, string> = {
   contradicts: 'var(--error, #c44)',
   leads_to: 'var(--blue)',
   example_of: 'var(--yellow)',
-  related_to: 'var(--border2, rgba(45,42,36,.15))',
+  related_to: 'var(--text3)',
 };
 
 const RELATIONSHIP_LABELS: Record<EdgeRelationship, string> = {
@@ -42,7 +42,7 @@ export const MindMapEdge = memo((props: EdgeProps) => {
   } else if (isFromRoot) {
     strokeColor = 'var(--accent)';
   } else {
-    strokeColor = 'var(--border2, rgba(45,42,36,.15))';
+    strokeColor = 'var(--text3)';
   }
 
   // Determine dash pattern
@@ -51,11 +51,11 @@ export const MindMapEdge = memo((props: EdgeProps) => {
   // Determine opacity
   let baseOpacity: number;
   if (hasRelationship) {
-    baseOpacity = 0.7;
+    baseOpacity = 0.8;
   } else if (isFromRoot) {
-    baseOpacity = 0.35;
+    baseOpacity = 0.5;
   } else {
-    baseOpacity = 0.6;
+    baseOpacity = 0.75;
   }
 
   return (

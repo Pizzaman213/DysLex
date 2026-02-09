@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -21,7 +21,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -33,6 +33,7 @@ class User(Base):
     progress_snapshots: Mapped[list["ProgressSnapshot"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     folders: Mapped[list["Folder"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     documents: Mapped[list["Document"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    passkey_credentials: Mapped[list["PasskeyCredential"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class UserSettings(Base):
@@ -46,9 +47,28 @@ class UserSettings(Base):
     # General
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
 
+    # Writing Modes
+    mind_map_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    draft_mode_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    polish_mode_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # AI Features
+    passive_learning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ai_coaching: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    inline_corrections: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Tools
+    progress_tracking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    read_aloud: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     # Appearance
     theme: Mapped[str] = mapped_column(String(20), nullable=False, default="cream")
     font: Mapped[str] = mapped_column(String(50), nullable=False, default="OpenDyslexic")
+    page_type: Mapped[str] = mapped_column(String(20), nullable=False, default="a4")
+    view_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="paper")
+    zoom: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    show_zoom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    page_numbers: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     font_size: Mapped[int] = mapped_column(Integer, nullable=False, default=18)
     line_spacing: Mapped[float] = mapped_column(Float, nullable=False, default=1.75)
     letter_spacing: Mapped[float] = mapped_column(Float, nullable=False, default=0.05)
@@ -229,3 +249,20 @@ class Document(Base):
 
     user: Mapped["User"] = relationship(back_populates="documents")
     folder: Mapped["Folder | None"] = relationship(back_populates="documents")
+
+
+class PasskeyCredential(Base):
+    """WebAuthn passkey credential for passwordless authentication."""
+
+    __tablename__ = "passkey_credentials"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True, nullable=False)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    transports: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="passkey_credentials")

@@ -146,6 +146,7 @@
   font-weight: 700;
   cursor: grab;
   transition: box-shadow 0.2s, transform 0.2s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   white-space: nowrap;
   user-select: none;
   border: 2px solid transparent;
@@ -173,31 +174,31 @@
 .mindmap-node.n1 {
   background: var(--accent-l, rgba(224,123,76,.12));
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--text, var(--text-primary));
 }
 
 .mindmap-node.n2 {
   background: var(--green-l, rgba(91,160,122,.12));
   border-color: var(--green);
-  color: var(--green);
+  color: var(--text, var(--text-primary));
 }
 
 .mindmap-node.n3 {
   background: var(--blue-l, rgba(91,143,199,.12));
   border-color: var(--blue);
-  color: var(--blue);
+  color: var(--text, var(--text-primary));
 }
 
 .mindmap-node.n4 {
   background: var(--yellow-l, rgba(212,168,67,.12));
   border-color: var(--yellow);
-  color: var(--yellow);
+  color: var(--text, var(--text-primary));
 }
 
 .mindmap-node.n5 {
   background: var(--purple-l, rgba(155,127,199,.12));
   border-color: var(--purple);
-  color: var(--purple);
+  color: var(--text, var(--text-primary));
 }
 
 /* Sub-nodes — smaller, lighter */
@@ -830,7 +831,7 @@
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  opacity: 0.4;
+  opacity: 0.6;
   transition: opacity 0.2s;
   white-space: nowrap;
   pointer-events: none;

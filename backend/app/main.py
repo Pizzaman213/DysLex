@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.routes import (
     auth,
+    brainstorm,
     capture,
     coach,
     corrections,
@@ -22,6 +23,7 @@ from app.api.routes import (
     learn,
     log_correction,
     mindmap,
+    passkey,
     profiles,
     progress,
     scaffold,
@@ -222,6 +224,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(passkey.router, prefix="/api/v1/auth/passkey", tags=["auth"])
 app.include_router(corrections.router, prefix="/api/v1/correct", tags=["corrections"])
 app.include_router(profiles.router, prefix="/api/v1/profile", tags=["profiles"])
 app.include_router(snapshots.router, prefix="/api/v1", tags=["adaptive-learning"])
@@ -238,6 +241,7 @@ app.include_router(mindmap.router, prefix="/api/v1/mindmap", tags=["mindmap"])
 app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
 app.include_router(vision.router, prefix="/api/v1/vision", tags=["vision"])
 app.include_router(coach.router, prefix="/api/v1/coach", tags=["coach"])
+app.include_router(brainstorm.router, prefix="/api/v1/capture/brainstorm", tags=["brainstorm"])
 
 # ---------------------------------------------------------------------------
 # System endpoints

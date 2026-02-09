@@ -34,7 +34,7 @@
   /* Accent Color */
   --accent: #E07B4C;
   --accent-h: #D16A3A;
-  --accent-l: rgba(224, 123, 76, 0.12);
+  --accent-l: rgba(224, 123, 76, 0.20);
   --accent-g: rgba(224, 123, 76, 0.25);
 
   /* Backward-compat aliases */
@@ -44,22 +44,22 @@
 
   /* Semantic Colors */
   --green: #47A855;
-  --green-l: rgba(71, 168, 85, 0.12);
+  --green-l: rgba(71, 168, 85, 0.20);
   --green-light: var(--green-l);
   --green-glow: rgba(71, 168, 85, 0.25);
 
   --yellow: #E8A547;
-  --yellow-l: rgba(232, 165, 71, 0.12);
+  --yellow-l: rgba(232, 165, 71, 0.20);
   --yellow-light: var(--yellow-l);
   --yellow-glow: rgba(232, 165, 71, 0.25);
 
   --blue: #4A90E2;
-  --blue-l: rgba(74, 144, 226, 0.12);
+  --blue-l: rgba(74, 144, 226, 0.20);
   --blue-light: var(--blue-l);
   --blue-glow: rgba(74, 144, 226, 0.25);
 
   --purple: #9B59B6;
-  --purple-l: rgba(155, 89, 182, 0.12);
+  --purple-l: rgba(155, 89, 182, 0.20);
   --purple-light: var(--purple-l);
   --purple-glow: rgba(155, 89, 182, 0.25);
 

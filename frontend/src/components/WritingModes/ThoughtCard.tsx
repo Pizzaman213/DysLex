@@ -1,10 +1,11 @@
 /**
- * Draggable thought card component with color variants.
+ * Draggable thought card component with color variants and expandable sub-ideas.
  */
 
+import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useCaptureStore } from '../../stores/captureStore';
+import { useCaptureStore, SubIdea } from '../../stores/captureStore';
 
 const VARIANT_ICONS: Record<number, string> = {
   1: '💡',
@@ -18,12 +19,18 @@ interface ThoughtCardProps {
   id: string;
   title: string;
   body: string;
+  sub_ideas?: SubIdea[];
   index?: number;
 }
 
-export function ThoughtCard({ id, title, body, index = 0 }: ThoughtCardProps) {
+export function ThoughtCard({ id, title, body, sub_ideas = [], index = 0 }: ThoughtCardProps) {
   const updateCard = useCaptureStore((s) => s.updateCard);
   const removeCard = useCaptureStore((s) => s.removeCard);
+  const updateSubIdea = useCaptureStore((s) => s.updateSubIdea);
+  const removeSubIdea = useCaptureStore((s) => s.removeSubIdea);
+  const addSubIdea = useCaptureStore((s) => s.addSubIdea);
+
+  const [subsExpanded, setSubsExpanded] = useState(false);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -95,6 +102,74 @@ export function ThoughtCard({ id, title, body, index = 0 }: ThoughtCardProps) {
         aria-label="Card body"
         rows={3}
       />
+
+      {/* Sub-ideas expandable section */}
+      {sub_ideas.length > 0 && (
+        <>
+          <button
+            className="thought-card-subs-toggle"
+            onClick={() => setSubsExpanded(!subsExpanded)}
+            aria-expanded={subsExpanded}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{ transform: subsExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 150ms' }}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            {sub_ideas.length} detail{sub_ideas.length !== 1 ? 's' : ''}
+          </button>
+
+          {subsExpanded && (
+            <div className="thought-card-subs">
+              {sub_ideas.map((sub) => (
+                <div key={sub.id} className="thought-card-sub">
+                  <input
+                    className="thought-card-sub-title"
+                    value={sub.title}
+                    onChange={(e) => updateSubIdea(id, sub.id, { title: e.target.value })}
+                    placeholder="Sub-idea..."
+                    aria-label="Sub-idea title"
+                  />
+                  <button
+                    className="thought-card-sub-remove"
+                    onClick={() => removeSubIdea(id, sub.id)}
+                    aria-label="Remove sub-idea"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                className="thought-card-sub-add"
+                onClick={() => addSubIdea(id)}
+                aria-label="Add sub-idea"
+              >
+                +
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Show add button even when no sub-ideas exist (collapsed state) */}
+      {sub_ideas.length === 0 && (
+        <button
+          className="thought-card-sub-add"
+          onClick={() => addSubIdea(id)}
+          aria-label="Add sub-idea"
+        >
+          + Add detail
+        </button>
+      )}
     </div>
   );
 }

@@ -76,7 +76,6 @@ def export_seq2seq_to_onnx(
                     model_input=str(onnx_file),
                     model_output=str(quantized_file),
                     weight_type=QuantType.QUInt8,
-                    optimize_model=True,
                 )
 
                 original_size = onnx_file.stat().st_size / (1024 * 1024)

@@ -11,22 +11,50 @@ import type { Document, Folder } from '@/types/document';
 
 let syncEnabled = false;
 
+/** Disable sync and cancel all pending debounced writes. */
+export function resetSync(): void {
+  syncEnabled = false;
+  for (const timer of contentTimers.values()) {
+    clearTimeout(timer);
+  }
+  contentTimers.clear();
+  pendingContent.clear();
+}
+
+/** Flush all pending debounced content saves immediately. */
+export async function flushPendingSync(): Promise<void> {
+  if (!syncEnabled) return;
+  const promises: Promise<unknown>[] = [];
+  for (const [docId, content] of pendingContent.entries()) {
+    const timer = contentTimers.get(docId);
+    if (timer) clearTimeout(timer);
+    contentTimers.delete(docId);
+    promises.push(api.updateDocument(docId, { content }));
+  }
+  pendingContent.clear();
+  await Promise.allSettled(promises);
+}
+
 // ---------------------------------------------------------------------------
 // Content debounce (avoids flooding on every keystroke)
 // ---------------------------------------------------------------------------
 
 const CONTENT_DEBOUNCE_MS = 2000;
 const contentTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingContent = new Map<string, string>();
 
 function debouncedContentSync(docId: string, content: string): void {
   const existing = contentTimers.get(docId);
   if (existing) clearTimeout(existing);
 
+  pendingContent.set(docId, content);
+
   contentTimers.set(
     docId,
     setTimeout(() => {
       contentTimers.delete(docId);
-      syncUpdateDocument(docId, { content });
+      pendingContent.delete(docId);
+      safeFire(() => api.updateDocument(docId, { content }));
     }, CONTENT_DEBOUNCE_MS),
   );
 }
@@ -99,10 +127,6 @@ export function syncRenameFolder(folderId: string, name: string): void {
 // ---------------------------------------------------------------------------
 
 export async function initializeFromServer(
-  getState: () => {
-    documents: Document[];
-    folders: Folder[];
-  },
   setState: (patch: {
     documents?: Document[];
     folders?: Folder[];
@@ -162,9 +186,27 @@ export async function initializeFromServer(
         activeDocumentId: documents[0]?.id ?? null,
       });
     } else {
-      // Server is empty — push local state up
-      const { documents, folders } = getState();
-      await pushLocalToServer(documents, folders);
+      // Server is empty — start fresh with a new default document
+      const freshDoc: Document = {
+        id: crypto.randomUUID(),
+        title: 'Untitled Document',
+        content: '',
+        mode: 'draft',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        folderId: null,
+      };
+
+      setState({
+        documents: [freshDoc],
+        folders: [],
+        rootOrder: [freshDoc.id],
+        folderOrders: {},
+        activeDocumentId: freshDoc.id,
+      });
+
+      // Push the fresh doc so it exists server-side too
+      await pushLocalToServer([freshDoc], []);
     }
 
     syncEnabled = true;

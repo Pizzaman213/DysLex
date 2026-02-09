@@ -69,9 +69,9 @@ describe('CorrectionsPanel', () => {
     useEditorStore.setState({ corrections: sampleCorrections });
     render(<CorrectionsPanel editor={null} />);
 
-    // "spelling" maps to "Spelling", "confusion" maps to "Word Choice"
-    expect(screen.getByText('Spelling')).toBeInTheDocument();
-    expect(screen.getByText('Word Choice')).toBeInTheDocument();
+    // "spelling" maps to "Quick Fix", "confusion" maps to "Word Swap"
+    expect(screen.getByText('Quick Fix')).toBeInTheDocument();
+    expect(screen.getByText('Word Swap')).toBeInTheDocument();
   });
 
   it('shows explanation text when provided on a correction', () => {

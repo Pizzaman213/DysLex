@@ -1,0 +1,29 @@
+Collecting py_webauthn
+  Downloading py_webauthn-0.0.4-py3-none-any.whl.metadata (4.5 kB)
+Requirement already satisfied: cryptography in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from py_webauthn) (45.0.3)
+Collecting cbor2 (from py_webauthn)
+  Downloading cbor2-5.8.0-cp312-cp312-macosx_11_0_arm64.whl.metadata (5.4 kB)
+Collecting certvalidator (from py_webauthn)
+  Downloading certvalidator-0.11.1-py2.py3-none-any.whl.metadata (992 bytes)
+Requirement already satisfied: requests in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from py_webauthn) (2.32.4)
+Collecting asn1crypto>=0.18.1 (from certvalidator->py_webauthn)
+  Downloading asn1crypto-1.5.1-py2.py3-none-any.whl.metadata (13 kB)
+Collecting oscrypto>=0.16.1 (from certvalidator->py_webauthn)
+  Downloading oscrypto-1.3.0-py2.py3-none-any.whl.metadata (15 kB)
+Requirement already satisfied: cffi>=1.14 in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from cryptography->py_webauthn) (1.17.1)
+Requirement already satisfied: pycparser in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from cffi>=1.14->cryptography->py_webauthn) (2.22)
+Requirement already satisfied: charset_normalizer<4,>=2 in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from requests->py_webauthn) (3.4.2)
+Requirement already satisfied: idna<4,>=2.5 in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from requests->py_webauthn) (3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from requests->py_webauthn) (2.5.0)
+Requirement already satisfied: certifi>=2017.4.17 in /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages (from requests->py_webauthn) (2025.7.14)
+Downloading py_webauthn-0.0.4-py3-none-any.whl (15 kB)
+Downloading cbor2-5.8.0-cp312-cp312-macosx_11_0_arm64.whl (70 kB)
+Downloading certvalidator-0.11.1-py2.py3-none-any.whl (31 kB)
+Downloading asn1crypto-1.5.1-py2.py3-none-any.whl (105 kB)
+Downloading oscrypto-1.3.0-py2.py3-none-any.whl (194 kB)
+Installing collected packages: asn1crypto, oscrypto, cbor2, certvalidator, py_webauthn
+
+Successfully installed asn1crypto-1.5.1 cbor2-5.8.0 certvalidator-0.11.1 oscrypto-1.3.0 py_webauthn-0.0.4
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip

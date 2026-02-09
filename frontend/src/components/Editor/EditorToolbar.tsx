@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { FormatSelector } from './FormatSelector';
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -16,6 +17,11 @@ export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAlo
   const { font, setFont, fontSize, setFontSize, zoom, setZoom, showZoom } = useSettingsStore();
   const [sizeInput, setSizeInput] = useState(String(fontSize));
 
+  // Sync local input when fontSize changes externally (e.g. format selector)
+  useEffect(() => {
+    setSizeInput(String(fontSize));
+  }, [fontSize]);
+
   if (!editor) {
     return null;
   }
@@ -24,6 +30,8 @@ export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAlo
     'OpenDyslexic',
     'AtkinsonHyperlegible',
     'LexieReadable',
+    'TimesNewRoman',
+    'Calibri',
     'system',
   ];
 
@@ -241,6 +249,11 @@ export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAlo
           aria-label="Font size"
           title="Font size — type a value (8–72)"
         />
+      </div>
+
+      {/* Format group */}
+      <div className="editor-toolbar__group">
+        <FormatSelector />
       </div>
 
       {/* Zoom group (toggled via Settings > Appearance) */}

@@ -6,6 +6,8 @@ const FONT_MAP: Record<FontFamily, string> = {
   OpenDyslexic: "'OpenDyslexic', sans-serif",
   AtkinsonHyperlegible: "'Atkinson Hyperlegible', sans-serif",
   LexieReadable: "'Lexie Readable', sans-serif",
+  TimesNewRoman: "'Times New Roman', Times, serif",
+  Calibri: "'Calibri', 'Carlito', sans-serif",
   system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 };
 

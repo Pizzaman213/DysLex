@@ -51,6 +51,7 @@ export const PageBreakExtension = Extension.create({
           const pageCards: HTMLElement[] = [];
           const pageGaps: HTMLElement[] = [];
           const pageNumberEls: HTMLElement[] = [];
+          const runningHeaderEls: HTMLElement[] = [];
           let containerEl: HTMLElement | null = null;
           let styleObserver: MutationObserver | null = null;
 
@@ -88,6 +89,8 @@ export const PageBreakExtension = Extension.create({
             pageGaps.length = 0;
             pageNumberEls.forEach((el) => el.remove());
             pageNumberEls.length = 0;
+            runningHeaderEls.forEach((el) => el.remove());
+            runningHeaderEls.length = 0;
             container.style.minHeight = '';
           }
 
@@ -304,6 +307,62 @@ export const PageBreakExtension = Extension.create({
                 pageNumberEls.forEach((el) => el.remove());
                 pageNumberEls.length = 0;
               }
+
+              // ── Phase 6: running headers ──
+              const headerType = container.dataset.runningHeaderType || '';
+              const headerLastName = container.dataset.headerLastName || '';
+              const headerTitle = container.dataset.headerTitle || '';
+
+              if (headerType && showPageNumbers) {
+                // Resize pool
+                while (runningHeaderEls.length > pageRanges.length) {
+                  runningHeaderEls.pop()?.remove();
+                }
+                while (runningHeaderEls.length < pageRanges.length) {
+                  const el = document.createElement('span');
+                  el.className = 'running-header';
+                  runningHeaderEls.push(el);
+                }
+
+                for (let i = 0; i < pageRanges.length; i++) {
+                  const el = runningHeaderEls[i];
+                  const pageNum = i + 1;
+
+                  if (headerType === 'lastname-page') {
+                    // MLA: "LastName PageNumber" top-right
+                    el.textContent = headerLastName ? `${headerLastName} ${pageNum}` : String(pageNum);
+                    el.className = 'running-header running-header--right';
+                  } else if (headerType === 'shortened-title') {
+                    // APA: "SHORTENED TITLE" left, page number right
+                    el.innerHTML = '';
+                    const leftSpan = document.createElement('span');
+                    leftSpan.className = 'running-header__left';
+                    leftSpan.textContent = headerTitle ? headerTitle.toUpperCase() : '';
+                    const rightSpan = document.createElement('span');
+                    rightSpan.className = 'running-header__right';
+                    rightSpan.textContent = String(pageNum);
+                    el.appendChild(leftSpan);
+                    el.appendChild(rightSpan);
+                    el.className = 'running-header running-header--split';
+                  }
+                  // page-only: already handled by page numbers
+
+                  if (el.parentElement !== pageCards[i]) {
+                    pageCards[i].appendChild(el);
+                  }
+                }
+
+                // Hide page number elements when running header includes them
+                if (headerType === 'lastname-page' || headerType === 'shortened-title') {
+                  pageNumberEls.forEach((el) => { el.style.display = 'none'; });
+                }
+              } else {
+                // Remove running headers
+                runningHeaderEls.forEach((el) => el.remove());
+                runningHeaderEls.length = 0;
+                // Restore page number visibility
+                pageNumberEls.forEach((el) => { el.style.display = ''; });
+              }
             }); // end withSuppressedPMObserver
           }
 
@@ -332,7 +391,10 @@ export const PageBreakExtension = Extension.create({
             containerEl = initContainer;
             styleObserver = new MutationObserver((mutations) => {
               const hasDataChange = mutations.some(
-                (m) => m.attributeName === 'data-page-numbers'
+                (m) => m.attributeName === 'data-page-numbers' ||
+                       m.attributeName === 'data-running-header-type' ||
+                       m.attributeName === 'data-header-last-name' ||
+                       m.attributeName === 'data-header-title'
               );
               if (hasDataChange) {
                 schedule();
@@ -345,7 +407,7 @@ export const PageBreakExtension = Extension.create({
             });
             styleObserver.observe(initContainer, {
               attributes: true,
-              attributeFilter: ['style', 'data-page-numbers'],
+              attributeFilter: ['style', 'data-page-numbers', 'data-running-header-type', 'data-header-last-name', 'data-header-title'],
             });
           }
 
@@ -372,6 +434,8 @@ export const PageBreakExtension = Extension.create({
               });
               pageNumberEls.forEach((el) => el.remove());
               pageNumberEls.length = 0;
+              runningHeaderEls.forEach((el) => el.remove());
+              runningHeaderEls.length = 0;
               pageCards.forEach((card) => card.remove());
               pageCards.length = 0;
               pageGaps.forEach((gap) => gap.remove());

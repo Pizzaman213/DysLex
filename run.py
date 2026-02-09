@@ -356,42 +356,26 @@ class PrerequisiteChecker:
         """Check if backend port is available."""
         port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
         if not self._is_port_available(port):
-            if self.kill_ports or self.auto_setup:
-                print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
-                if self._kill_port_process(port):
-                    print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
-                    return
-                else:
-                    raise CheckError(
-                        f"Port {port} is already in use and could not be freed\n"
-                        f"    Fix: Stop the existing process manually or use --port-backend <port>"
-                    )
+            print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
+            if self._kill_port_process(port):
+                print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
             else:
                 raise CheckError(
-                    f"Port {port} is already in use\n"
-                    f"    Fix: Stop the existing process or use --port-backend <port>\n"
-                    f"    Or use: python3 run.py --kill-ports"
+                    f"Port {port} is already in use and could not be freed\n"
+                    f"    Fix: Stop the existing process manually or use --port-backend <port>"
                 )
 
     def check_frontend_port(self):
         """Check if frontend port is available."""
         port = self.config.get('frontend_port', DEFAULT_FRONTEND_PORT)
         if not self._is_port_available(port):
-            if self.kill_ports or self.auto_setup:
-                print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
-                if self._kill_port_process(port):
-                    print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
-                    return
-                else:
-                    raise CheckError(
-                        f"Port {port} is already in use and could not be freed\n"
-                        f"    Fix: Stop the existing process manually or use --port-frontend <port>"
-                    )
+            print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
+            if self._kill_port_process(port):
+                print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
             else:
                 raise CheckError(
-                    f"Port {port} is already in use\n"
-                    f"    Fix: Stop the existing process or use --port-frontend <port>\n"
-                    f"    Or use: python3 run.py --kill-ports"
+                    f"Port {port} is already in use and could not be freed\n"
+                    f"    Fix: Stop the existing process manually or use --port-frontend <port>"
                 )
 
     def _is_port_available(self, port: int) -> bool:
@@ -806,22 +790,30 @@ class ServiceManager:
         self.processes: Dict[str, asyncio.subprocess.Process] = {}
         self.stream_tasks: List[asyncio.Task] = []
         self.health_monitor = HealthMonitor(logger)
+        self._managed_ports: List[int] = []  # Ports we started services on
 
     async def start_all(self):
         """Start all services based on configuration."""
         mode = self.config['mode']
 
+        # Collect managed ports and kill any stale processes on them
+        if mode in ['dev', 'backend']:
+            self._managed_ports.append(self.config.get('backend_port', DEFAULT_BACKEND_PORT))
+        if mode in ['dev', 'frontend']:
+            self._managed_ports.append(self.config.get('frontend_port', DEFAULT_FRONTEND_PORT))
+        self._kill_stale_port_processes()
+
         if mode == 'docker':
             await self.start_docker()
+            await self._wait_for_health()
         else:
             if mode in ['dev', 'backend']:
                 await self.start_backend()
+                # Wait for backend to be healthy before starting frontend
+                await self._wait_for_backend_health()
 
             if mode in ['dev', 'frontend']:
                 await self.start_frontend()
-
-        # Wait for services to be healthy
-        await self._wait_for_health()
 
     async def start_backend(self):
         """Start the FastAPI backend server."""
@@ -855,7 +847,8 @@ class ServiceManager:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(Path('backend'))
+            cwd=str(Path('backend')),
+            start_new_session=True
         )
 
         self.processes['backend'] = process
@@ -892,7 +885,8 @@ class ServiceManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(Path('frontend')),
-            env=env
+            env=env,
+            start_new_session=True
         )
 
         self.processes['frontend'] = process
@@ -931,37 +925,30 @@ class ServiceManager:
             asyncio.create_task(self.logger.read_stream(process.stderr, 'docker', 'stderr'))
         )
 
-    async def _wait_for_health(self):
-        """Wait for all services to become healthy."""
-        mode = self.config['mode']
+    async def _wait_for_backend_health(self):
+        """Wait for the backend to become healthy before proceeding."""
         protocol = "https" if self.config.get('https') else "http"
+        port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
+        url = BACKEND_HEALTH_ENDPOINT.format(protocol=protocol, port=port)
+        success = await self.health_monitor.wait_for_service(
+            'Backend',
+            url,
+            BACKEND_STARTUP_TIMEOUT
+        )
+        if not success:
+            raise RuntimeError("Backend failed to start")
 
-        if mode in ['dev', 'backend']:
-            port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
-            url = BACKEND_HEALTH_ENDPOINT.format(protocol=protocol, port=port)
-            success = await self.health_monitor.wait_for_service(
-                'Backend',
-                url,
-                BACKEND_STARTUP_TIMEOUT
-            )
-            if not success:
-                raise RuntimeError("Backend failed to start")
-
-        if mode in ['dev', 'frontend']:
-            # For frontend, just wait a few seconds for Vite to start
-            await asyncio.sleep(FRONTEND_STARTUP_TIMEOUT / 2)
-            await self.logger.success('system', "Frontend is ready")
-
-        if mode == 'docker':
-            # Wait for docker services
-            await asyncio.sleep(5)
-            port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
-            url = BACKEND_HEALTH_ENDPOINT.format(protocol="http", port=port)
-            await self.health_monitor.wait_for_service(
-                'Docker stack',
-                url,
-                BACKEND_STARTUP_TIMEOUT
-            )
+    async def _wait_for_health(self):
+        """Wait for Docker services to become healthy."""
+        # Wait for docker services
+        await asyncio.sleep(5)
+        port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
+        url = BACKEND_HEALTH_ENDPOINT.format(protocol="http", port=port)
+        await self.health_monitor.wait_for_service(
+            'Docker stack',
+            url,
+            BACKEND_STARTUP_TIMEOUT
+        )
 
     async def stop_all(self):
         """Stop all running services gracefully."""
@@ -978,14 +965,17 @@ class ServiceManager:
         if self.stream_tasks:
             await asyncio.gather(*self.stream_tasks, return_exceptions=True)
 
-        # Stop each process
+        # Stop each process (kills entire process group)
         for service, process in self.processes.items():
             await self._stop_process(service, process)
+
+        # Final cleanup: kill anything still on our managed ports
+        self._kill_stale_port_processes()
 
         await self.logger.success('system', "Shutdown complete")
 
     async def _stop_process(self, service: str, process: asyncio.subprocess.Process):
-        """Stop a single process gracefully."""
+        """Stop a process and its entire process group."""
         if process.returncode is not None:
             # Already stopped
             return
@@ -993,22 +983,80 @@ class ServiceManager:
         await self.logger.info(service, "Stopping...")
 
         try:
-            # Send SIGTERM
-            process.terminate()
+            # Kill the entire process group (catches all children)
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                process.terminate()
 
             # Wait for graceful shutdown
             try:
                 await asyncio.wait_for(process.wait(), timeout=SHUTDOWN_TIMEOUT)
                 await self.logger.success(service, "Stopped")
             except asyncio.TimeoutError:
-                # Force kill if timeout
+                # Force kill the entire process group
                 await self.logger.warning(service, "Force killing...")
-                process.kill()
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    process.kill()
                 await process.wait()
                 await self.logger.success(service, "Killed")
         except ProcessLookupError:
             # Already dead
             pass
+
+    def _kill_stale_port_processes(self):
+        """Kill any stale processes on managed ports."""
+        if not self._managed_ports:
+            return
+        for port in self._managed_ports:
+            try:
+                if platform.system() in ('Darwin', 'Linux'):
+                    result = subprocess.run(
+                        ['lsof', '-ti', f':{port}'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        pids = set(result.stdout.strip().split('\n'))
+                        # Don't kill our own children (they're managed via process groups)
+                        own_pids = {str(p.pid) for p in self.processes.values()
+                                    if p.returncode is None}
+                        stale_pids = pids - own_pids - {str(os.getpid())}
+                        for pid in stale_pids:
+                            try:
+                                os.kill(int(pid), signal.SIGTERM)
+                            except (ProcessLookupError, PermissionError, ValueError):
+                                pass
+                        if stale_pids:
+                            time.sleep(1)
+                            # Force kill any survivors
+                            for pid in stale_pids:
+                                try:
+                                    os.kill(int(pid), signal.SIGKILL)
+                                except (ProcessLookupError, PermissionError, ValueError):
+                                    pass
+                elif platform.system() == 'Windows':
+                    result = subprocess.run(
+                        f'netstat -ano | findstr :{port}',
+                        capture_output=True, text=True,
+                        shell=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.strip().split('\n'):
+                            parts = line.split()
+                            if len(parts) > 4:
+                                try:
+                                    subprocess.run(
+                                        ['taskkill', '/F', '/PID', parts[-1]],
+                                        timeout=5
+                                    )
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
 
     def _find_venv_python(self) -> Optional[Path]:
         """Find the Python executable in the backend virtual environment."""

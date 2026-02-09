@@ -78,6 +78,7 @@ export function ThoughtCardGrid({ isLoading }: ThoughtCardGridProps) {
               id={card.id}
               title={card.title}
               body={card.body}
+              sub_ideas={card.sub_ideas || []}
               index={index}
             />
           ))}

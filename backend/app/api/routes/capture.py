@@ -85,7 +85,10 @@ async def extract_ideas_endpoint(
         raise HTTPException(status_code=400, detail="Transcript cannot be empty")
 
     try:
-        cards, topic = await idea_extraction_service.extract_ideas(request.transcript)
+        cards, topic = await idea_extraction_service.extract_ideas(
+            request.transcript,
+            existing_titles=request.existing_titles or None,
+        )
         return ExtractIdeasResponse(cards=cards, topic=topic)
 
     except Exception as e:

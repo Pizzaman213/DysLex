@@ -1,6 +1,6 @@
 export type WritingMode = 'capture' | 'mindmap' | 'draft' | 'polish' | 'progress' | 'settings';
 export type Theme = 'cream' | 'night' | 'blue-tint';
-export type FontFamily = 'OpenDyslexic' | 'AtkinsonHyperlegible' | 'LexieReadable' | 'system';
+export type FontFamily = 'OpenDyslexic' | 'AtkinsonHyperlegible' | 'LexieReadable' | 'system' | 'TimesNewRoman' | 'Calibri';
 export type PageType = 'a4' | 'letter' | 'a5' | 'legal' | 'wide';
 export type ViewMode = 'paper' | 'continuous';
 export type SettingsTab = 'general' | 'appearance' | 'accessibility' | 'privacy' | 'docs';

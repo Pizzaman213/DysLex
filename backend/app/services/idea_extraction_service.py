@@ -78,12 +78,17 @@ def _fix_raw_card(card_dict: dict) -> dict:
 class IdeaExtractionService:
     """Extracts thought cards from transcripts using Nemotron via NIM."""
 
-    async def extract_ideas(self, transcript: str) -> Tuple[List[ThoughtCard], str]:
+    async def extract_ideas(
+        self,
+        transcript: str,
+        existing_titles: list[str] | None = None,
+    ) -> Tuple[List[ThoughtCard], str]:
         """
         Extract thought cards with sub-ideas from a transcript.
 
         Args:
             transcript: The transcript text to analyze
+            existing_titles: Titles already extracted (for incremental dedup)
 
         Returns:
             Tuple of (list of ThoughtCard objects, central topic string)
@@ -111,7 +116,7 @@ class IdeaExtractionService:
                 },
                 {
                     "role": "user",
-                    "content": build_extract_ideas_prompt(transcript)
+                    "content": build_extract_ideas_prompt(transcript, existing_titles)
                 }
             ],
             "temperature": 0.4,

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSettingsStore } from '../settingsStore';
+import { useUserStore } from '../userStore';
 
 vi.mock('@/services/api', () => ({
   api: {
@@ -43,6 +44,10 @@ const DEFAULT_SETTINGS = {
 describe('settingsStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useUserStore.setState({
+      user: { id: '11111111-1111-1111-1111-111111111111', email: 'test@test.com', name: 'Test' },
+      isAuthenticated: true,
+    });
     useSettingsStore.setState({
       ...DEFAULT_SETTINGS,
       isLoading: false,

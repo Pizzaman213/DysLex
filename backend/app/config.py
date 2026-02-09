@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # Transcription (local faster-whisper for desktop; not used when browser handles STT)
     transcription_url: str = "http://localhost:8786/v1"
 
+    # WebAuthn / Passkeys
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "DysLex AI"
+    webauthn_origins: list[str] = [
+        "https://localhost:3000",
+        "http://localhost:3000",
+    ]
+
     # JWT
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
@@ -56,6 +64,11 @@ class Settings(BaseSettings):
 
     # LLM Generation (Nemotron supports 32k context)
     llm_max_tokens: int = 16384
+
+    # Brainstorm conversation
+    brainstorm_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b"
+    brainstorm_max_tokens: int = 1024
+    brainstorm_max_history_turns: int = 20
 
     # LLM Tool Calling
     llm_tool_calling_enabled: bool = True

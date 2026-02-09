@@ -12,6 +12,7 @@ import { CorrectionHighlightExtension } from './extensions/CorrectionHighlightEx
 import { FocusModeExtension } from './extensions/FocusModeExtension';
 import { TrackedChangesExtension } from './extensions/TrackedChangesExtension';
 import { PageBreakExtension } from './extensions/PageBreakExtension';
+import { ParagraphIndentExtension } from './extensions/ParagraphIndentExtension';
 import { useFrustrationDetector } from '../../hooks/useFrustrationDetector';
 import { CheckInPrompt } from './CheckInPrompt';
 
@@ -51,6 +52,7 @@ export function DyslexEditor({ mode = 'draft', onEditorReady, onCorrectionClick 
       Highlight,
       FocusModeExtension,
       PageBreakExtension,
+      ParagraphIndentExtension,
     ];
 
     // Add mode-specific extensions

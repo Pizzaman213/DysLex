@@ -1,6 +1,9 @@
 """Shared test fixtures for DysLex AI backend tests."""
 
+import math
+import struct
 import uuid
+import wave
 
 import pytest
 import pytest_asyncio
@@ -96,3 +99,32 @@ async def test_user(db: AsyncSession) -> User:
     db.add(user)
     await db.flush()
     return user
+
+
+@pytest.fixture
+def wav_fixture(tmp_path):
+    """Generate a minimal valid WAV file (100ms of 440Hz sine, 16kHz mono)."""
+    filepath = tmp_path / "test_audio_short.wav"
+    sample_rate = 16000
+    duration = 0.1  # 100ms
+    n_samples = int(sample_rate * duration)
+
+    with wave.open(str(filepath), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sample_rate)
+        for i in range(n_samples):
+            sample = int(32767 * math.sin(2 * math.pi * 440 * i / sample_rate))
+            wf.writeframes(struct.pack("<h", sample))
+
+    return filepath
+
+
+@pytest.fixture
+def webm_fixture(tmp_path):
+    """Create a minimal file with WebM magic bytes (EBML header)."""
+    filepath = tmp_path / "test_audio.webm"
+    # WebM files start with the EBML magic bytes: 0x1A45DFA3
+    webm_header = b"\x1a\x45\xdf\xa3" + b"\x00" * 96
+    filepath.write_bytes(webm_header)
+    return filepath

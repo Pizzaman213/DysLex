@@ -1,6 +1,12 @@
 """User models."""
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+
+def _to_camel(name: str) -> str:
+    """Convert snake_case to camelCase for JSON serialization."""
+    parts = name.split("_")
+    return parts[0] + "".join(w.title() for w in parts[1:])
 
 
 class UserBase(BaseModel):
@@ -26,12 +32,37 @@ class UserUpdate(BaseModel):
 class UserSettings(BaseModel):
     """User-configurable settings."""
 
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+    )
+
     # General
     language: str = "en"
+
+    # Writing Modes
+    mind_map_enabled: bool = True
+    draft_mode_enabled: bool = True
+    polish_mode_enabled: bool = True
+
+    # AI Features
+    passive_learning: bool = True
+    ai_coaching: bool = True
+    inline_corrections: bool = True
+
+    # Tools
+    progress_tracking: bool = True
+    read_aloud: bool = True
 
     # Appearance
     theme: str = "cream"
     font: str = "OpenDyslexic"
+    page_type: str = "a4"
+    view_mode: str = "paper"
+    zoom: int = 100
+    show_zoom: bool = False
+    page_numbers: bool = True
     font_size: int = 18
     line_spacing: float = 1.75
     letter_spacing: float = 0.05
@@ -50,19 +81,40 @@ class UserSettings(BaseModel):
     # Advanced
     developer_mode: bool = False
 
-    class Config:
-        from_attributes = True
-
 
 class UserSettingsUpdate(BaseModel):
     """Partial update for user settings."""
 
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+    )
+
     # General
     language: str | None = None
+
+    # Writing Modes
+    mind_map_enabled: bool | None = None
+    draft_mode_enabled: bool | None = None
+    polish_mode_enabled: bool | None = None
+
+    # AI Features
+    passive_learning: bool | None = None
+    ai_coaching: bool | None = None
+    inline_corrections: bool | None = None
+
+    # Tools
+    progress_tracking: bool | None = None
+    read_aloud: bool | None = None
 
     # Appearance
     theme: str | None = None
     font: str | None = None
+    page_type: str | None = None
+    view_mode: str | None = None
+    zoom: int | None = None
+    show_zoom: bool | None = None
+    page_numbers: bool | None = None
     font_size: int | None = None
     line_spacing: float | None = None
     letter_spacing: float | None = None
