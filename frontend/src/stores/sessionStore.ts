@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage'; // feb 9 scoped-storage pass — cs
 
 interface FrustrationEvent {
   type: 'rapid_deletion' | 'long_pause' | 'short_burst' | 'cursor_thrash';
@@ -143,7 +144,11 @@ export const useSessionStore = create<SessionState>()(
       }
     }),
     {
-      name: 'dyslex-session'
+      name: 'dyslex-session',
+      storage: createUserScopedStorage(),
+      skipHydration: true,
     }
   )
 );
+
+registerScopedStore(() => useSessionStore.persist.rehydrate());

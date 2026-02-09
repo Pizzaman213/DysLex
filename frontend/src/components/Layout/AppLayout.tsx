@@ -6,6 +6,11 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useUserStore } from '@/stores/userStore';
 import { flushPendingSync } from '@/services/documentSync';
+import {
+  setStorageUserId,
+  rehydrateAllStores,
+  migrateGlobalToScoped,
+} from '@/services/userScopedStorage';
 
 export function AppLayout() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
@@ -20,8 +25,23 @@ export function AppLayout() {
     if (lastInitUserId.current === effectiveId) return;
     lastInitUserId.current = effectiveId;
 
-    initializeFromServer();
-    loadFromBackend();
+    // Connor Secrist — rewrote init sequence for per-user scoped localStorage (Feb 9)
+    (async () => {
+      // 1. Migrate global keys → scoped keys (one-time, idempotent)
+      if (userId) {
+        migrateGlobalToScoped(userId);
+      }
+
+      // 2. Switch storage scope to this user
+      setStorageUserId(userId);
+
+      // 3. Rehydrate all persisted stores from the user's scoped keys
+      await rehydrateAllStores();
+
+      // 4. Sync with server
+      initializeFromServer();
+      loadFromBackend();
+    })();
   }, [userId, initializeFromServer, loadFromBackend]);
 
   // Ctrl+S / Cmd+S → flush pending saves immediately

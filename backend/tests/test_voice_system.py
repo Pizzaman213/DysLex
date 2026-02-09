@@ -323,7 +323,7 @@ class TestStreamingTranscription:
 class TestTtsGeneratesFile:
     """TTS generates a WAV file on disk via mocked Riva API."""
 
-    @patch("app.services.tts_service._call_tts_api", new_callable=AsyncMock)
+    @patch("app.services.tts_service._call_tts_api_selfhosted", new_callable=AsyncMock)
     @patch("app.services.tts_service.settings")
     async def test_tts_generates_wav_file_on_disk(self, mock_settings, mock_api, tmp_path):
         from app.services.tts_service import text_to_speech
@@ -355,7 +355,7 @@ class TestTtsGeneratesFile:
 class TestTtsBatchConcurrent:
     """Batch TTS processes multiple sentences concurrently."""
 
-    @patch("app.services.tts_service._call_tts_api", new_callable=AsyncMock)
+    @patch("app.services.tts_service._call_tts_api_selfhosted", new_callable=AsyncMock)
     @patch("app.services.tts_service.settings")
     async def test_tts_batch_concurrent_generation(self, mock_settings, mock_api, tmp_path):
         from app.services.tts_service import batch_text_to_speech

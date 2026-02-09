@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+// Connor S. — wired up scoped storage so format prefs are per-user (2/9)
+import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage';
 import type { PaperFormatId, RuleSeverity, RuleCategory } from '@/constants/paperFormats';
 
 export interface FormatIssue {
@@ -66,6 +68,8 @@ export const useFormatStore = create<FormatState>()(
     }),
     {
       name: 'dyslex-format',
+      storage: createUserScopedStorage(),
+      skipHydration: true,
       partialize: (state) => ({
         documentFormats: state.documentFormats,
         authorLastName: state.authorLastName,
@@ -75,3 +79,5 @@ export const useFormatStore = create<FormatState>()(
     }
   )
 );
+
+registerScopedStore(() => useFormatStore.persist.rehydrate());

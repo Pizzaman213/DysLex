@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage'; /* scoped storage migration, connor secrist */
 import {
   MindMapFlowNode,
   MindMapFlowEdge,
@@ -492,6 +493,8 @@ export const useMindMapStore = create<MindMapState>()(
     }),
     {
       name: 'dyslex-mindmap',
+      storage: createUserScopedStorage(),
+      skipHydration: true,
       version: 2,
       partialize: (state) => ({
         nodes: state.nodes,
@@ -522,3 +525,5 @@ export const useMindMapStore = create<MindMapState>()(
     }
   )
 );
+
+registerScopedStore(() => useMindMapStore.persist.rehydrate());

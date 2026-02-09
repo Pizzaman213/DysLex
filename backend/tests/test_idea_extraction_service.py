@@ -147,7 +147,7 @@ class TestIdeaExtractionService:
 
     @patch("app.services.idea_extraction_service.httpx.AsyncClient")
     @patch("app.services.idea_extraction_service.settings")
-    async def test_http_error_raises(self, mock_settings, mock_client_cls):
+    async def test_http_error_returns_empty(self, mock_settings, mock_client_cls):
         mock_settings.nvidia_nim_api_key = "test-key"
         mock_settings.nvidia_nim_llm_model = "test-model"
         mock_settings.nvidia_nim_llm_url = "https://test.api"
@@ -164,8 +164,9 @@ class TestIdeaExtractionService:
         mock_client_cls.return_value = mock_client
 
         service = IdeaExtractionService()
-        with pytest.raises(httpx.HTTPError):
-            await service.extract_ideas("some transcript")
+        cards, topic = await service.extract_ideas("some transcript")
+        assert cards == []
+        assert topic == ""
 
     @patch("app.services.idea_extraction_service.httpx.AsyncClient")
     @patch("app.services.idea_extraction_service.settings")

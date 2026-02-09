@@ -4,28 +4,37 @@
  * These tests verify the four frustration signals and scoring system.
  */
 
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useFrustrationDetector } from '../useFrustrationDetector';
 import { useSessionStore } from '../../stores/sessionStore';
 
+// Stable spy references so assertions work across getState() calls
+const mockRecordFrustrationSignal = vi.fn();
+const mockRecordCheckInShown = vi.fn();
+const mockRecordCheckInAction = vi.fn();
+const mockRecordCheckInDismissal = vi.fn();
+
+const mockSessionState = {
+  recordFrustrationSignal: mockRecordFrustrationSignal,
+  recordCheckInShown: mockRecordCheckInShown,
+  recordCheckInAction: mockRecordCheckInAction,
+  recordCheckInDismissal: mockRecordCheckInDismissal,
+  lastInterventionTime: null,
+};
+
 // Mock the sessionStore
-jest.mock('../../stores/sessionStore', () => ({
+vi.mock('../../stores/sessionStore', () => ({
   useSessionStore: {
-    getState: jest.fn(() => ({
-      recordFrustrationSignal: jest.fn(),
-      recordCheckInShown: jest.fn(),
-      recordCheckInAction: jest.fn(),
-      recordCheckInDismissal: jest.fn(),
-      lastInterventionTime: null,
-    })),
-    setState: jest.fn(),
+    getState: vi.fn(() => mockSessionState),
+    setState: vi.fn(),
   },
 }));
 
 // Mock TipTap Editor
 const createMockEditor = () => ({
-  on: jest.fn(),
-  off: jest.fn(),
+  on: vi.fn(),
+  off: vi.fn(),
   state: {
     selection: { from: 50, to: 50 },
     doc: {
@@ -44,12 +53,12 @@ const createMockEditor = () => ({
 
 describe('useFrustrationDetector', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.useFakeTimers();
+    vi.clearAllMocks();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('should initialize without showing check-in', () => {
@@ -90,14 +99,11 @@ describe('useFrustrationDetector', () => {
     const mockEditor = createMockEditor() as any;
     const { result } = renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Manually set shouldShowCheckIn to true
     act(() => {
-      // Simulate check-in being shown (would happen through signal detection)
-      // For this test, we'll just verify the dismiss action works
       result.current.dismissCheckIn();
     });
 
-    expect(useSessionStore.getState().recordCheckInDismissal).toHaveBeenCalled();
+    expect(mockRecordCheckInDismissal).toHaveBeenCalled();
   });
 
   it('should handle check-in actions correctly', () => {
@@ -108,15 +114,13 @@ describe('useFrustrationDetector', () => {
       result.current.handleCheckInAction('voice_mode');
     });
 
-    expect(useSessionStore.getState().recordCheckInAction).toHaveBeenCalledWith('voice_mode');
+    expect(mockRecordCheckInAction).toHaveBeenCalledWith('voice_mode');
   });
 
   it('should respect 10-minute cooldown between check-ins', () => {
     const mockEditor = createMockEditor() as any;
     const { result } = renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Note: Full integration test would require triggering signals
-    // This test verifies the structure exists
     expect(result.current).toHaveProperty('shouldShowCheckIn');
     expect(result.current).toHaveProperty('checkInSignals');
   });
@@ -125,18 +129,25 @@ describe('useFrustrationDetector', () => {
     const mockEditor = createMockEditor() as any;
     renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Verify sessionStore integration is set up
     expect(useSessionStore.getState).toBeDefined();
     expect(useSessionStore.getState().recordFrustrationSignal).toBeDefined();
   });
 });
 
 describe('Signal Detection Algorithms', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('should have proper structure for rapid deletion detection', () => {
     const mockEditor = createMockEditor() as any;
     renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Verify transaction listener was registered
     expect(mockEditor.on).toHaveBeenCalledWith('transaction', expect.any(Function));
   });
 
@@ -144,29 +155,24 @@ describe('Signal Detection Algorithms', () => {
     const mockEditor = createMockEditor() as any;
     renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Long pause uses interval, verify it's set up
-    jest.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(5000);
 
-    // Interval should be running
-    expect(jest.getTimerCount()).toBeGreaterThan(0);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
   });
 
   it('should have proper structure for short burst detection', () => {
     const mockEditor = createMockEditor() as any;
     renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Short burst uses interval, verify it's set up
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
 
-    // Interval should be running
-    expect(jest.getTimerCount()).toBeGreaterThan(0);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
   });
 
   it('should have proper structure for cursor thrashing detection', () => {
     const mockEditor = createMockEditor() as any;
     renderHook(() => useFrustrationDetector(mockEditor));
 
-    // Verify selectionUpdate listener was registered
     expect(mockEditor.on).toHaveBeenCalledWith('selectionUpdate', expect.any(Function));
   });
 });

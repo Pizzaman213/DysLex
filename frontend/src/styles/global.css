@@ -1224,6 +1224,9 @@ textarea::placeholder {
 .badge-blue, .badge-info, .badge-clarity { background: var(--blue-l); color: var(--blue); }
 .badge-purple, .badge-grammar { background: var(--purple-l); color: var(--purple); }
 .badge-red, .badge-error, .badge-spelling { background: var(--red-light); color: var(--red); }
+/* dyslexic error type badges — Connor Secrist, Feb 8 */
+.badge-omission, .badge-insertion, .badge-transposition, .badge-substitution { background: var(--accent-l); color: var(--accent); }
+.badge-phonetic { background: var(--purple-l); color: var(--purple); }
 
 /* New short badge names from mockup */
 .badge-spell { background: var(--red-light); color: var(--red); }

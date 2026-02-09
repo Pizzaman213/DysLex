@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Document, Folder } from '@/types/document';
+import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage'; // user-scoped persistence (CS, feb 9)
 import {
   syncCreateDocument,
   syncDeleteDocument,
@@ -282,6 +283,8 @@ export const useDocumentStore = create<DocumentState>()(
     }),
     {
       name: 'dyslex-documents',
+      storage: createUserScopedStorage(),
+      skipHydration: true,
       version: 3,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -340,3 +343,5 @@ export const useDocumentStore = create<DocumentState>()(
     }
   )
 );
+
+registerScopedStore(() => useDocumentStore.persist.rehydrate());

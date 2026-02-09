@@ -1,5 +1,6 @@
+// extended with dyslexic-specific error variants (omission, insertion, etc.) — feb 8 c.secrist
 interface BadgeProps {
-  variant: 'info' | 'success' | 'warning' | 'error' | 'spelling' | 'grammar' | 'homophone' | 'clarity' | 'style' | 'spell' | 'homo' | 'gram' | 'struct';
+  variant: 'info' | 'success' | 'warning' | 'error' | 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution' | 'grammar' | 'homophone' | 'phonetic' | 'clarity' | 'style' | 'spell' | 'homo' | 'gram' | 'struct';
   children: React.ReactNode;
 }
 

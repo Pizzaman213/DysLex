@@ -97,7 +97,7 @@ class TestBuildCorrectionPromptV2:
     def test_system_instructions_in_system_message(self):
         ctx = self._make_context()
         system_msg, _ = build_correction_prompt_v2("text", ctx)
-        assert "writing assistant" in system_msg
+        assert "writing coach" in system_msg
         assert "dyslexia" in system_msg
 
     def test_includes_top_errors(self):
@@ -184,7 +184,7 @@ class TestBuildCorrectionPromptV2:
     def test_user_msg_does_not_contain_system_instructions(self):
         ctx = self._make_context()
         _, user_msg = build_correction_prompt_v2("text", ctx)
-        assert "writing assistant" not in user_msg
+        assert "writing coach" not in user_msg
         assert "INSTRUCTIONS:" not in user_msg
 
     def test_user_msg_contains_analyze_instruction(self):

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppLayout } from '../AppLayout';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -29,6 +29,15 @@ vi.mock('@/services/documentSync', () => ({
   syncMoveDocument: vi.fn(),
   initializeFromServer: vi.fn(),
   resetSync: vi.fn(),
+  flushPendingSync: vi.fn(),
+}));
+
+vi.mock('@/services/userScopedStorage', () => ({
+  setStorageUserId: vi.fn(),
+  rehydrateAllStores: vi.fn().mockResolvedValue(undefined),
+  migrateGlobalToScoped: vi.fn(),
+  createUserScopedStorage: vi.fn().mockReturnValue(undefined),
+  registerScopedStore: vi.fn(),
 }));
 
 const renderLayout = () =>
@@ -71,10 +80,12 @@ describe('AppLayout', () => {
     expect(appDiv?.className).not.toContain('sidebar-collapsed');
   });
 
-  it('calls initializeFromServer on mount', () => {
+  it('calls initializeFromServer on mount', async () => {
     const mockInit = vi.fn().mockResolvedValue(undefined);
     useDocumentStore.setState({ initializeFromServer: mockInit });
     renderLayout();
-    expect(mockInit).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalledOnce();
+    });
   });
 });

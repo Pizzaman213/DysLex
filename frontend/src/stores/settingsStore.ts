@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Theme, FontFamily, PageType, ViewMode, Language, MicPermission, UserSettings } from '@/types';
 import { api } from '@/services/api';
 import { useUserStore } from '@/stores/userStore';
+import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage'; // -- connor s, feb 2026
 
 interface SettingsState extends UserSettings {
   isLoading: boolean;
@@ -315,6 +316,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'dyslex-settings',
+      storage: createUserScopedStorage(),
+      skipHydration: true,
       version: 2,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
@@ -333,3 +336,5 @@ export const useSettingsStore = create<SettingsState>()(
     }
   )
 );
+
+registerScopedStore(() => useSettingsStore.persist.rehydrate());

@@ -4,6 +4,8 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+// switched to per-user scoped storage — connor secrist 02-09
+import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage';
 
 export type CapturePhase = 'idle' | 'recording' | 'recorded' | 'transcribing' | 'extracting' | 'review' | 'brainstorming';
 
@@ -204,6 +206,8 @@ export const useCaptureStore = create<CaptureState>()(
     }),
     {
       name: 'dyslex-capture-session',
+      storage: createUserScopedStorage(),
+      skipHydration: true,
       partialize: (state) => ({
         transcript: state.transcript,
         cards: state.cards,
@@ -234,3 +238,5 @@ export const useCaptureStore = create<CaptureState>()(
     },
   ),
 );
+
+registerScopedStore(() => useCaptureStore.persist.rehydrate());

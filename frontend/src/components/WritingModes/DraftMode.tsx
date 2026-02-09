@@ -84,52 +84,65 @@ export function DraftMode() {
     }
   }, [isRecording, voiceTranscript, interimText, editor]);
 
-  // Debounced correction: run 800ms after user stops typing
+  // Switched from content-dep to editor.on('update') so corrections fire reliably — C. Secrist 2/8
   useEffect(() => {
     if (!editor) return;
 
-    const plainText = editor.getText();
-    if (!plainText || plainText.trim().length < 10) return;
+    const handleUpdate = () => {
+      const plainText = editor.getText();
+      if (!plainText || plainText.trim().length < 10) return;
 
-    // Skip if text hasn't changed since last fetch
-    if (plainText === lastCheckedTextRef.current) return;
+      // Skip if text hasn't changed since last fetch
+      if (plainText === lastCheckedTextRef.current) return;
 
-    if (correctionTimerRef.current) {
-      clearTimeout(correctionTimerRef.current);
-    }
-
-    correctionTimerRef.current = setTimeout(async () => {
-      try {
-        lastCheckedTextRef.current = plainText;
-        const results = await getCorrections(plainText);
-        // Map plain-text offsets → ProseMirror positions
-        const posMap = buildPlainToPMMap(editor);
-        const mapped: Correction[] = [];
-        results.forEach((c, i) => {
-          const pmRange = mapRangeToPM(posMap, c.start, c.end);
-          if (!pmRange) return;
-          mapped.push({
-            id: `qc-${pmRange.start}-${pmRange.end}-${i}`,
-            original: c.original,
-            suggested: c.suggested,
-            type: c.type,
-            start: pmRange.start,
-            end: pmRange.end,
-            explanation: c.explanation,
-          });
-        });
-        setCorrections(mapped);
-      } catch (err) {
-        console.warn('[DraftMode] Correction failed:', err);
+      if (correctionTimerRef.current) {
+        clearTimeout(correctionTimerRef.current);
       }
-    }, 800);
+
+      correctionTimerRef.current = setTimeout(async () => {
+        try {
+          lastCheckedTextRef.current = plainText;
+          const results = await getCorrections(plainText);
+          // Map plain-text offsets → ProseMirror positions
+          const posMap = buildPlainToPMMap(editor);
+          const mapped: Correction[] = [];
+          const idCounts = new Map<string, number>();
+          results.forEach((c) => {
+            const pmRange = mapRangeToPM(posMap, c.start, c.end);
+            if (!pmRange) return;
+            // Use content-based IDs so applied/dismissed state survives re-fetch (feb 9 fix)
+            const baseKey = `${c.original}::${c.suggested}`;
+            const count = idCounts.get(baseKey) || 0;
+            idCounts.set(baseKey, count + 1);
+            mapped.push({
+              id: `qc-${c.original}-${c.suggested}-${count}`,
+              original: c.original,
+              suggested: c.suggested,
+              type: c.type,
+              start: pmRange.start,
+              end: pmRange.end,
+              explanation: c.explanation,
+            });
+          });
+          setCorrections(mapped);
+        } catch (err) {
+          console.warn('[DraftMode] Correction failed:', err);
+        }
+      }, 800);
+    };
+
+    editor.on('update', handleUpdate);
+
+    // Run once immediately for existing content
+    handleUpdate();
 
     return () => {
+      editor.off('update', handleUpdate);
       if (correctionTimerRef.current) {
         clearTimeout(correctionTimerRef.current);
       }
     };
-  }, [content, editor, setCorrections]);
+  }, [editor, setCorrections]);
 
   useEffect(() => {
     const handleCorrectionClick = (e: CustomEvent) => {
@@ -187,9 +200,6 @@ export function DraftMode() {
 
     applyCorrection(tooltipCorrection.id);
     recordCorrectionApplied();
-    // Clear stale corrections — the debounced re-fetch will get fresh ones
-    clearCorrections();
-    lastCheckedTextRef.current = '';
     setIsTooltipOpen(false);
     setTooltipCorrection(null);
   };
@@ -206,7 +216,9 @@ export function DraftMode() {
     if (isPlaying || isLoading) {
       stop();
     } else {
-      await speak(content);
+      // feed plain text to TTS, not HTML — connor s. feb 7
+      const plainText = editor?.getText() ?? '';
+      await speak(plainText);
     }
   };
 

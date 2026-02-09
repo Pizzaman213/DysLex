@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { useSettingsStore } from '@/stores/settingsStore';
 import { api } from '@/services/api';
 
+// Stripped out data-sharing toggles — those belong in a consent modal, not settings.
+// Kept just the GDPR export/delete actions. — C. Secrist, 2/9
 export function PrivacyTab() {
-  const { anonymizedDataCollection, cloudSync, setAnonymizedDataCollection, setCloudSync } =
-    useSettingsStore();
-
   const [isExporting, setIsExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
@@ -68,47 +66,6 @@ export function PrivacyTab() {
   return (
     <div className="settings-tab-content" role="tabpanel" id="privacy-panel" aria-labelledby="privacy-tab">
       <h2>Privacy & Data</h2>
-
-      <div className="setting-section">
-        <div className="setting-section-header">
-          <h3>Data Sharing</h3>
-          <p className="setting-section-desc">Control what data leaves your device</p>
-        </div>
-
-        <div className="setting-row">
-          <label htmlFor="anonymized-data-toggle">
-            <span className="setting-label">Anonymized Data Collection</span>
-            <span className="setting-help">
-              Share usage statistics to help improve DysLex AI. Your writing content is never shared.
-            </span>
-          </label>
-          <button
-            id="anonymized-data-toggle"
-            role="switch"
-            aria-checked={anonymizedDataCollection}
-            className={`setting-toggle ${anonymizedDataCollection ? 'active' : ''}`}
-            onClick={() => setAnonymizedDataCollection(!anonymizedDataCollection)}
-          >
-            <span className="toggle-slider"></span>
-          </button>
-        </div>
-
-        <div className="setting-row">
-          <label htmlFor="cloud-sync-toggle">
-            <span className="setting-label">Cloud Sync</span>
-            <span className="setting-help">Sync settings and error profile across devices</span>
-          </label>
-          <button
-            id="cloud-sync-toggle"
-            role="switch"
-            aria-checked={cloudSync}
-            className={`setting-toggle ${cloudSync ? 'active' : ''}`}
-            onClick={() => setCloudSync(!cloudSync)}
-          >
-            <span className="toggle-slider"></span>
-          </button>
-        </div>
-      </div>
 
       <div className="setting-section">
         <div className="setting-section-header">

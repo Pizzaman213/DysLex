@@ -1,19 +1,17 @@
 /**
  * Central logout / login lifecycle orchestrator.
  *
- * Calling performLogout() ensures every per-user store is reset so that
- * the next user who logs in starts with a clean slate — no data leaks
- * between accounts.
+ * On logout, switches the storage scope to '__anonymous__' and rehydrates
+ * all persisted stores from the anonymous scope. The previous user's data
+ * stays safe in their scoped localStorage keys (e.g. `dyslex-documents::userId`).
+ *
+ * Refactored for user-scoped storage — Connor Secrist, Feb 9 2026
  */
 
 import { setAuthToken } from '@/services/api';
 import { flushPendingSync } from '@/services/documentSync';
+import { setStorageUserId, rehydrateAllStores } from '@/services/userScopedStorage';
 import { useUserStore } from '@/stores/userStore';
-import { useDocumentStore } from '@/stores/documentStore';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useSessionStore } from '@/stores/sessionStore';
-import { useMindMapStore } from '@/stores/mindMapStore';
-import { useCaptureStore } from '@/stores/captureStore';
 import { useEditorStore } from '@/stores/editorStore';
 import { usePolishStore } from '@/stores/polishStore';
 import { useScaffoldStore } from '@/stores/scaffoldStore';
@@ -33,14 +31,12 @@ export async function performLogout(): Promise<void> {
   // 3. Clear user identity
   useUserStore.getState().logout();
 
-  // 4. Reset every per-user store to defaults
-  useDocumentStore.getState().resetDocuments();
-  useSettingsStore.getState().resetSettings();
-  useSessionStore.getState().endSession();
-  useMindMapStore.getState().resetMindMap();
-  useCaptureStore.getState().reset();
+  // 4. Switch storage scope to anonymous and rehydrate persisted stores
+  //    (loads anonymous/empty data — previous user's data stays in scoped keys)
+  setStorageUserId(null);
+  await rehydrateAllStores();
 
-  // Editor store: clear content + corrections
+  // 5. Reset in-memory-only stores (not persisted, no scoping needed)
   const editor = useEditorStore.getState();
   editor.setContent('');
   editor.clearCorrections();

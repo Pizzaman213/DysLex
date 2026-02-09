@@ -78,7 +78,9 @@ export function PolishMode() {
     if (isPlaying || isLoading) {
       stop();
     } else {
-      await speak(content);
+      // read-aloud should get raw text, not markup — updated 2/7 connor
+      const plainText = editor?.getText() ?? '';
+      await speak(plainText);
     }
   };
 

@@ -3,6 +3,7 @@
 import uuid
 
 import pytest
+import pytest_asyncio
 from datetime import date, datetime
 
 from app.db.models import (
@@ -25,7 +26,7 @@ from app.db.repositories import (
 )
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_user_with_data(db):
     """Create a test user with data in all tables."""
     # Create user

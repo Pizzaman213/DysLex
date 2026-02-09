@@ -3,6 +3,7 @@
 import uuid
 
 import pytest
+import pytest_asyncio
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +11,7 @@ from app.db.models import ErrorLog, User
 from app.db.repositories import progress_repo
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_user(db: AsyncSession):
     """Create a test user."""
     user = User(
@@ -24,7 +25,7 @@ async def test_user(db: AsyncSession):
     return user
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def sample_error_logs(db: AsyncSession, test_user):
     """Create sample error logs for testing."""
     now = datetime.utcnow()

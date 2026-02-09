@@ -5,7 +5,7 @@ export interface Correction {
   id: string;
   original: string;
   suggested: string;
-  type: 'spelling' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style';
+  type: 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style';
   start: number;
   end: number;
   explanation?: string;
@@ -37,7 +37,25 @@ export const useEditorStore = create<EditorState>((set) => ({
   activeCorrection: null,
   editorInstance: null,
   setContent: (content) => set({ content }),
-  setCorrections: (corrections) => set({ corrections }),
+  // Preserve applied/dismissed flags across correction re-fetches (Connor S. — feb 9)
+  setCorrections: (corrections) =>
+    set((state) => {
+      // Build a map of existing correction states keyed by original::suggested
+      const existingStates = new Map<string, { isApplied?: boolean; isDismissed?: boolean }>();
+      for (const c of state.corrections) {
+        if (c.isApplied || c.isDismissed) {
+          const key = `${c.original}::${c.suggested}`;
+          existingStates.set(key, { isApplied: c.isApplied, isDismissed: c.isDismissed });
+        }
+      }
+      // Merge preserved state into new corrections
+      const merged = corrections.map((c) => {
+        const key = `${c.original}::${c.suggested}`;
+        const prev = existingStates.get(key);
+        return prev ? { ...c, ...prev } : c;
+      });
+      return { corrections: merged };
+    }),
   clearCorrections: () => set({ corrections: [] }),
   setIsSaving: (isSaving) => set({ isSaving }),
   applyCorrection: (id) =>

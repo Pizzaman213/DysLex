@@ -39,6 +39,7 @@ const DEFAULT_SETTINGS = {
   anonymizedDataCollection: false,
   cloudSync: false,
   developerMode: false,
+  micPermission: 'unknown' as const,
 };
 
 describe('settingsStore', () => {
@@ -205,5 +206,14 @@ describe('settingsStore', () => {
 
     await useSettingsStore.getState().loadFromBackend();
     expect(useSettingsStore.getState().isLoading).toBe(false);
+  });
+
+  // --- micPermission ---
+  it('setMicPermission updates micPermission', () => {
+    expect(useSettingsStore.getState().micPermission).toBe('unknown');
+    useSettingsStore.getState().setMicPermission('granted');
+    expect(useSettingsStore.getState().micPermission).toBe('granted');
+    useSettingsStore.getState().setMicPermission('denied');
+    expect(useSettingsStore.getState().micPermission).toBe('denied');
   });
 });

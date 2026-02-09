@@ -9,7 +9,7 @@ import type { ContextCorrection } from './contextRules';
 export interface Correction {
   original: string;
   suggested: string;
-  type: 'spelling' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style';
+  type: 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style';
   start: number;
   end: number;
   confidence: number;
@@ -23,7 +23,7 @@ function mapLocalCorrection(lc: LocalCorrection): Correction {
   return {
     original: lc.original,
     suggested: lc.correction,
-    type: 'spelling',
+    type: lc.errorType as Correction['type'], // propagate granular error type from onnxModel — c.secrist 2/8
     start: lc.position.start,
     end: lc.position.end,
     confidence: lc.confidence,

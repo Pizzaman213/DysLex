@@ -8,6 +8,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { useEffect, useMemo, useRef } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useEditorStore, Correction } from '../../stores/editorStore';
+import { useDocumentStore } from '../../stores/documentStore';
 import { CorrectionHighlightExtension } from './extensions/CorrectionHighlightExtension';
 import { FocusModeExtension } from './extensions/FocusModeExtension';
 import { TrackedChangesExtension } from './extensions/TrackedChangesExtension';
@@ -28,6 +29,8 @@ export function DyslexEditor({ mode = 'draft', onEditorReady, onCorrectionClick 
   const setContent = useEditorStore((s) => s.setContent);
   const corrections = useEditorStore((s) => s.corrections);
   const setEditorInstance = useEditorStore((s) => s.setEditorInstance);
+  const activeDocumentId = useDocumentStore((s) => s.activeDocumentId);
+  const documents = useDocumentStore((s) => s.documents);
 
   // Use a ref for onCorrectionClick to keep extensions stable across renders
   const correctionClickRef = useRef(onCorrectionClick);
@@ -72,7 +75,13 @@ export function DyslexEditor({ mode = 'draft', onEditorReady, onCorrectionClick 
     extensions,
     content,
     onUpdate: ({ editor }) => {
-      setContent(editor.getHTML());
+      const html = editor.getHTML();
+      setContent(html);
+      // cs: persist to documentStore so content survives logout/rehydration
+      const docId = useDocumentStore.getState().activeDocumentId;
+      if (docId) {
+        useDocumentStore.getState().updateDocumentContent(docId, html);
+      }
     },
     editorProps: {
       attributes: {
@@ -102,6 +111,32 @@ export function DyslexEditor({ mode = 'draft', onEditorReady, onCorrectionClick 
     // setEditorInstance and onEditorReady are stable references
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
+
+  // Sync document content into TipTap when the active document changes.
+  // Needed after adding user-scoped storage — c.secrist, 2/9/26
+  const prevDocIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editor || !activeDocumentId) return;
+    const doc = documents.find((d) => d.id === activeDocumentId);
+    if (!doc) return;
+
+    // Save current editor content back to the previous document before switching
+    if (prevDocIdRef.current && prevDocIdRef.current !== activeDocumentId) {
+      const html = editor.getHTML();
+      useDocumentStore.getState().updateDocumentContent(prevDocIdRef.current, html);
+    }
+
+    // Load the new document's content into the editor
+    if (prevDocIdRef.current !== activeDocumentId || (!content && doc.content)) {
+      const docContent = doc.content || '';
+      if (editor.getHTML() !== docContent) {
+        editor.commands.setContent(docContent, false);
+        setContent(docContent);
+      }
+    }
+
+    prevDocIdRef.current = activeDocumentId;
+  }, [editor, activeDocumentId, documents, content, setContent]);
 
   // Add frustration detector (only in draft mode)
   const {

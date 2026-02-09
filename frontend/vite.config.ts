@@ -92,13 +92,13 @@ export default defineConfig({
           src: '../ml/models/quick_correction_base_v1/frequency_dictionary_en_full.txt',
           dest: 'models/quick_correction_base_v1',
         },
-        // ONNX Runtime WASM files
+        // ONNX Runtime WASM files (from @xenova/transformers bundled version)
         {
-          src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm',
+          src: 'node_modules/@xenova/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm',
           dest: 'onnx',
         },
         {
-          src: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
+          src: 'node_modules/@xenova/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm',
           dest: 'onnx',
         },
       ],
@@ -107,6 +107,12 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      // Pin onnxruntime-web to the @xenova/transformers bundled 1.14.0 — the
+      // top-level 1.17.3 has breaking API changes (Connor Secrist, Feb 7 2026)
+      'onnxruntime-web': resolve(
+        __dirname,
+        'node_modules/@xenova/transformers/node_modules/onnxruntime-web'
+      ),
     },
   },
   assetsInclude: ['**/*.md'],

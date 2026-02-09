@@ -38,7 +38,7 @@ interface CorrectionsPanelProps {
 }
 
 export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
-  const { corrections, applyCorrection, dismissCorrection, clearCorrections, applyAllCorrections, setActiveCorrection } =
+  const { corrections, applyCorrection, dismissCorrection, applyAllCorrections, setActiveCorrection } =
     useEditorStore();
   const { recordCorrectionApplied, recordCorrectionDismissed } = useSessionStore();
 
@@ -57,10 +57,7 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
     // This is more robust than using mapped positions which can drift.
     findAndReplace(editor, correction.original, correction.suggested);
 
-    // Clear ALL corrections — positions are now stale.
-    // The debounced re-fetch will get fresh corrections with correct positions.
     applyCorrection(correction.id);
-    clearCorrections();
 
     // Track in session
     recordCorrectionApplied();
@@ -85,9 +82,7 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
       recordCorrectionApplied();
     });
 
-    // Mark all as applied
     applyAllCorrections();
-    clearCorrections();
   };
 
   const handleCardClick = (correction: Correction) => {
@@ -187,8 +182,17 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
   );
 }
 
+// Added fine-grained error types for dyslexic patterns (connor, feb 8)
 function getCorrectionLabel(type: string): string {
   switch (type) {
+    case 'omission':
+      return 'Missing Letter';
+    case 'insertion':
+      return 'Extra Letter';
+    case 'transposition':
+      return 'Swapped Letters';
+    case 'substitution':
+      return 'Wrong Letter';
     case 'spelling':
       return 'Quick Fix';
     case 'grammar':

@@ -170,15 +170,39 @@
   outline-offset: 2px;
 }
 
-/* Range Sliders */
+/* Range Sliders — restyled to full-width with centered thumb, connor s. 2/8 */
+.setting-row:has(.setting-slider) {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.setting-row:has(.setting-slider) label {
+  flex: 0 0 100%;
+}
+
+.setting-row datalist {
+  display: none;
+}
+
 .setting-slider {
-  min-width: 180px;
-  height: 4px;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 16px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--border-subtle);
+  background: transparent;
+  background-image: linear-gradient(var(--border-subtle), var(--border-subtle));
+  background-size: 100% 4px;
+  background-position: center;
+  background-repeat: no-repeat;
   border-radius: var(--radius-full);
   outline: none;
+  margin: var(--space-2) 0;
+}
+
+.setting-slider::-webkit-slider-runnable-track {
+  height: 16px;
+  background: transparent;
 }
 
 .setting-slider::-webkit-slider-thumb {
@@ -189,6 +213,7 @@
   background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
+  margin-top: 0;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 

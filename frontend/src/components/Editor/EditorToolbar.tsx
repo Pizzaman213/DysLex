@@ -13,7 +13,7 @@ interface EditorToolbarProps {
   readAloudDisabled?: boolean;
 }
 
-export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAloud, isReadAloudPlaying, isReadAloudLoading, readAloudDisabled }: EditorToolbarProps) {
+export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAloud }: EditorToolbarProps) {
   const { font, setFont, fontSize, setFontSize, zoom, setZoom, showZoom } = useSettingsStore();
   const [sizeInput, setSizeInput] = useState(String(fontSize));
 

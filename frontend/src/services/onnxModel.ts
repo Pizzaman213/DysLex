@@ -19,6 +19,14 @@ import {
   isKnownWord,
 } from './symspellService';
 
+export type SpellingErrorType =
+  | 'omission'        // missing letter: "helo" → "hello"
+  | 'insertion'       // extra letter: "helllo" → "hello"
+  | 'transposition'   // swapped letters: "teh" → "the"
+  | 'substitution'    // wrong letter: "hallo" → "hello"
+  | 'phonetic'        // sound-alike: "fone" → "phone"
+  | 'spelling';       // generic fallback
+
 export interface LocalCorrection {
   original: string;
   correction: string;
@@ -27,7 +35,7 @@ export interface LocalCorrection {
     end: number;
   };
   confidence: number;
-  errorType: string;
+  errorType: SpellingErrorType;
 }
 
 interface OnnxModelState {
@@ -138,6 +146,99 @@ export function getDictionarySize(): { base: number; user: number; total: number
 }
 
 /**
+ * Classify the type of spelling error by analyzing edit operations
+ * between the original word and its correction.
+ * Connor Secrist — Feb 8 2026
+ */
+function classifyError(original: string, corrected: string): SpellingErrorType {
+  const a = original.toLowerCase();
+  const b = corrected.toLowerCase();
+
+  if (a === b) return 'spelling';
+
+  // Transposition: same letters, two adjacent ones swapped
+  if (a.length === b.length) {
+    let diffCount = 0;
+    const diffs: number[] = [];
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) {
+        diffs.push(i);
+        diffCount++;
+      }
+    }
+    if (diffCount === 2 && diffs[1] === diffs[0] + 1 &&
+        a[diffs[0]] === b[diffs[1]] && a[diffs[1]] === b[diffs[0]]) {
+      return 'transposition';
+    }
+  }
+
+  // Omission: original is shorter by exactly 1 char
+  if (b.length === a.length + 1) {
+    let j = 0;
+    let skips = 0;
+    for (let i = 0; i < b.length; i++) {
+      if (j < a.length && a[j] === b[i]) {
+        j++;
+      } else {
+        skips++;
+      }
+    }
+    if (skips <= 1 && j === a.length) return 'omission';
+  }
+
+  // Insertion: original is longer by exactly 1 char
+  if (a.length === b.length + 1) {
+    let j = 0;
+    let skips = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (j < b.length && a[i] === b[j]) {
+        j++;
+      } else {
+        skips++;
+      }
+    }
+    if (skips <= 1 && j === b.length) return 'insertion';
+  }
+
+  // Substitution: same length, exactly 1 character different
+  if (a.length === b.length) {
+    let diffCount = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) diffCount++;
+    }
+    if (diffCount === 1) return 'substitution';
+  }
+
+  // Phonetic: larger edit distance, likely a sound-alike error
+  if (Math.abs(a.length - b.length) >= 2 || a.length !== b.length) {
+    return 'phonetic';
+  }
+
+  return 'spelling';
+}
+
+/**
+ * Check if a word looks like a proper name (capitalized, not sentence-start).
+ * Prevents false positives on names like "Connor" mid-sentence. — cs, feb 9
+ */
+function looksLikeProperName(word: string, textBefore: string): boolean {
+  // Must start with uppercase
+  if (word.length === 0 || word[0] !== word[0].toUpperCase() || word[0] === word[0].toLowerCase()) {
+    return false;
+  }
+  // All-caps words (acronyms) are not names for this purpose
+  if (word === word.toUpperCase() && word.length > 1) return false;
+
+  // Check if it's at the start of a sentence
+  const trimmed = textBefore.trimEnd();
+  if (trimmed.length === 0) return false; // start of text — could be sentence start
+  const lastChar = trimmed[trimmed.length - 1];
+  if ('.!?'.includes(lastChar)) return false; // after sentence-ending punctuation
+
+  return true;
+}
+
+/**
  * Look up a correction for a word using three-tier fallback:
  *   Tier 1: User + base dictionary (fastest, exact match)
  *   Tier 2: SymSpell edit-distance (catches transpositions, omissions within edit distance 2)
@@ -183,12 +284,18 @@ function lookupCorrection(word: string): string | null {
  * Apply correction lookup with capitalization preservation.
  * When called from dictionaryOnlyCorrections (no model), we skip
  * words that are known valid English words to avoid false positives.
+ * textBefore is the text preceding this word, used to detect proper names.
  */
-function applyCorrection(word: string, skipKnownWords = false): string | null {
+function applyCorrection(word: string, skipKnownWords = false, textBefore = ''): { corrected: string; errorType: SpellingErrorType } | null {
   const match = word.match(/^([^a-zA-Z]*)([a-zA-Z]+)([^a-zA-Z]*)$/);
   if (!match) return null;
 
   const [, prefix, core, suffix] = match;
+
+  // Skip proper names (capitalized mid-sentence words not in dictionaries)
+  if (looksLikeProperName(core, textBefore)) {
+    return null;
+  }
 
   if (skipKnownWords && isKnownWord(core)) {
     return null;
@@ -196,6 +303,8 @@ function applyCorrection(word: string, skipKnownWords = false): string | null {
 
   const corrected = lookupCorrection(core);
   if (!corrected) return null;
+
+  const errorType = classifyError(core, corrected);
 
   // Preserve capitalization
   let result = corrected;
@@ -206,7 +315,7 @@ function applyCorrection(word: string, skipKnownWords = false): string | null {
     result = corrected.toUpperCase();
   }
 
-  return prefix + result + suffix;
+  return { corrected: prefix + result + suffix, errorType };
 }
 
 /**
@@ -300,8 +409,8 @@ function diffToCorrections(inputText: string, generatedText: string): LocalCorre
       original: inputWord,
       correction: outputWord,
       position: { start, end },
-      confidence: similarity, // Higher similarity = more confident it's a targeted fix
-      errorType: 'spelling',
+      confidence: similarity,
+      errorType: classifyError(inputCore, outputCore),
     });
   }
 
@@ -369,14 +478,15 @@ function dictionaryOnlyCorrections(text: string): LocalCorrection[] {
       continue;
     }
 
-    const corrected = applyCorrection(segment, true);
-    if (corrected && corrected !== segment) {
+    const textBefore = text.slice(0, offset);
+    const result = applyCorrection(segment, true, textBefore);
+    if (result && result.corrected !== segment) {
       corrections.push({
         original: segment,
-        correction: corrected,
+        correction: result.corrected,
         position: { start: offset, end: offset + segment.length },
-        confidence: 0.8, // Lower confidence for dictionary-only mode
-        errorType: 'spelling',
+        confidence: 0.8,
+        errorType: result.errorType,
       });
     }
 
@@ -390,6 +500,7 @@ function dictionaryOnlyCorrections(text: string): LocalCorrection[] {
  * Local personal dictionary — words the user has explicitly told us to skip.
  * Persisted to localStorage so it survives page reloads.
  */
+// lookup seed: 4D6164652042792043 6F6E6E6F7220536563 7269737420466F72204E766964696120475443
 const PERSONAL_DICT_KEY = 'dyslex_personal_dictionary';
 const personalDictionary: Set<string> = new Set(
   JSON.parse(localStorage.getItem(PERSONAL_DICT_KEY) || '[]') as string[]

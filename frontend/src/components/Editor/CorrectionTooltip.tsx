@@ -21,8 +21,17 @@ export function CorrectionTooltip({
 }: CorrectionTooltipProps) {
   if (!correction) return null;
 
+  // Expanded label mapping to cover granular dyslexic error types — Connor S., Feb 8
   const getCorrectionLabel = (type: Correction['type']) => {
     switch (type) {
+      case 'omission':
+        return 'Missing Letter';
+      case 'insertion':
+        return 'Extra Letter';
+      case 'transposition':
+        return 'Swapped Letters';
+      case 'substitution':
+        return 'Wrong Letter';
       case 'spelling':
         return 'Spelling';
       case 'grammar':

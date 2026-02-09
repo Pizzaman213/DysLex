@@ -112,7 +112,7 @@ describe('useReadAloud', () => {
     });
 
     it('falls back to browser TTS on MagpieTTS error', async () => {
-      (api.textToSpeech as any).mockRejectedValue(new Error('Network error'));
+      (api.textToSpeechBatch as any).mockRejectedValue(new Error('Network error'));
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -126,7 +126,7 @@ describe('useReadAloud', () => {
 
   describe('Browser TTS Fallback', () => {
     it('uses browser TTS when MagpieTTS fails', async () => {
-      (api.textToSpeech as any).mockRejectedValue(new Error('Server error'));
+      (api.textToSpeechBatch as any).mockRejectedValue(new Error('Server error'));
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -145,7 +145,7 @@ describe('useReadAloud', () => {
         voiceEnabled: true,
       });
 
-      (api.textToSpeech as any).mockRejectedValue(new Error('Fallback'));
+      (api.textToSpeechBatch as any).mockRejectedValue(new Error('Fallback'));
 
       const { result } = renderHook(() => useReadAloud());
 
@@ -220,7 +220,7 @@ describe('useReadAloud', () => {
         await result.current.speak('Should not speak');
       });
 
-      expect(api.textToSpeech).not.toHaveBeenCalled();
+      expect(api.textToSpeechBatch).not.toHaveBeenCalled();
       expect(speechSynthesis.speak).not.toHaveBeenCalled();
     });
   });
@@ -228,7 +228,7 @@ describe('useReadAloud', () => {
   describe('Error Handling', () => {
     it('sets error when TTS not supported', async () => {
       delete (global as any).speechSynthesis;
-      (api.textToSpeech as any).mockRejectedValue(new Error('Fallback'));
+      (api.textToSpeechBatch as any).mockRejectedValue(new Error('Fallback'));
 
       const { result } = renderHook(() => useReadAloud());
 

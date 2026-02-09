@@ -59,18 +59,11 @@ export function AccessibilityTab() {
             step="25"
             value={correctionAggressiveness}
             onChange={(e) => setCorrectionAggressiveness(Number(e.target.value))}
-            className="setting-slider with-labels"
+            className="setting-slider" // simplified from with-labels class — cs feb 8
             aria-valuenow={correctionAggressiveness}
             aria-valuemin={0}
             aria-valuemax={100}
-            list="aggressiveness-markers"
           />
-          <datalist id="aggressiveness-markers">
-            <option value="0" label="Off"></option>
-            <option value="33" label="Light"></option>
-            <option value="66" label="Standard"></option>
-            <option value="100" label="Aggressive"></option>
-          </datalist>
         </div>
       </div>
 
