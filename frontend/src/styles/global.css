@@ -2064,7 +2064,15 @@ textarea::placeholder {
   transition: opacity 0.3s ease, padding 0.3s ease;
   opacity: 1;
   min-width: 0;
+}
+
+.draft-mode-layout .corrections-panel,
+.draft-mode-layout .right-panel {
   overflow: hidden;
+}
+
+.draft-mode-layout .scaffold-panel {
+  overflow-y: auto;
 }
 
 .draft-mode-layout.panels-hidden {

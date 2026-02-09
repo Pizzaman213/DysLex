@@ -1,123 +1,89 @@
 # DysLex AI
 
-Intelligent writing assistance for dyslexic users. DysLex AI provides real-time, personalized spelling and grammar corrections that learn from your unique patterns.
+**An open-source, adaptive AI writing tool built for dyslexic thinkers.**
 
-## Features
+Dyslexia isn't a deficit -- it's a different cognitive architecture. Dyslexic thinkers often excel at big-picture reasoning, pattern recognition, and creative problem-solving. The challenge isn't a lack of ideas; it's that traditional writing tools create friction between brilliant thinking and the page. DysLex AI removes that friction.
 
-- **Adaptive Learning** - The system learns your specific error patterns without explicit feedback
-- **Four Writing Modes** - Capture (voice), Mind Map, Draft, and Polish
-- **Dyslexia-Friendly UI** - OpenDyslexic font, high contrast themes, no distracting popups
-- **Voice Support** - Speech-to-text input and text-to-speech playback
-- **Inline Corrections** - Suggestions appear naturally in the text, not as intrusive dialogs
+## Built with NVIDIA NIM
 
-## Architecture
+DysLex AI is powered by [NVIDIA NIM](https://build.nvidia.com/) inference microservices:
 
-DysLex AI uses a three-model approach:
+| Product | Model ID | Role |
+|---|---|---|
+| **Nemotron-3-Nano-30B-A3B** | `nvidia/nemotron-3-nano-30b-a3b` | Deep text analysis -- context-aware corrections, homophones, real-word errors, intent inference |
+| **Cosmos Reason2 8B** | `nvidia/cosmos-reason2-8b` | Vision-based idea extraction -- converts uploaded images and diagrams into thought cards |
+| **MagpieTTS Multilingual** | `nvidia/magpietts` | Natural text-to-speech -- read-aloud with voices in English, Spanish, French, and more |
+| **faster-whisper** | Whisper large-v3 (optimized) | Speech-to-text transcription -- real-time voice input for Capture Mode |
 
-1. **Error Profile Model** (PostgreSQL) - Stores your personal error patterns
-2. **Quick Correction Model** (ONNX) - Fast, local corrections for common errors
-3. **Deep Analysis Model** (Nemotron) - Cloud-based analysis for complex grammar
+All cloud services are accessed through a single NVIDIA NIM API key via `https://integrate.api.nvidia.com/v1`.
+
+## How It Works
+
+DysLex AI combines three models that no one has put together properly before:
+
+| Model | Role | Runs |
+|---|---|---|
+| **Error Profile** | Learns each user's unique spelling/grammar patterns over time | PostgreSQL (server) |
+| **Quick Correction** | Instant fixes for known errors -- no network round-trip | ONNX Runtime (browser) |
+| **Deep Analysis** | Context-aware correction for homophones, real-word errors, intent inference | NVIDIA Nemotron (cloud) |
+
+These models feed into each other through a **passive learning loop** -- the system observes natural writing behavior (self-corrections, repeated errors, word rewrites) without ever asking the user to accept or reject anything. No pop-ups. No interruptions. It just gets smarter.
+
+## Four Writing Modes
+
+- **Capture** -- Speak freely. Voice is transcribed and organized into draggable thought cards.
+- **Mind Map** -- Arrange ideas visually. AI suggests connections and identifies gaps.
+- **Draft** -- Write with a scaffolded editor, inline corrections, and an AI coach. Passive learning runs silently.
+- **Polish** -- Review tracked changes, readability scores, and structural suggestions with plain-English explanations.
+
+## Design Principles
+
+- **Voice-first, text-second.** Voice input is a first-class citizen, not an afterthought.
+- **Structure emerges, not imposed.** Let ideas flow, then help organize them.
+- **Corrections are invisible.** Never interrupt creative flow.
+- **Show progress, not deficits.** "500 words written today" -- never "23 errors found."
+- **Respect the person.** The user is intelligent. They need better tools, not simpler ideas.
 
 ## Quick Start
 
-### Prerequisites
-- Node.js 20+
-- Python 3.11+
-- PostgreSQL 15+
-- NVIDIA NIM API key (for Nemotron)
-
-### One-Command Launcher (Recommended) ⭐
-
 ```bash
-# Auto-setup EVERYTHING and start (best for first time!)
+# One command to start everything (recommended)
 python3 run.py --auto-setup
 
-# After initial setup, just run:
-python3 run.py
+# Or run services individually
+cd frontend && npm install && npm run dev    # port 3000
+cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload  # port 8000
 
-# Or use Docker Compose mode
-python3 run.py --docker
-
-# Check prerequisites without starting
-python3 run.py --check-only
-```
-
-**What `--auto-setup` does:**
-- ✅ Starts PostgreSQL if not running
-- ✅ Starts Redis if not running
-- ✅ Creates backend virtual environment
-- ✅ Installs Python dependencies
-- ✅ Kills processes on conflicting ports
-- ✅ Cleans up on shutdown
-
-See [RUN_PY_GUIDE.md](RUN_PY_GUIDE.md) for full documentation or [RUN_PY_AUTO_SETUP.md](RUN_PY_AUTO_SETUP.md) for auto-setup details.
-
-### Claude Code Integration 🤖
-
-Control DysLex AI directly from Claude Code using MCP tools:
-
-```bash
-# One-time setup
-.claude/setup.sh
-
-# Then in Claude Code, just ask:
-"Start DysLex AI with auto-setup"
-"Check DysLex AI status"
-"Show me the logs"
-"Restart DysLex AI"
-```
-
-See [.claude/README.md](.claude/README.md) for full MCP server documentation.
-
-### Manual Setup
-
-```bash
-# Frontend
-cd frontend
-npm install
-npm run dev
-
-# Backend
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Database
-createdb dyslex
-psql dyslex < database/schema/init.sql
-```
-
-### Docker
-
-```bash
+# Or use Docker
 docker compose -f docker/docker-compose.yml up
 ```
 
-## Documentation
-
-### Setup & Implementation
-- [Module 9 Setup Guide](MODULE_9_SETUP.md) - **Start Here** for Services & Hooks setup
-- [Module 9 Command Reference](MODULE_9_COMMANDS.md) - Quick command cheat sheet
-- [Module 9 Implementation Summary](docs/MODULE_9_IMPLEMENTATION_SUMMARY.md) - Technical details
-
-### Architecture & Design
-- [Architecture](docs/architecture.md)
-- [API Reference](docs/api-reference.md)
-- [Database Schema](docs/database-schema.md)
-- [ML Models](docs/ml-models.md)
-- [Deployment](docs/deployment.md)
-- [Contributing](docs/contributing.md)
+**Prerequisites:** Node.js 20+, Python 3.11+, PostgreSQL 15+
 
 ## Tech Stack
 
-- **Frontend**: React, TipTap, TypeScript, Vite, ONNX Runtime Web
-- **Backend**: Python, FastAPI, SQLAlchemy, Alembic
-- **Database**: PostgreSQL
-- **ML**: NVIDIA NIM (Nemotron), MagpieTTS, faster-whisper
-- **Infrastructure**: Docker, Nginx
+**Frontend:** React 18, TipTap, TypeScript, Vite, Zustand, ONNX Runtime Web
+**Backend:** Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic 2.0
+**Database:** PostgreSQL 15+
+**ML/AI:** NVIDIA NIM (Nemotron), MagpieTTS, faster-whisper
+**Infra:** Docker, Nginx
+
+## Documentation
+
+- [Architecture](docs/architecture.md) -- System design overview
+- [API Reference](docs/api-reference.md) -- Endpoint documentation
+- [Database Schema](docs/database-schema.md) -- ERD and table docs
+- [ML Models](docs/ml-models.md) -- Model architecture and training
+- [Deployment](docs/deployment.md) -- Production setup
+- [Contributing](docs/contributing.md) -- How to get involved
+- [run.py Guide](RUN_PY_GUIDE.md) -- Launcher documentation
 
 ## License
 
-Apache 2.0 - See [LICENSE](LICENSE)
+Apache 2.0 -- See [LICENSE](LICENSE)
+
+Dyslexia affects roughly 1 in 5 people worldwide. A tool this powerful should not be locked behind a paywall.
+
+---
+
+*"Everyone has ideas worth sharing. The right tool just makes sharing them easier."*
