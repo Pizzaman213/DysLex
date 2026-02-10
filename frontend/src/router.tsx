@@ -23,7 +23,7 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { index: true, element: <Navigate to="/draft" replace /> },
+          { index: true, element: <Navigate to="/capture" replace /> },
           { path: 'capture', element: <CapturePage /> },
           { path: 'mindmap', element: <MindMapPage /> },
           { path: 'draft', element: <DraftPage /> },

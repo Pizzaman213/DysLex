@@ -67,7 +67,7 @@ export function SignupPage() {
         name: result.data.user_name,
         email: result.data.user_email,
       });
-      navigate('/draft', { replace: true });
+      navigate('/capture', { replace: true });
     } catch (err: any) {
       if (err?.name === 'NotAllowedError') {
         setError('Passkey creation was cancelled.');

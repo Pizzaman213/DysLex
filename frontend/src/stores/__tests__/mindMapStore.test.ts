@@ -5,7 +5,7 @@ const defaultRootNode = {
   id: 'root',
   type: 'mindMapNode',
   position: { x: 400, y: 200 },
-  data: { title: 'Main Idea', body: '', cluster: 1 },
+  data: { title: '', body: '', cluster: 1 },
 };
 
 describe('mindMapStore', () => {

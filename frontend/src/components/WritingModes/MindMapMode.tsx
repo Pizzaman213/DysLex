@@ -12,7 +12,6 @@ import './MindMap/mindmap.css';
 
 const QUICK_ADD_MAX_WORDS = 25;
 const QUICK_ADD_MAX_SENTENCES = 1;
-const DEFAULT_ROOT_TITLE = 'Main Idea';
 
 function isQuickAddTranscript(text: string): boolean {
   const trimmed = text.trim();
@@ -31,14 +30,7 @@ function isQuickAddTranscript(text: string): boolean {
 /** Returns true if the root node still has the default placeholder title */
 function rootIsDefault(): boolean {
   const root = useMindMapStore.getState().nodes.find((n) => n.id === 'root');
-  return !root || root.data.title === DEFAULT_ROOT_TITLE;
-}
-
-/** Set the root node title if it's still the default placeholder */
-function setRootTitleIfDefault(title: string) {
-  if (!title.trim()) return;
-  if (!rootIsDefault()) return;
-  useMindMapStore.getState().updateNodeData('root', { title: title.trim() });
+  return !root || !root.data.title || root.data.title === 'Main Idea';
 }
 
 /** Derive a short central theme from a set of card titles (fallback when API doesn't provide one) */
@@ -74,6 +66,11 @@ export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
   // Ref for getting viewport center from canvas
   const viewportCenterRef = useRef<() => { x: number; y: number }>(() => ({ x: 400, y: 200 }));
 
+  // Repair orphaned nodes on mount — ensures root exists and all nodes connect to it
+  useEffect(() => {
+    useMindMapStore.getState().repairOrphans();
+  }, []);
+
   // Guard against re-importing the same capture cards
   const importedRef = useRef(false);
 
@@ -103,9 +100,9 @@ export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
         });
       });
 
-      // Set root title from capture card titles
-      const topic = deriveTopicFromCards(captureCards.map((c) => c.title));
-      setRootTitleIfDefault(topic);
+      // Always set the root to a central idea derived from the capture cards
+      const topic = deriveTopicFromCards(captureCards.map((c) => c.title)) || 'Main Ideas';
+      useMindMapStore.getState().updateNodeData('root', { title: topic });
 
       resetCapture();
     }
@@ -169,17 +166,14 @@ export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
       }
     }
 
-    // Update root title from API-provided topic
-    if (response.topic) {
-      setRootTitleIfDefault(response.topic);
-    } else {
-      setRootTitleIfDefault(deriveTopicFromCards(cards.map((c) => c.title)));
-    }
+    // Always set the root node to the central idea — this is the hub of the mind map
+    const topic = response.topic || deriveTopicFromCards(cards.map((c) => c.title)) || 'Main Ideas';
+    useMindMapStore.getState().updateNodeData('root', { title: topic });
 
-    // Get existing node titles to avoid duplicates
+    // Get existing non-root node titles to avoid duplicates (exclude root since it holds the central idea)
     const { nodes: currentNodes, addNode, batchUpdate } = useMindMapStore.getState();
     const existingTitles = new Set(
-      currentNodes.map((n) => n.data.title.trim().toLowerCase())
+      currentNodes.filter((n) => n.id !== 'root').map((n) => n.data.title.trim().toLowerCase())
     );
 
     const newCards = cards.filter(
@@ -220,14 +214,12 @@ export function MindMapMode({ onNavigateToDraft }: MindMapModeProps) {
           return subBody !== topicBody && !topicBody.startsWith(subBody) && !subBody.startsWith(topicBody);
         });
         if (subs.length > 0) {
-          const subAngleStep = (Math.PI * 0.8) / Math.max(subs.length - 1, 1);
-          const subRadius = 220;
-          const subStartAngle = topicAngle - (Math.PI * 0.4);
+          const subAngleStep = (2 * Math.PI) / subs.length;
+          const subRadius = 170;
 
           subs.forEach((sub, subIndex) => {
-            const subAngle = subs.length === 1
-              ? topicAngle
-              : subStartAngle + subIndex * subAngleStep;
+            // Distribute sub-ideas in a full circle around the topic node
+            const subAngle = topicAngle + subIndex * subAngleStep;
             const subX = topicX + Math.cos(subAngle) * subRadius;
             const subY = topicY + Math.sin(subAngle) * subRadius;
 

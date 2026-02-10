@@ -22,11 +22,17 @@ export function MindMapToolbar({ onBuildScaffold, isScaffoldLoading, onExtractFr
   const [isVisionProcessing, setIsVisionProcessing] = useState(false);
 
   const handleAddIdea = useCallback(() => {
-    addNode(null, {
-      x: Math.random() * 400 + 100,
-      y: Math.random() * 300 + 100,
+    // Connect new nodes to the root so everything surrounds the main idea
+    const rootNode = nodes.find((n) => n.id === 'root');
+    const rootX = rootNode?.position.x ?? 400;
+    const rootY = rootNode?.position.y ?? 200;
+    const angle = Math.random() * 2 * Math.PI;
+    const radius = 300 + Math.random() * 100;
+    addNode('root', {
+      x: rootX + Math.cos(angle) * radius,
+      y: rootY + Math.sin(angle) * radius,
     });
-  }, [addNode]);
+  }, [addNode, nodes]);
 
   const handleZoomIn = useCallback(() => {
     zoomIn({ duration: 300 });

@@ -160,6 +160,16 @@ class IdeaExtractionService:
 
                 cards = _validate_and_fix_cards(cards, original_text=transcript)
 
+                # Always ensure a central topic exists when we have cards
+                if not topic.strip() and cards:
+                    # Pick the shortest card title as a rough central theme
+                    titles = [c.title for c in cards if c.title.strip()]
+                    if titles:
+                        topic = min(titles, key=len)
+                    else:
+                        topic = "Main Ideas"
+                    logger.info(f"Generated fallback central topic: '{topic}'")
+
                 logger.info(
                     f"Extracted {len(cards)} topics with "
                     f"{sum(len(c.sub_ideas) for c in cards)} total sub-ideas"

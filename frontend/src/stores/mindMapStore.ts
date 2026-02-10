@@ -82,6 +82,9 @@ interface MindMapState {
   // Scaffold
   setScaffold: (scaffold: Scaffold | null) => void;
 
+  // Repair
+  repairOrphans: () => void;
+
   // Reset
   resetMindMap: () => void;
 }
@@ -90,7 +93,7 @@ const defaultNode: MindMapFlowNode = {
   id: 'root',
   type: 'mindMapNode',
   position: { x: 400, y: 200 },
-  data: { title: 'Main Idea', body: '', cluster: 1 },
+  data: { title: '', body: '', cluster: 1 },
 };
 
 function pushHistory(state: MindMapState): Partial<MindMapState> {
@@ -479,6 +482,95 @@ export const useMindMapStore = create<MindMapState>()(
         set({ scaffold });
       },
 
+      repairOrphans: () => {
+        const { nodes, edges } = get();
+
+        // Ensure root node exists
+        let rootNode = nodes.find((n) => n.id === 'root');
+        const updatedNodes = [...nodes];
+        const updatedEdges = [...edges];
+
+        if (!rootNode) {
+          const avgX = nodes.length > 0
+            ? nodes.reduce((sum, n) => sum + n.position.x, 0) / nodes.length
+            : 400;
+          const avgY = nodes.length > 0
+            ? nodes.reduce((sum, n) => sum + n.position.y, 0) / nodes.length
+            : 200;
+          rootNode = {
+            id: 'root',
+            type: 'mindMapNode',
+            position: { x: avgX, y: avgY },
+            data: { title: 'Main Ideas', body: '', cluster: 1 as const },
+          };
+          updatedNodes.unshift(rootNode);
+        }
+
+        // Find all nodes connected to root (directly or indirectly)
+        const connectedToRoot = new Set<string>(['root']);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const edge of updatedEdges) {
+            if (connectedToRoot.has(edge.source) && !connectedToRoot.has(edge.target)) {
+              connectedToRoot.add(edge.target);
+              changed = true;
+            }
+            if (connectedToRoot.has(edge.target) && !connectedToRoot.has(edge.source)) {
+              connectedToRoot.add(edge.source);
+              changed = true;
+            }
+          }
+        }
+
+        // Connect orphans to root
+        let repaired = false;
+        for (const node of updatedNodes) {
+          if (node.id !== 'root' && !connectedToRoot.has(node.id)) {
+            const handles = pickHandles(rootNode.position, node.position);
+            updatedEdges.push({
+              id: `edge-root-${node.id}`,
+              source: 'root',
+              target: node.id,
+              data: { relationship: null },
+              ...handles,
+            });
+            repaired = true;
+          }
+        }
+
+        // If root has no title, derive one
+        if (!rootNode.data.title) {
+          const childTitles = updatedNodes
+            .filter((n) => n.id !== 'root' && n.data.title)
+            .map((n) => n.data.title);
+          rootNode.data = {
+            ...rootNode.data,
+            title: childTitles.length > 0
+              ? childTitles.sort((a, b) => a.length - b.length)[0]
+              : 'Main Ideas',
+          };
+          repaired = true;
+        }
+
+        // Center root among children
+        const children = updatedNodes.filter((n) => n.id !== 'root');
+        if (children.length > 0) {
+          const centerX = children.reduce((sum, n) => sum + n.position.x, 0) / children.length;
+          const centerY = children.reduce((sum, n) => sum + n.position.y, 0) / children.length;
+          const root = updatedNodes.find((n) => n.id === 'root')!;
+          root.position = { x: centerX, y: centerY };
+          repaired = true;
+        }
+
+        if (repaired) {
+          set({
+            nodes: updatedNodes,
+            edges: recomputeEdgeHandles(updatedNodes, updatedEdges),
+          });
+        }
+      },
+
       resetMindMap: () => {
         set({
           nodes: [defaultNode],
@@ -495,7 +587,7 @@ export const useMindMapStore = create<MindMapState>()(
       name: 'dyslex-mindmap',
       storage: createUserScopedStorage(),
       skipHydration: true,
-      version: 2,
+      version: 3,
       partialize: (state) => ({
         nodes: state.nodes,
         edges: state.edges,
@@ -519,6 +611,84 @@ export const useMindMapStore = create<MindMapState>()(
           if (!state.clusterNames) {
             state.clusterNames = { ...DEFAULT_CLUSTER_NAMES };
           }
+        }
+        if (version < 3) {
+          // Ensure root node exists and all nodes connect to it
+          const state = persisted as any;
+          const nodes: any[] = state.nodes || [];
+          const edges: any[] = state.edges || [];
+
+          // Ensure root node exists
+          let rootNode = nodes.find((n: any) => n.id === 'root');
+          if (!rootNode) {
+            // Compute center of all existing nodes for root placement
+            const avgX = nodes.length > 0
+              ? nodes.reduce((sum: number, n: any) => sum + (n.position?.x || 0), 0) / nodes.length
+              : 400;
+            const avgY = nodes.length > 0
+              ? nodes.reduce((sum: number, n: any) => sum + (n.position?.y || 0), 0) / nodes.length
+              : 200;
+            rootNode = {
+              id: 'root',
+              type: 'mindMapNode',
+              position: { x: avgX, y: avgY },
+              data: { title: '', body: '', cluster: 1 },
+            };
+            nodes.unshift(rootNode);
+          }
+
+          // Find orphaned nodes (no edge connecting them to root, directly or indirectly)
+          const connectedToRoot = new Set<string>(['root']);
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const edge of edges) {
+              if (connectedToRoot.has(edge.source) && !connectedToRoot.has(edge.target)) {
+                connectedToRoot.add(edge.target);
+                changed = true;
+              }
+              if (connectedToRoot.has(edge.target) && !connectedToRoot.has(edge.source)) {
+                connectedToRoot.add(edge.source);
+                changed = true;
+              }
+            }
+          }
+
+          // Connect orphaned nodes to root
+          for (const node of nodes) {
+            if (node.id !== 'root' && !connectedToRoot.has(node.id)) {
+              edges.push({
+                id: `edge-root-${node.id}`,
+                source: 'root',
+                target: node.id,
+                data: { relationship: null },
+              });
+            }
+          }
+
+          // If root has no title, derive one from child nodes
+          if (!rootNode.data.title) {
+            const childTitles = nodes
+              .filter((n: any) => n.id !== 'root' && n.data?.title)
+              .map((n: any) => n.data.title);
+            if (childTitles.length > 0) {
+              rootNode.data.title = childTitles.sort((a: string, b: string) => a.length - b.length)[0];
+            } else {
+              rootNode.data.title = 'Main Ideas';
+            }
+          }
+
+          // Center root among its children
+          const children = nodes.filter((n: any) => n.id !== 'root');
+          if (children.length > 0) {
+            rootNode.position = {
+              x: children.reduce((sum: number, n: any) => sum + (n.position?.x || 0), 0) / children.length,
+              y: children.reduce((sum: number, n: any) => sum + (n.position?.y || 0), 0) / children.length,
+            };
+          }
+
+          state.nodes = nodes;
+          state.edges = edges;
         }
         return persisted;
       },

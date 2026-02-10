@@ -231,6 +231,12 @@
   color: inherit;
 }
 
+.mindmap-node-title.placeholder {
+  opacity: 0.55;
+  font-style: italic;
+  font-weight: 400;
+}
+
 .mindmap-node-body {
   font-size: 11px;
   opacity: 0.8;

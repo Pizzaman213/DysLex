@@ -176,7 +176,9 @@ export const MindMapNode = memo(({ id, data }: NodeProps) => {
         </div>
       ) : (
         <div className="mindmap-node-content">
-          <div className="mindmap-node-title">{nodeData.title}</div>
+          <div className={`mindmap-node-title${isRoot && !nodeData.title ? ' placeholder' : ''}`}>
+            {nodeData.title || (isRoot ? 'Your Topic' : 'New Idea')}
+          </div>
           {nodeData.body && <div className="mindmap-node-body">{nodeData.body}</div>}
           <div className="mindmap-node-hover-actions">
             <button

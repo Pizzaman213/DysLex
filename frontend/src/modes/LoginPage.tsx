@@ -16,7 +16,7 @@ export function LoginPage() {
   const location = useLocation();
   const { setUser } = useUserStore();
 
-  const from = (location.state as { from?: string })?.from || '/draft';
+  const from = (location.state as { from?: string })?.from || '/capture';
   const webauthnOk = isWebAuthnSupported();
 
   async function handlePasskeyLogin(emailHint?: string) {
