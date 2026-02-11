@@ -91,7 +91,7 @@ async def register(request: Request, body: RegisterRequest, db: DbSession) -> di
 async def login(request: Request, body: LoginRequest, db: DbSession) -> dict:
     """Validate credentials and return a JWT."""
     user = await get_user_by_email(db, body.email)
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user or user.password_hash is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

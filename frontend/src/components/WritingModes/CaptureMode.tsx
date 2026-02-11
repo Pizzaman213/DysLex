@@ -341,7 +341,17 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
           <textarea
             className="transcript-textarea"
             value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
+            onChange={(e) => {
+              setTranscript(e.target.value);
+              // Transition to 'recorded' so action buttons appear when user types
+              if (e.target.value.trim() && phase === 'idle') {
+                setPhase('recorded');
+              }
+              // If user clears all text, go back to idle
+              if (!e.target.value.trim() && phase === 'recorded') {
+                setPhase('idle');
+              }
+            }}
             placeholder="Type or speak your ideas here..."
             aria-label="Voice transcript"
             spellCheck={false}

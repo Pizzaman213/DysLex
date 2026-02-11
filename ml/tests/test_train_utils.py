@@ -43,7 +43,7 @@ def _import_train_functions():
             @staticmethod
             def is_available():
                 return False
-        torch_mod.cuda = _Cuda()
+        torch_mod.cuda = _Cuda()  # type: ignore[attr-defined]
 
     # Ensure transformers stub has needed names
     trans_mod = sys.modules["transformers"]
@@ -61,7 +61,7 @@ def _import_train_functions():
     # Ensure datasets stub has Dataset
     ds_mod = sys.modules["datasets"]
     if not hasattr(ds_mod, "Dataset"):
-        ds_mod.Dataset = None
+        ds_mod.Dataset = None  # type: ignore[attr-defined]
 
     from ml.quick_correction.train import (
         align_labels_with_tokens,
@@ -216,7 +216,7 @@ class TestAlignLabelsWithTokens:
 # ---------------------------------------------------------------------------
 
 class TestComputeMetrics:
-    def _make_logits(self, predictions_flat: list[int], num_classes: int = 3) -> np.ndarray:
+    def _make_logits(self, predictions_flat: list[int], num_classes: int = 3) -> np.ndarray:  # type: ignore[valid-type]
         """Convert flat class indices to one-hot-ish logits for argmax.
 
         Returns shape (1, seq_len, num_classes).

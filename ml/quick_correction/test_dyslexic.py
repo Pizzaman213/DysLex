@@ -492,7 +492,7 @@ def run_onnx_tests(samples: list[TestSample], verbose: bool = False) -> dict[str
         outputs = session.run(None, feed)
         latency_ms = (time.perf_counter() - start) * 1000
 
-        predictions = np.argmax(outputs[0], axis=-1)[0]
+        predictions = np.argmax(np.asarray(outputs[0]), axis=-1)[0]
         word_ids = tok.word_ids(batch_index=0)
 
         words = sample.input_text.split()

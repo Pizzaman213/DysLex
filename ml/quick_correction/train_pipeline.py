@@ -51,7 +51,7 @@ def stage_download() -> bool:
     logger.info("STAGE 1: Download Datasets")
     logger.info("=" * 60)
 
-    from ml.datasets.download_datasets import download_all
+    from ml.datasets.download_datasets import download_all  # type: ignore[import-not-found]
 
     results = download_all(output_dir=RAW_DIR)
     succeeded = sum(1 for v in results.values() if v)
@@ -75,7 +75,7 @@ def stage_process() -> bool:
         logger.error(f"No raw data found in {RAW_DIR}. Run --download first.")
         return False
 
-    from ml.datasets.process_datasets import process_all
+    from ml.datasets.process_datasets import process_all  # type: ignore[import-not-found]
 
     results = process_all(
         raw_dir=RAW_DIR,
@@ -101,7 +101,7 @@ def stage_combine(target_total: int = 80000) -> bool:
     logger.info("STAGE 3: Combine Datasets")
     logger.info("=" * 60)
 
-    from ml.datasets.combine_datasets import combine_and_split
+    from ml.datasets.combine_datasets import combine_and_split  # type: ignore[import-not-found]
 
     results = combine_and_split(
         processed_dir=PROCESSED_DIR,
@@ -245,7 +245,7 @@ def stage_process_seq2seq() -> bool:
         logger.error(f"No raw data found in {RAW_DIR}. Run --download first.")
         return False
 
-    from ml.datasets.process_datasets import process_all_seq2seq
+    from ml.datasets.process_datasets import process_all_seq2seq  # type: ignore[import-not-found]
 
     results = process_all_seq2seq(
         raw_dir=RAW_DIR,
@@ -267,7 +267,7 @@ def stage_combine_seq2seq(target_total: int = 80000) -> bool:
     logger.info("STAGE 3: Combine Datasets (seq2seq)")
     logger.info("=" * 60)
 
-    from ml.datasets.combine_datasets import combine_and_split_seq2seq
+    from ml.datasets.combine_datasets import combine_and_split_seq2seq  # type: ignore[import-not-found]
 
     results = combine_and_split_seq2seq(
         processed_dir=PROCESSED_DIR,

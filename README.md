@@ -170,7 +170,7 @@ DysLex AI is powered by [NVIDIA NIM](https://build.nvidia.com/) inference micros
 | Product | Model ID | Role |
 |---|---|---|
 | **Nemotron-3-Nano-30B-A3B** | `nvidia/nemotron-3-nano-30b-a3b` | Deep text analysis -- context-aware corrections, homophones, real-word errors, intent inference |
-| **Cosmos Reason2 8B** | `nvidia/cosmos-reason2-8b` | Vision-based idea extraction -- converts uploaded images and diagrams into thought cards |
+| **Llama 3.1 Nemotron Nano VL 8B** | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | Vision-based idea extraction -- converts uploaded images and diagrams into thought cards |
 | **MagpieTTS Multilingual** | `nvidia/magpietts` | Natural text-to-speech -- read-aloud with voices in English, Spanish, French, and more |
 | **faster-whisper** | Whisper large-v3 (optimized) | Speech-to-text transcription -- real-time voice input for Capture Mode |
 

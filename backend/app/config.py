@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     nvidia_nim_llm_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_nim_voice_url: str = "https://integrate.api.nvidia.com/v1"
     nvidia_nim_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b"
-    nvidia_nim_vision_model: str = "nvidia/cosmos-reason2-8b"
+    nvidia_nim_vision_model: str = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
 
     # Transcription (local faster-whisper for desktop; not used when browser handles STT)
     transcription_url: str = "http://localhost:8786/v1"
@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_llm: int = 10  # per user per minute
     rate_limit_voice: int = 20  # per user per minute
+
+    # Circuit Breaker (for NIM API)
+    circuit_breaker_failure_threshold: int = 3
+    circuit_breaker_cooldown_seconds: int = 60
 
     # Correction Routing
     confidence_threshold: float = 0.85
@@ -82,6 +86,10 @@ class Settings(BaseSettings):
 
     # File uploads
     max_upload_size_mb: int = 25
+
+    # Data Retention
+    error_log_retention_days: int = 90
+    retention_cleanup_enabled: bool = True
 
     # Logging
     log_level: str = "info"

@@ -313,11 +313,11 @@ def train_seq2seq_model(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        eval_dataset=eval_dataset,  # type: ignore[arg-type]
         processing_class=tokenizer,
         data_collator=data_collator,
-        compute_metrics=metrics_fn,
-        callbacks=callbacks,
+        compute_metrics=metrics_fn,  # type: ignore[arg-type]
+        callbacks=callbacks,  # type: ignore[arg-type]
     )
 
     # Train

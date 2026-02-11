@@ -1,5 +1,5 @@
 """
-Service for extracting idea cards from images via Cosmos Reason2 8B vision model.
+Service for extracting idea cards from images via NVIDIA NIM vision model.
 """
 
 import json
@@ -51,7 +51,7 @@ def _parse_cosmos_response(content: str) -> dict:
 
 
 class VisionExtractionService:
-    """Extracts thought cards from images using Cosmos Reason2 8B via NIM."""
+    """Extracts thought cards from images using NVIDIA NIM vision model."""
 
     async def extract_ideas_from_image(
         self,

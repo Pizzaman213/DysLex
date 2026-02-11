@@ -35,6 +35,7 @@ License:
 
 import asyncio
 import argparse
+import json
 import ssl
 import sys
 import os
@@ -46,7 +47,7 @@ import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 
 # ============================================================================
@@ -68,6 +69,14 @@ FRONTEND_STARTUP_TIMEOUT = 10  # seconds
 HEALTH_CHECK_INTERVAL = 1  # seconds
 
 SHUTDOWN_TIMEOUT = 5  # seconds to wait for graceful shutdown
+
+# NVIDIA NIM defaults (must match backend/app/config.py)
+NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_NIM_MODELS = [
+    ("nvidia/nemotron-3-nano-30b-a3b", "LLM (corrections, brainstorm, mind map)"),
+    ("nvidia/llama-3.1-nemotron-nano-vl-8b-v1", "Vision (image analysis)"),
+]
+NVIDIA_NIM_PING_TIMEOUT = 15  # seconds per model
 
 # ANSI color codes
 class Color:
@@ -153,6 +162,9 @@ class PrerequisiteChecker:
 
         # Environment variables (warning only)
         checks.append(("Environment variables", self.check_environment_variables))
+
+        # NVIDIA NIM API connectivity (warning only, runs after env vars so key is available)
+        checks.append(("NVIDIA NIM API", self.check_nvidia_api))
 
         # Run all checks
         for name, check_func in checks:
@@ -281,6 +293,78 @@ class PrerequisiteChecker:
                     "NVIDIA_NIM_API_KEY not set (skipped)\n"
                     "    Note: Some features (LLM corrections, TTS) will not work without it"
                 )
+
+    def check_nvidia_api(self):
+        """Ping NVIDIA NIM models to verify the API key works."""
+        api_key = os.getenv('NVIDIA_NIM_API_KEY')
+        if not api_key:
+            raise CheckSkipped()
+
+        base_url = os.getenv('NVIDIA_NIM_LLM_URL', NVIDIA_NIM_BASE_URL)
+
+        print(f"\n{self._colorize('🔌 Pinging NVIDIA NIM models...', Color.CYAN)}")
+
+        failures = []
+        for model_id, description in NVIDIA_NIM_MODELS:
+            try:
+                url = f"{base_url}/chat/completions"
+                payload = json.dumps({
+                    "model": model_id,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                }).encode('utf-8')
+
+                req = Request(url, data=payload, method='POST')
+                req.add_header('Authorization', f'Bearer {api_key}')
+                req.add_header('Content-Type', 'application/json')
+
+                with urlopen(req, timeout=NVIDIA_NIM_PING_TIMEOUT) as response:
+                    print(f"   {self._colorize('✓', Color.GREEN)} {model_id} — {description}")
+
+            except HTTPError as e:
+                code = e.code
+                # Try to extract detail from response body
+                detail = ''
+                try:
+                    body = e.read().decode('utf-8', errors='replace')
+                    parsed = json.loads(body)
+                    detail = parsed.get('detail', '') or parsed.get('message', '')
+                except Exception:
+                    pass
+
+                if code == 401:
+                    reason = "Invalid API key (401 Unauthorized)"
+                elif code == 403:
+                    reason = "Access denied (403 Forbidden)"
+                elif code == 404:
+                    reason = f"Model not found (404)"
+                else:
+                    reason = f"HTTP {code}"
+                    if detail:
+                        reason += f" — {detail}"
+
+                print(f"   {self._colorize('✗', Color.RED)} {model_id} — {reason}")
+                failures.append((model_id, reason))
+
+            except URLError as e:
+                reason = str(e.reason) if hasattr(e, 'reason') else str(e)
+
+                print(f"   {self._colorize('✗', Color.RED)} {model_id} — {reason}")
+                failures.append((model_id, reason))
+
+            except Exception as e:
+                reason = str(e)
+                print(f"   {self._colorize('✗', Color.RED)} {model_id} — {reason}")
+                failures.append((model_id, reason))
+
+        if failures:
+            failed_names = ", ".join(m for m, _ in failures)
+            first_error = failures[0][1]
+            raise CheckWarning(
+                f"Could not reach NVIDIA NIM model(s): {failed_names}\n"
+                f"    Error: {first_error}\n"
+                f"    Note: LLM corrections, brainstorm, and vision features require working API access"
+            )
 
     def check_backend_dependencies(self):
         """Verify backend virtual environment and dependencies are installed."""
@@ -854,12 +938,16 @@ class ServiceManager:
         self.processes['backend'] = process
 
         # Start log streaming tasks
-        self.stream_tasks.append(
-            asyncio.create_task(self.logger.read_stream(process.stdout, 'backend', 'stdout'))
-        )
-        self.stream_tasks.append(
-            asyncio.create_task(self.logger.read_stream(process.stderr, 'backend', 'stderr'))
-        )
+        stdout = process.stdout
+        stderr = process.stderr
+        if stdout:
+            self.stream_tasks.append(
+                asyncio.create_task(self.logger.read_stream(stdout, 'backend', 'stdout'))
+            )
+        if stderr:
+            self.stream_tasks.append(
+                asyncio.create_task(self.logger.read_stream(stderr, 'backend', 'stderr'))
+            )
 
     async def start_frontend(self):
         """Start the Vite frontend dev server."""
@@ -892,12 +980,16 @@ class ServiceManager:
         self.processes['frontend'] = process
 
         # Start log streaming tasks
-        self.stream_tasks.append(
-            asyncio.create_task(self.logger.read_stream(process.stdout, 'frontend', 'stdout'))
-        )
-        self.stream_tasks.append(
-            asyncio.create_task(self.logger.read_stream(process.stderr, 'frontend', 'stderr'))
-        )
+        stdout = process.stdout
+        stderr = process.stderr
+        if stdout:
+            self.stream_tasks.append(
+                asyncio.create_task(self.logger.read_stream(stdout, 'frontend', 'stdout'))
+            )
+        if stderr:
+            self.stream_tasks.append(
+                asyncio.create_task(self.logger.read_stream(stderr, 'frontend', 'stderr'))
+            )
 
     async def start_docker(self):
         """Start Docker Compose stack."""
@@ -918,12 +1010,16 @@ class ServiceManager:
         self.processes['docker'] = process
 
         # Start log streaming tasks
-        self.stream_tasks.append(
-            asyncio.create_task(self.logger.read_stream(process.stdout, 'docker', 'stdout'))
-        )
-        self.stream_tasks.append(
-            asyncio.create_task(self.logger.read_stream(process.stderr, 'docker', 'stderr'))
-        )
+        stdout = process.stdout
+        stderr = process.stderr
+        if stdout:
+            self.stream_tasks.append(
+                asyncio.create_task(self.logger.read_stream(stdout, 'docker', 'stdout'))
+            )
+        if stderr:
+            self.stream_tasks.append(
+                asyncio.create_task(self.logger.read_stream(stderr, 'docker', 'stderr'))
+            )
 
     async def _wait_for_backend_health(self):
         """Wait for the backend to become healthy before proceeding."""

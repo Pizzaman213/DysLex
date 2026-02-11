@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ml.datasets.process_datasets import classify_error_type
+from ml.datasets.process_datasets import classify_error_type  # type: ignore[import-not-found]
 
 
 class TestTranspositionDetection:

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
 import { CorrectionsPanel } from './CorrectionsPanel';
 import { CoachPanel } from './CoachPanel';
@@ -6,6 +6,7 @@ import { FormatPanel } from './FormatPanel';
 import { useEditorStore } from '../../stores/editorStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useFormatStore } from '../../stores/formatStore';
+import { useCoachStore } from '../../stores/coachStore';
 
 interface RightPanelProps {
   editor: Editor | null;
@@ -19,6 +20,15 @@ export function RightPanel({ editor }: RightPanelProps) {
   const aiCoaching = useSettingsStore((s) => s.aiCoaching);
   const activeFormat = useFormatStore((s) => s.activeFormat);
   const formatIssues = useFormatStore((s) => s.issues);
+
+  const pendingExplain = useCoachStore((s) => s.pendingExplainCorrection);
+
+  // Auto-switch to Coach tab when a correction explanation is requested
+  useEffect(() => {
+    if (pendingExplain) {
+      setActiveTab('coach');
+    }
+  }, [pendingExplain]);
 
   const activeCount = corrections.filter((c) => !c.isApplied && !c.isDismissed).length;
   const formatIssueCount = formatIssues.filter((i) => i.severity !== 'info').length;

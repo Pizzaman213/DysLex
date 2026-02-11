@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.routes import (
     auth,
@@ -64,6 +64,57 @@ async def periodic_cleanup():
 _cleanup_task: asyncio.Task | None = None
 
 
+async def _validate_startup() -> None:
+    """Run non-blocking startup checks and log warnings.
+
+    None of these checks crash the app — they only emit warnings so
+    operators can diagnose missing services before users hit errors.
+    """
+    from app.db.database import engine
+
+    # 1. Database connectivity
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Startup check: database connection OK")
+    except Exception:
+        logger.warning("Startup check: database is unreachable", exc_info=True)
+
+    # 2. Migration status
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            )
+            row = result.first()
+            if row:
+                logger.info("Startup check: alembic migration version = %s", row[0])
+            else:
+                logger.warning("Startup check: alembic_version table is empty — run migrations")
+    except Exception:
+        logger.warning(
+            "Startup check: could not read alembic_version (migrations may not have been applied)",
+            exc_info=True,
+        )
+
+    # 3. NVIDIA NIM API key
+    if not settings.nvidia_nim_api_key:
+        logger.warning(
+            "Startup check: NVIDIA_NIM_API_KEY is not set — "
+            "deep analysis (Tier 2) will be unavailable; local corrections still work"
+        )
+    else:
+        logger.info("Startup check: NVIDIA NIM API key configured")
+
+    # 4. Redis connectivity
+    try:
+        redis_client = await get_redis()
+        await redis_client.ping()
+        logger.info("Startup check: Redis connection OK")
+    except Exception:
+        logger.warning("Startup check: Redis is unreachable", exc_info=True)
+
+
 async def _ensure_demo_user() -> None:
     """Create the dev-mode demo user if it doesn't already exist."""
     from app.api.dependencies import DEMO_USER_ID
@@ -92,6 +143,7 @@ async def lifespan(app: FastAPI):
     global _cleanup_task
     # Startup
     await get_redis()  # Initialize Redis connection pool
+    await _validate_startup()  # Non-blocking health checks
     if settings.dev_mode:
         await _ensure_demo_user()
     start_scheduler()  # Start background job scheduler
@@ -153,7 +205,7 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
-        async def send_wrapper(message: dict) -> None:
+        async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 headers.append((b"x-content-type-options", b"nosniff"))
@@ -251,11 +303,15 @@ app.include_router(brainstorm.router, prefix="/api/v1/capture/brainstorm", tags=
 @app.get("/health")
 async def health_check() -> dict:
     """Liveness check — verifies the API process is alive."""
+    from app.services.nemotron_client import get_circuit_breaker
+
+    cb = get_circuit_breaker()
     return {
         "status": "healthy",
         "services": {
             "database": "ok",
             "nim_api": "ok" if settings.nvidia_nim_api_key else "not_configured",
+            "nim_circuit_breaker": cb.state.value,
         },
     }
 

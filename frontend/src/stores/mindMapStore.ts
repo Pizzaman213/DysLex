@@ -29,13 +29,35 @@ const DEFAULT_CLUSTER_NAMES: ClusterNames = {
   5: 'Cluster 5',
 };
 
+/** Persisted per-document mind map data */
+interface DocumentMindMapData {
+  nodes: MindMapFlowNode[];
+  edges: MindMapFlowEdge[];
+  scaffold: Scaffold | null;
+  clusterNames: ClusterNames;
+}
+
+/** Transient (in-memory only) per-document data */
+interface TransientMindMapData {
+  suggestions: AISuggestion[];
+  isSuggestionsLoading: boolean;
+  _past: HistorySnapshot[];
+  _future: HistorySnapshot[];
+}
+
 interface MindMapState {
+  // Working copy (active document)
   nodes: MindMapFlowNode[];
   edges: MindMapFlowEdge[];
   suggestions: AISuggestion[];
   isSuggestionsLoading: boolean;
   scaffold: Scaffold | null;
   clusterNames: ClusterNames;
+
+  // Per-document storage
+  maps: Record<string, DocumentMindMapData>;
+  _transientMap: Record<string, TransientMindMapData>;
+  _activeDocumentId: string | null;
 
   // History (undo/redo)
   _past: HistorySnapshot[];
@@ -85,6 +107,10 @@ interface MindMapState {
   // Repair
   repairOrphans: () => void;
 
+  // Per-document
+  setActiveDocument: (docId: string) => void;
+  deleteDocumentMap: (docId: string) => void;
+
   // Reset
   resetMindMap: () => void;
 }
@@ -95,6 +121,24 @@ const defaultNode: MindMapFlowNode = {
   position: { x: 400, y: 200 },
   data: { title: '', body: '', cluster: 1 },
 };
+
+function emptyDocumentData(): DocumentMindMapData {
+  return {
+    nodes: [{ ...defaultNode, data: { ...defaultNode.data } }],
+    edges: [],
+    scaffold: null,
+    clusterNames: { ...DEFAULT_CLUSTER_NAMES },
+  };
+}
+
+function emptyTransientData(): TransientMindMapData {
+  return {
+    suggestions: [],
+    isSuggestionsLoading: false,
+    _past: [],
+    _future: [],
+  };
+}
 
 function pushHistory(state: MindMapState): Partial<MindMapState> {
   if (state._skipHistory) return {};
@@ -161,6 +205,9 @@ export const useMindMapStore = create<MindMapState>()(
       isSuggestionsLoading: false,
       scaffold: null,
       clusterNames: { ...DEFAULT_CLUSTER_NAMES },
+      maps: {},
+      _transientMap: {},
+      _activeDocumentId: null,
       _past: [],
       _future: [],
       _skipHistory: false,
@@ -571,7 +618,73 @@ export const useMindMapStore = create<MindMapState>()(
         }
       },
 
+      setActiveDocument: (docId: string) => {
+        const state = get();
+        const oldDocId = state._activeDocumentId;
+
+        // No-op if already active
+        if (oldDocId === docId) return;
+
+        // Save current working copy for old document
+        const nextMaps = { ...state.maps };
+        const nextTransient = { ...state._transientMap };
+
+        if (oldDocId) {
+          nextMaps[oldDocId] = {
+            nodes: state.nodes,
+            edges: state.edges,
+            scaffold: state.scaffold,
+            clusterNames: state.clusterNames,
+          };
+          nextTransient[oldDocId] = {
+            suggestions: state.suggestions,
+            isSuggestionsLoading: state.isSuggestionsLoading,
+            _past: state._past,
+            _future: state._future,
+          };
+        }
+
+        // Load data for new document (or fresh defaults)
+        const docData = nextMaps[docId] ?? emptyDocumentData();
+        const transientData = nextTransient[docId] ?? emptyTransientData();
+
+        set({
+          _activeDocumentId: docId,
+          maps: nextMaps,
+          _transientMap: nextTransient,
+          nodes: docData.nodes,
+          edges: docData.edges,
+          scaffold: docData.scaffold,
+          clusterNames: docData.clusterNames,
+          suggestions: transientData.suggestions,
+          isSuggestionsLoading: transientData.isSuggestionsLoading,
+          _past: transientData._past,
+          _future: transientData._future,
+        });
+      },
+
+      deleteDocumentMap: (docId: string) => {
+        set((state) => {
+          const nextMaps = { ...state.maps };
+          const nextTransient = { ...state._transientMap };
+          delete nextMaps[docId];
+          delete nextTransient[docId];
+          return { maps: nextMaps, _transientMap: nextTransient };
+        });
+      },
+
       resetMindMap: () => {
+        const state = get();
+        const activeId = state._activeDocumentId;
+
+        // Clear persisted data for active document
+        const nextMaps = { ...state.maps };
+        const nextTransient = { ...state._transientMap };
+        if (activeId) {
+          delete nextMaps[activeId];
+          delete nextTransient[activeId];
+        }
+
         set({
           nodes: [defaultNode],
           edges: [],
@@ -580,6 +693,8 @@ export const useMindMapStore = create<MindMapState>()(
           clusterNames: { ...DEFAULT_CLUSTER_NAMES },
           _past: [],
           _future: [],
+          maps: nextMaps,
+          _transientMap: nextTransient,
         });
       },
     }),
@@ -587,13 +702,35 @@ export const useMindMapStore = create<MindMapState>()(
       name: 'dyslex-mindmap',
       storage: createUserScopedStorage(),
       skipHydration: true,
-      version: 3,
-      partialize: (state) => ({
-        nodes: state.nodes,
-        edges: state.edges,
-        scaffold: state.scaffold,
-        clusterNames: state.clusterNames,
-      }),
+      version: 4,
+      partialize: (state) => {
+        // Flush working copy into maps before serializing
+        const maps = { ...state.maps };
+        if (state._activeDocumentId) {
+          maps[state._activeDocumentId] = {
+            nodes: state.nodes,
+            edges: state.edges,
+            scaffold: state.scaffold,
+            clusterNames: state.clusterNames,
+          };
+        }
+        return {
+          maps,
+          _activeDocumentId: state._activeDocumentId,
+        };
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        // Load working copy from maps for the active document
+        const activeId = state._activeDocumentId;
+        if (activeId && state.maps[activeId]) {
+          const docData = state.maps[activeId];
+          state.nodes = docData.nodes;
+          state.edges = docData.edges;
+          state.scaffold = docData.scaffold;
+          state.clusterNames = docData.clusterNames;
+        }
+      },
       migrate: (persisted: any, version: number) => {
         if (version === 0) {
           // Backfill edge data for edges saved before relationship support
@@ -690,6 +827,27 @@ export const useMindMapStore = create<MindMapState>()(
           state.nodes = nodes;
           state.edges = edges;
         }
+        if (version < 4) {
+          // Migrate from v3 (top-level nodes/edges) to v4 (per-document maps)
+          const state = persisted as any;
+          const DEFAULT_DOC_ID = '00000000-0000-4000-8000-000000000001';
+
+          const docData: DocumentMindMapData = {
+            nodes: state.nodes || [{ ...defaultNode, data: { ...defaultNode.data } }],
+            edges: state.edges || [],
+            scaffold: state.scaffold || null,
+            clusterNames: state.clusterNames || { ...DEFAULT_CLUSTER_NAMES },
+          };
+
+          state.maps = { [DEFAULT_DOC_ID]: docData };
+          state._activeDocumentId = DEFAULT_DOC_ID;
+
+          // Clean up old top-level fields (they'll be populated from maps on rehydrate)
+          delete state.nodes;
+          delete state.edges;
+          delete state.scaffold;
+          delete state.clusterNames;
+        }
         return persisted;
       },
     }
@@ -697,3 +855,46 @@ export const useMindMapStore = create<MindMapState>()(
 );
 
 registerScopedStore(() => useMindMapStore.persist.rehydrate());
+
+// --- Subscribe to document store changes ---
+// Lazy import to avoid circular dependency: documentStore imports are deferred
+// until the subscription fires (after both stores are initialized).
+let _documentStoreSubscribed = false;
+let _lastDocIds: Set<string> | null = null;
+
+function ensureDocumentSubscription() {
+  if (_documentStoreSubscribed) return;
+  _documentStoreSubscribed = true;
+
+  // Dynamically import to avoid circular dependency at module init
+  import('./documentStore').then(({ useDocumentStore }) => {
+    // Set initial active document
+    const docState = useDocumentStore.getState();
+    if (docState.activeDocumentId) {
+      useMindMapStore.getState().setActiveDocument(docState.activeDocumentId);
+    }
+    _lastDocIds = new Set(docState.documents.map((d) => d.id));
+
+    useDocumentStore.subscribe((state, prevState) => {
+      // Handle active document change
+      if (state.activeDocumentId && state.activeDocumentId !== prevState.activeDocumentId) {
+        useMindMapStore.getState().setActiveDocument(state.activeDocumentId);
+      }
+
+      // Handle document deletions
+      const currentIds = new Set(state.documents.map((d) => d.id));
+      if (_lastDocIds) {
+        for (const id of _lastDocIds) {
+          if (!currentIds.has(id)) {
+            useMindMapStore.getState().deleteDocumentMap(id);
+          }
+        }
+      }
+      _lastDocIds = currentIds;
+    });
+  });
+}
+
+// Kick off subscription after module loads
+// Using setTimeout(0) ensures both stores are fully initialized
+setTimeout(ensureDocumentSubscription, 0);

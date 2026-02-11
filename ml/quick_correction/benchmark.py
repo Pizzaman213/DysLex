@@ -171,7 +171,7 @@ def load_pytorch_model(model_dir: Path) -> tuple[Any, Any]:
     return tokenizer, model
 
 
-def pytorch_tokenize(text: str, tokenizer: Any) -> dict[str, Any]:
+def pytorch_tokenize(text: str, tokenizer: Any) -> Any:
     """Tokenize text for PyTorch model."""
     import torch
     return tokenizer(
@@ -891,6 +891,8 @@ def run_benchmarks(
     # PyTorch benchmarks
     # -----------------------------------------------------------------------
     pytorch_available = False
+    pt_tokenizer: Any = None
+    pt_model: Any = None
     if not onnx_only:
         try:
             if not model_dir.exists():
@@ -908,26 +910,26 @@ def run_benchmarks(
     if pytorch_available:
         # Latency
         logger.info(f"\n  Running PyTorch latency benchmark ({num_runs} runs)...")
-        pt_latency = benchmark_latency(pt_tokenizer, pt_model, "pytorch", num_runs=num_runs)
+        pt_latency = benchmark_latency(pt_tokenizer, pt_model, "pytorch", num_runs=num_runs)  # type: ignore[possibly-undefined]
         report["pytorch_latency"] = pt_latency
         print_latency_results(pt_latency, "pytorch")
 
         # Throughput
         logger.info(f"\n  Running PyTorch throughput benchmark...")
-        pt_throughput = benchmark_throughput(pt_tokenizer, pt_model, "pytorch", num_runs=min(num_runs, 50))
+        pt_throughput = benchmark_throughput(pt_tokenizer, pt_model, "pytorch", num_runs=min(num_runs, 50))  # type: ignore[possibly-undefined]
         report["pytorch_throughput"] = pt_throughput
         print_throughput_results(pt_throughput, "pytorch")
 
         # Accuracy
         if test_data:
             logger.info(f"\n  Running PyTorch accuracy benchmark ({len(test_data)} samples)...")
-            pt_accuracy = benchmark_accuracy(test_data, pt_tokenizer, pt_model, "pytorch")
+            pt_accuracy = benchmark_accuracy(test_data, pt_tokenizer, pt_model, "pytorch")  # type: ignore[possibly-undefined]
             report["pytorch_accuracy"] = pt_accuracy
             print_accuracy_results(pt_accuracy, "pytorch")
 
         # Memory
         logger.info(f"\n  Running PyTorch memory benchmark...")
-        pt_memory = benchmark_memory(model_dir, onnx_dir, pt_tokenizer, pt_model, "pytorch")
+        pt_memory = benchmark_memory(model_dir, onnx_dir, pt_tokenizer, pt_model, "pytorch")  # type: ignore[possibly-undefined]
         report["pytorch_memory"] = pt_memory
         print_memory_results(pt_memory)
 
@@ -935,6 +937,8 @@ def run_benchmarks(
     # ONNX benchmarks
     # -----------------------------------------------------------------------
     onnx_available = False
+    onnx_tokenizer: Any = None
+    onnx_session: Any = None
     try:
         if not onnx_dir.exists():
             logger.info(f"\n  ONNX model not found at {onnx_dir} -- skipping ONNX benchmarks")
@@ -955,26 +959,26 @@ def run_benchmarks(
     if onnx_available:
         # Latency
         logger.info(f"\n  Running ONNX latency benchmark ({num_runs} runs)...")
-        onnx_latency = benchmark_latency(onnx_tokenizer, onnx_session, "onnx", num_runs=num_runs)
+        onnx_latency = benchmark_latency(onnx_tokenizer, onnx_session, "onnx", num_runs=num_runs)  # type: ignore[possibly-undefined]
         report["onnx_latency"] = onnx_latency
         print_latency_results(onnx_latency, "onnx")
 
         # Throughput
         logger.info(f"\n  Running ONNX throughput benchmark...")
-        onnx_throughput = benchmark_throughput(onnx_tokenizer, onnx_session, "onnx", num_runs=min(num_runs, 50))
+        onnx_throughput = benchmark_throughput(onnx_tokenizer, onnx_session, "onnx", num_runs=min(num_runs, 50))  # type: ignore[possibly-undefined]
         report["onnx_throughput"] = onnx_throughput
         print_throughput_results(onnx_throughput, "onnx")
 
         # Accuracy
         if test_data:
             logger.info(f"\n  Running ONNX accuracy benchmark ({len(test_data)} samples)...")
-            onnx_accuracy = benchmark_accuracy(test_data, onnx_tokenizer, onnx_session, "onnx")
+            onnx_accuracy = benchmark_accuracy(test_data, onnx_tokenizer, onnx_session, "onnx")  # type: ignore[possibly-undefined]
             report["onnx_accuracy"] = onnx_accuracy
             print_accuracy_results(onnx_accuracy, "onnx")
 
         # Memory
         logger.info(f"\n  Running ONNX memory benchmark...")
-        onnx_memory = benchmark_memory(model_dir, onnx_dir, onnx_tokenizer, onnx_session, "onnx")
+        onnx_memory = benchmark_memory(model_dir, onnx_dir, onnx_tokenizer, onnx_session, "onnx")  # type: ignore[possibly-undefined]
         report["onnx_memory"] = onnx_memory
         print_memory_results(onnx_memory)
 

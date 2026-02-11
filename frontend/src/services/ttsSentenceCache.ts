@@ -119,5 +119,26 @@ export class SentenceAudioCache {
   }
 }
 
+/**
+ * Given a list of sentences, hash each and return those whose hash
+ * is not already present in the cache.
+ */
+export async function findUncachedSentences(
+  sentences: string[],
+  voice: string,
+  cache: SentenceAudioCache,
+): Promise<Array<{ index: number; text: string; hash: string }>> {
+  const results: Array<{ index: number; text: string; hash: string }> = [];
+  const hashes = await Promise.all(
+    sentences.map(s => hashSentence(s, voice)),
+  );
+  for (let i = 0; i < sentences.length; i++) {
+    if (!cache.has(hashes[i])) {
+      results.push({ index: i, text: sentences[i], hash: hashes[i] });
+    }
+  }
+  return results;
+}
+
 /** Module-level singleton */
 export const sentenceAudioCache = new SentenceAudioCache();

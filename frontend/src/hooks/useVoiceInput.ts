@@ -1,5 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
+/**
+ * Add basic punctuation to a speech-recognized phrase:
+ * capitalize the first letter and append a period if no end punctuation exists.
+ */
+function addPunctuation(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  if (/[.!?]$/.test(capitalized)) return capitalized;
+  return capitalized + '.';
+}
+
 interface UseVoiceInputOptions {
   language?: string;
   continuous?: boolean;
@@ -18,6 +30,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
   const recognitionRef = useRef<any>(null);
   const finalizedRef = useRef('');
   const stoppingRef = useRef(false);
+  const activeRef = useRef(false);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -31,17 +44,22 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
       recognition.interimResults = true;
 
       recognition.onresult = (event: any) => {
-        let sessionFinal = '';
+        const finalSegments: string[] = [];
         let sessionInterim = '';
 
         for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
           if (result.isFinal) {
-            sessionFinal += result[0].transcript;
+            finalSegments.push(result[0].transcript);
           } else {
             sessionInterim += result[0].transcript;
           }
         }
+
+        // Apply punctuation to each finalized utterance
+        const sessionFinal = finalSegments
+          .map((seg) => addPunctuation(seg))
+          .join(' ');
 
         // Update finalized text when new finals arrive
         if (sessionFinal && sessionFinal !== finalizedRef.current) {
@@ -49,10 +67,16 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
           onResult?.(sessionFinal);
         }
 
+        // Capitalize interim text so it looks right while speaking
+        const displayInterim = sessionInterim.trim()
+          ? sessionInterim.trimStart().charAt(0).toUpperCase() +
+            sessionInterim.trimStart().slice(1)
+          : sessionInterim;
+
         // Build displayed transcript: all finalized + current interim
-        const displayed = (finalizedRef.current + ' ' + sessionInterim).trim();
+        const displayed = (finalizedRef.current + ' ' + displayInterim).trim();
         setTranscript(displayed);
-        setInterimText(sessionInterim);
+        setInterimText(displayInterim);
       };
 
       recognition.onerror = (event: any) => {
@@ -62,6 +86,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
         }
         const error = new Error(`Speech recognition error: ${event.error}`);
         onError?.(error);
+        activeRef.current = false;
         setIsListening(false);
       };
 
@@ -72,10 +97,12 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
             recognition.start();
           } catch {
             // Already running or other error — ignore
+            activeRef.current = false;
             setIsListening(false);
           }
           return;
         }
+        activeRef.current = false;
         setIsListening(false);
       };
 
@@ -84,30 +111,33 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
     return () => {
       stoppingRef.current = true;
+      activeRef.current = false;
       recognitionRef.current?.stop();
     };
   }, [language, continuous, onResult, onError]);
 
   const startListening = useCallback(() => {
-    if (recognitionRef.current && !isListening) {
+    if (recognitionRef.current && !activeRef.current) {
       stoppingRef.current = false;
+      activeRef.current = true;
       finalizedRef.current = '';
       setInterimText('');
       recognitionRef.current.start();
       setIsListening(true);
     }
-  }, [isListening]);
+  }, []);
 
   const stopListening = useCallback(() => {
-    if (recognitionRef.current && isListening) {
+    if (recognitionRef.current && activeRef.current) {
       stoppingRef.current = true;
+      activeRef.current = false;
       recognitionRef.current.stop();
       setIsListening(false);
       setInterimText('');
       // Set transcript to final value (strip any lingering interim)
       setTranscript(finalizedRef.current.trim());
     }
-  }, [isListening]);
+  }, []);
 
   const resetTranscript = useCallback(() => {
     finalizedRef.current = '';

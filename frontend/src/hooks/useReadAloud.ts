@@ -221,6 +221,9 @@ export function useReadAloud() {
       return;
     }
 
+    // Signal to pre-warmer that TTS is active this session
+    document.dispatchEvent(new Event('dyslex-tts-used'));
+
     setError(null);
 
     // Try MagpieTTS first

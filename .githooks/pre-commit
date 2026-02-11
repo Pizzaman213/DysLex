@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# DysLex AI pre-commit hook
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+FRONTEND_CHANGED=false
+BACKEND_CHANGED=false
+
+# Check which areas have staged changes
+if git diff --cached --name-only | grep -q '^frontend/'; then
+  FRONTEND_CHANGED=true
+fi
+if git diff --cached --name-only | grep -q '^backend/'; then
+  BACKEND_CHANGED=true
+fi
+
+if [ "$FRONTEND_CHANGED" = true ]; then
+  echo "==> Frontend files changed — running lint + type-check"
+  (cd frontend && npm run lint && npm run type-check)
+fi
+
+if [ "$BACKEND_CHANGED" = true ]; then
+  echo "==> Backend files changed — running ruff check"
+  (cd backend && python -m ruff check app/)
+fi
+
+echo "==> Pre-commit checks passed"

@@ -11,6 +11,7 @@ import { RightPanel } from '../Panels/RightPanel';
 import { VoiceBar } from '../Shared/VoiceBar';
 import { StatusBar } from '../Shared/StatusBar';
 import { useSnapshotEngine } from '../../hooks/useSnapshotEngine';
+import { useTtsPrewarmer } from '../../hooks/useTtsPrewarmer';
 import { useAICoach } from '../../hooks/useAICoach';
 import { useCaptureVoice } from '../../hooks/useCaptureVoice';
 import { useReadAloud } from '../../hooks/useReadAloud';
@@ -69,6 +70,7 @@ export function DraftMode() {
   }, []);
 
   useSnapshotEngine(editor);
+  useTtsPrewarmer(editor);
 
   // Batch-insert finalized voice text into editor as it arrives
   useEffect(() => {

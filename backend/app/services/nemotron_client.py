@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import settings
+from app.core.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
 from app.core.prompt_builder import build_correction_prompt, build_correction_prompt_v2
 from app.models.correction import Correction, Position
 from app.models.error_log import LLMContext
@@ -20,6 +21,18 @@ logger = logging.getLogger(__name__)
 # ~3 000 chars ≈ 750 tokens — well within the model's context window
 # once the system prompt / profile is added.
 _MAX_CHUNK_CHARS = 3000
+
+# Module-level circuit breaker — shared across all deep_analysis calls
+_nim_circuit_breaker = CircuitBreaker(
+    "nvidia_nim",
+    failure_threshold=settings.circuit_breaker_failure_threshold,
+    cooldown_seconds=settings.circuit_breaker_cooldown_seconds,
+)
+
+
+def get_circuit_breaker() -> CircuitBreaker:
+    """Return the NIM circuit breaker (used by health endpoint)."""
+    return _nim_circuit_breaker
 
 
 class DeepAnalysisError(Exception):
@@ -115,8 +128,8 @@ async def deep_analysis(
     async def _analyze_chunk(messages: list[dict], chunk_text: str, chunk_offset: int) -> list[Correction]:
         async with sem:
             try:
-                corrections = await _call_nim_api(
-                    messages, tools=tools, user_id=user_id, db=db,
+                corrections = await _nim_circuit_breaker.call(
+                    _call_nim_api(messages, tools=tools, user_id=user_id, db=db)
                 )
                 # Compute positions relative to the chunk text
                 _compute_positions(chunk_text, corrections)
@@ -128,6 +141,11 @@ async def deep_analysis(
                             end=c.position.end + chunk_offset,
                         )
                 return corrections
+            except CircuitBreakerOpen:
+                logger.warning("Circuit breaker OPEN — skipping chunk at offset %d", chunk_offset)
+                if raise_on_error:
+                    raise
+                return []
             except Exception as exc:
                 logger.warning("Chunk at offset %d failed: %s", chunk_offset, exc)
                 if raise_on_error:
@@ -269,6 +287,7 @@ async def _call_nim_api(
     conversation = list(messages)
     max_rounds = settings.llm_tool_calling_max_rounds if tools else 1
 
+    response_data: dict = {}
     for round_idx in range(max_rounds):
         total_len = sum(len(m.get("content", "") or "") for m in conversation)
         payload: dict = {

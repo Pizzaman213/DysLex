@@ -16,7 +16,11 @@ describe('captureStore', () => {
       isIncrementalExtracting: false,
       brainstormActive: false,
       brainstormAutoProbe: true,
+      sessions: {},
+      _transientSession: {},
+      _activeDocumentId: null,
     });
+    useCaptureStore.getState().setActiveDocument('test-doc');
   });
 
   it('has correct default state', () => {
@@ -248,5 +252,154 @@ describe('captureStore', () => {
     expect(state.isIncrementalExtracting).toBe(false);
     expect(state.brainstormActive).toBe(false);
     expect(state.brainstormAutoProbe).toBe(true);
+  });
+
+  it('reset clears persisted session for active document', () => {
+    useCaptureStore.getState().setTranscript('Doc A text');
+    useCaptureStore.getState().setCards([{ id: '1', title: 'Card', body: '', sub_ideas: [] }]);
+
+    // Save by switching away
+    useCaptureStore.getState().setActiveDocument('other-doc');
+    expect(useCaptureStore.getState().sessions['test-doc']).toBeDefined();
+
+    // Switch back and reset
+    useCaptureStore.getState().setActiveDocument('test-doc');
+    useCaptureStore.getState().reset();
+
+    expect(useCaptureStore.getState().sessions['test-doc']).toBeUndefined();
+  });
+
+  // ---------- Per-Document Capture Sessions ----------
+
+  describe('Per-Document Capture Sessions', () => {
+    it('switching documents saves and loads capture data', () => {
+      // Set data for doc A (test-doc)
+      useCaptureStore.getState().setTranscript('Doc A transcript');
+      useCaptureStore.getState().setCards([{ id: '1', title: 'Idea A', body: 'A', sub_ideas: [] }]);
+      useCaptureStore.getState().setPhase('review');
+
+      // Switch to doc B — should be empty
+      useCaptureStore.getState().setActiveDocument('doc-b');
+      expect(useCaptureStore.getState().transcript).toBe('');
+      expect(useCaptureStore.getState().cards).toEqual([]);
+      expect(useCaptureStore.getState().phase).toBe('idle');
+
+      // Set data for doc B
+      useCaptureStore.getState().setTranscript('Doc B transcript');
+      useCaptureStore.getState().setPhase('recorded');
+
+      // Switch back to doc A
+      useCaptureStore.getState().setActiveDocument('test-doc');
+      expect(useCaptureStore.getState().transcript).toBe('Doc A transcript');
+      expect(useCaptureStore.getState().cards).toHaveLength(1);
+      expect(useCaptureStore.getState().cards[0].title).toBe('Idea A');
+      expect(useCaptureStore.getState().phase).toBe('review');
+
+      // Switch back to doc B
+      useCaptureStore.getState().setActiveDocument('doc-b');
+      expect(useCaptureStore.getState().transcript).toBe('Doc B transcript');
+      expect(useCaptureStore.getState().phase).toBe('recorded');
+    });
+
+    it('new document gets empty capture session', () => {
+      useCaptureStore.getState().setTranscript('existing text');
+      useCaptureStore.getState().setCards([{ id: '1', title: 'T', body: '', sub_ideas: [] }]);
+
+      useCaptureStore.getState().setActiveDocument('brand-new');
+
+      const state = useCaptureStore.getState();
+      expect(state.transcript).toBe('');
+      expect(state.cards).toEqual([]);
+      expect(state.takes).toBe(0);
+      expect(state.phase).toBe('idle');
+      expect(state.error).toBeNull();
+    });
+
+    it('setActiveDocument is a no-op for the same document', () => {
+      useCaptureStore.getState().setTranscript('some text');
+      const transcriptBefore = useCaptureStore.getState().transcript;
+
+      useCaptureStore.getState().setActiveDocument('test-doc');
+
+      expect(useCaptureStore.getState().transcript).toBe(transcriptBefore);
+    });
+
+    it('deleteDocumentSession removes persisted data', () => {
+      useCaptureStore.getState().setTranscript('text');
+
+      // Switch to save test-doc's data
+      useCaptureStore.getState().setActiveDocument('doc-b');
+      expect(useCaptureStore.getState().sessions['test-doc']).toBeDefined();
+
+      useCaptureStore.getState().deleteDocumentSession('test-doc');
+      expect(useCaptureStore.getState().sessions['test-doc']).toBeUndefined();
+    });
+
+    it('transient data (phase, error) is preserved per document', () => {
+      useCaptureStore.getState().setPhase('recording');
+      useCaptureStore.getState().setError('mic error');
+
+      // Switch to doc B
+      useCaptureStore.getState().setActiveDocument('doc-b');
+      expect(useCaptureStore.getState().phase).toBe('idle');
+      expect(useCaptureStore.getState().error).toBeNull();
+
+      // Switch back to doc A
+      useCaptureStore.getState().setActiveDocument('test-doc');
+      expect(useCaptureStore.getState().phase).toBe('recording');
+      expect(useCaptureStore.getState().error).toBe('mic error');
+    });
+
+    it('derives phase from persisted data for new transient sessions', () => {
+      // Set up doc with transcript but no cards
+      useCaptureStore.getState().setTranscript('some text');
+      useCaptureStore.getState().setPhase('recorded');
+
+      // Switch away and back — transient is saved, so phase is restored
+      useCaptureStore.getState().setActiveDocument('doc-b');
+      useCaptureStore.getState().setActiveDocument('test-doc');
+      expect(useCaptureStore.getState().phase).toBe('recorded');
+    });
+
+    it('brainstormAutoProbe is saved per document', () => {
+      useCaptureStore.getState().setBrainstormAutoProbe(false);
+
+      useCaptureStore.getState().setActiveDocument('doc-b');
+      expect(useCaptureStore.getState().brainstormAutoProbe).toBe(true); // default
+
+      useCaptureStore.getState().setActiveDocument('test-doc');
+      expect(useCaptureStore.getState().brainstormAutoProbe).toBe(false);
+    });
+  });
+
+  // ---------- Migration ----------
+
+  describe('Migration v0 → v1', () => {
+    it('wraps top-level capture data into sessions with default doc ID', () => {
+      const DEFAULT_DOC_ID = '00000000-0000-4000-8000-000000000001';
+      const v0State = {
+        transcript: 'hello world',
+        cards: [{ id: '1', title: 'Idea', body: 'text', sub_ideas: [] }],
+        takes: 2,
+        brainstormAutoProbe: false,
+      };
+
+      const { migrate } = (useCaptureStore as any).persist.getOptions();
+      const migrated = migrate(structuredClone(v0State), 0);
+
+      expect(migrated.sessions).toBeDefined();
+      expect(migrated.sessions[DEFAULT_DOC_ID]).toBeDefined();
+      expect(migrated.sessions[DEFAULT_DOC_ID].transcript).toBe('hello world');
+      expect(migrated.sessions[DEFAULT_DOC_ID].cards).toHaveLength(1);
+      expect(migrated.sessions[DEFAULT_DOC_ID].takes).toBe(2);
+      expect(migrated.sessions[DEFAULT_DOC_ID].brainstormAutoProbe).toBe(false);
+      expect(migrated._activeDocumentId).toBe(DEFAULT_DOC_ID);
+
+      // Old top-level fields removed
+      expect(migrated.transcript).toBeUndefined();
+      expect(migrated.cards).toBeUndefined();
+      expect(migrated.takes).toBeUndefined();
+      expect(migrated.brainstormAutoProbe).toBeUndefined();
+    });
   });
 });

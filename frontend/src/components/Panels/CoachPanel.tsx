@@ -15,7 +15,7 @@ const STARTERS = [
 ];
 
 export function CoachPanel({ editor }: CoachPanelProps) {
-  const { messages, isLoading } = useCoachStore();
+  const { messages, isLoading, pendingExplainCorrection, clearPendingExplanation } = useCoachStore();
   const { sendMessage } = useCoachChat(editor);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -24,6 +24,16 @@ export function CoachPanel({ editor }: CoachPanelProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Auto-send when a correction explanation is requested
+  useEffect(() => {
+    if (pendingExplainCorrection && !isLoading) {
+      const { original, suggested } = pendingExplainCorrection;
+      const text = `Can you explain why "${original}" should be "${suggested}"?`;
+      sendMessage(text, pendingExplainCorrection);
+      clearPendingExplanation();
+    }
+  }, [pendingExplainCorrection, isLoading, sendMessage, clearPendingExplanation]);
 
   const handleSend = useCallback(() => {
     const text = input.trim();

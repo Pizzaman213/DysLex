@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ml.datasets.process_datasets import (
+from ml.datasets.process_datasets import (  # type: ignore[import-not-found]
     inject_errors_into_sentences,
     load_clean_sentences,
     parse_aspell,

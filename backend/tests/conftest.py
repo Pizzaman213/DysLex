@@ -4,6 +4,7 @@ import math
 import struct
 import uuid
 import wave
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -69,7 +70,7 @@ _register_jsonb_for_sqlite()
 
 
 @pytest_asyncio.fixture
-async def db() -> AsyncSession:
+async def db() -> AsyncGenerator[AsyncSession, None]:
     """Create tables and yield a fresh async session for each test."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -5,6 +5,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.circuit_breaker import CircuitBreakerOpen
 from app.core.error_profile import get_user_profile
 from app.models.correction import Correction
 from app.services.nemotron_client import deep_analysis
@@ -70,7 +71,12 @@ async def auto_route(
         return confident
 
     # Tier 2 — deep analysis for flagged/uncertain tokens
-    deep_results = await deep_analysis(text, user_id, context, profile, db=db)
+    try:
+        deep_results = await deep_analysis(text, user_id, context, profile, db=db)
+    except CircuitBreakerOpen:
+        logger.warning("NIM circuit breaker OPEN — returning Tier 1 results only (degraded mode)")
+        return confident
+
     for r in deep_results:
         r.tier = "deep"
 

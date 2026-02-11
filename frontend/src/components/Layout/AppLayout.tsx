@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { Topbar } from '@/components/Layout/Topbar';
 import { Sidebar } from '@/components/Layout/Sidebar';
 import { AnimatedOutlet } from '@/components/Layout/AnimatedOutlet';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useUserStore } from '@/stores/userStore';
@@ -63,7 +64,9 @@ export function AppLayout() {
       <Sidebar />
       <div className="app-content">
         <main>
-          <AnimatedOutlet />
+          <ErrorBoundary>
+            <AnimatedOutlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

@@ -104,6 +104,7 @@ class TestComputePositions:
         pos = Position(start=99, end=102)
         corrections = [Correction(original="teh", correction="the", position=pos)]
         _compute_positions(text, corrections)
+        assert corrections[0].position is not None
         assert corrections[0].position.start == 99  # unchanged
 
     def test_handles_missing_original(self):
@@ -125,7 +126,9 @@ class TestComputePositions:
             Correction(original="the", correction="a"),
         ]
         _compute_positions(text, corrections)
+        assert corrections[0].position is not None
         assert corrections[0].position.start == 0
+        assert corrections[1].position is not None
         assert corrections[1].position.start == 12
 
     def test_out_of_order_retry(self):
@@ -135,8 +138,10 @@ class TestComputePositions:
             Correction(original="cat", correction="kitten"),
         ]
         _compute_positions(text, corrections)
+        assert corrections[0].position is not None
         assert corrections[0].position.start == 4
         # Second "cat" search starts after "dog", so finds the second one at index 8
+        assert corrections[1].position is not None
         assert corrections[1].position.start == 8
 
 

@@ -1,5 +1,6 @@
 /**
  * Zustand store for Capture Mode state management.
+ * Per-document sessions: each document gets its own capture data.
  */
 
 import { create } from 'zustand';
@@ -22,7 +23,27 @@ export interface ThoughtCard {
   sub_ideas: SubIdea[];
 }
 
+/** Persisted per-document capture data */
+interface DocumentCaptureData {
+  transcript: string;
+  cards: ThoughtCard[];
+  takes: number;
+  brainstormAutoProbe: boolean;
+}
+
+/** Transient (in-memory only) per-document data */
+interface TransientCaptureData {
+  phase: CapturePhase;
+  error: string | null;
+  audioBlobs: Blob[];
+  audioUrls: string[];
+  lastExtractedOffset: number;
+  isIncrementalExtracting: boolean;
+  brainstormActive: boolean;
+}
+
 interface CaptureState {
+  // Working copy (active document)
   phase: CapturePhase;
   transcript: string;
   cards: ThoughtCard[];
@@ -40,6 +61,11 @@ interface CaptureState {
   brainstormActive: boolean;
   /** Whether AI auto-probes after pauses (persisted preference) */
   brainstormAutoProbe: boolean;
+
+  // Per-document storage
+  sessions: Record<string, DocumentCaptureData>;
+  _transientSession: Record<string, TransientCaptureData>;
+  _activeDocumentId: string | null;
 
   // Actions
   setPhase: (phase: CapturePhase) => void;
@@ -66,6 +92,10 @@ interface CaptureState {
   setBrainstormActive: (active: boolean) => void;
   setBrainstormAutoProbe: (enabled: boolean) => void;
 
+  // Per-document
+  setActiveDocument: (docId: string) => void;
+  deleteDocumentSession: (docId: string) => void;
+
   reset: () => void;
 }
 
@@ -83,10 +113,41 @@ const initialState = {
   brainstormAutoProbe: true,
 };
 
+function emptyDocumentData(): DocumentCaptureData {
+  return {
+    transcript: '',
+    cards: [],
+    takes: 0,
+    brainstormAutoProbe: true,
+  };
+}
+
+function emptyTransientData(): TransientCaptureData {
+  return {
+    phase: 'idle',
+    error: null,
+    audioBlobs: [],
+    audioUrls: [],
+    lastExtractedOffset: 0,
+    isIncrementalExtracting: false,
+    brainstormActive: false,
+  };
+}
+
+/** Derive phase from persisted data (same logic as the old merge function) */
+function derivePhase(data: DocumentCaptureData): CapturePhase {
+  if (data.cards.length > 0) return 'review';
+  if (data.transcript.trim()) return 'recorded';
+  return 'idle';
+}
+
 export const useCaptureStore = create<CaptureState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...initialState,
+      sessions: {},
+      _transientSession: {},
+      _activeDocumentId: null,
 
       setPhase: (phase) => set({ phase }),
 
@@ -198,45 +259,190 @@ export const useCaptureStore = create<CaptureState>()(
       setBrainstormActive: (active) => set({ brainstormActive: active }),
       setBrainstormAutoProbe: (enabled) => set({ brainstormAutoProbe: enabled }),
 
+      setActiveDocument: (docId: string) => {
+        const state = get();
+        const oldDocId = state._activeDocumentId;
+
+        if (oldDocId === docId) return;
+
+        // Save current working copy for old document
+        const nextSessions = { ...state.sessions };
+        const nextTransient = { ...state._transientSession };
+
+        if (oldDocId) {
+          nextSessions[oldDocId] = {
+            transcript: state.transcript,
+            cards: state.cards,
+            takes: state.takes,
+            brainstormAutoProbe: state.brainstormAutoProbe,
+          };
+          nextTransient[oldDocId] = {
+            phase: state.phase,
+            error: state.error,
+            audioBlobs: state.audioBlobs,
+            audioUrls: state.audioUrls,
+            lastExtractedOffset: state.lastExtractedOffset,
+            isIncrementalExtracting: state.isIncrementalExtracting,
+            brainstormActive: state.brainstormActive,
+          };
+        }
+
+        // Load data for new document (or fresh defaults)
+        const docData = nextSessions[docId] ?? emptyDocumentData();
+        const transientData = nextTransient[docId] ?? emptyTransientData();
+
+        // Derive phase if transient data is fresh (no saved phase)
+        const phase = nextTransient[docId]
+          ? transientData.phase
+          : derivePhase(docData);
+
+        set({
+          _activeDocumentId: docId,
+          sessions: nextSessions,
+          _transientSession: nextTransient,
+          transcript: docData.transcript,
+          cards: docData.cards,
+          takes: docData.takes,
+          brainstormAutoProbe: docData.brainstormAutoProbe,
+          phase,
+          error: transientData.error,
+          audioBlobs: transientData.audioBlobs,
+          audioUrls: transientData.audioUrls,
+          lastExtractedOffset: transientData.lastExtractedOffset,
+          isIncrementalExtracting: transientData.isIncrementalExtracting,
+          brainstormActive: transientData.brainstormActive,
+        });
+      },
+
+      deleteDocumentSession: (docId: string) => {
+        set((state) => {
+          const nextSessions = { ...state.sessions };
+          const nextTransient = { ...state._transientSession };
+          // Revoke audio URLs for the deleted document
+          if (nextTransient[docId]?.audioUrls) {
+            nextTransient[docId].audioUrls.forEach((url) => URL.revokeObjectURL(url));
+          }
+          delete nextSessions[docId];
+          delete nextTransient[docId];
+          return { sessions: nextSessions, _transientSession: nextTransient };
+        });
+      },
+
       reset: () =>
         set((state) => {
           state.audioUrls.forEach((url) => URL.revokeObjectURL(url));
-          return { ...initialState };
+
+          // Clear persisted session for active document
+          const nextSessions = { ...state.sessions };
+          const nextTransient = { ...state._transientSession };
+          const activeId = state._activeDocumentId;
+          if (activeId) {
+            delete nextSessions[activeId];
+            delete nextTransient[activeId];
+          }
+
+          return {
+            ...initialState,
+            sessions: nextSessions,
+            _transientSession: nextTransient,
+            _activeDocumentId: state._activeDocumentId,
+          };
         }),
     }),
     {
       name: 'dyslex-capture-session',
       storage: createUserScopedStorage(),
       skipHydration: true,
-      partialize: (state) => ({
-        transcript: state.transcript,
-        cards: state.cards,
-        takes: state.takes,
-        brainstormAutoProbe: state.brainstormAutoProbe,
-      }),
-      merge: (persisted, current) => {
-        const saved = persisted as Partial<CaptureState> | undefined;
-        if (!saved) return current;
-
-        // Compute phase from persisted data
-        let phase: CapturePhase = 'idle';
-        if (saved.cards && saved.cards.length > 0) {
-          phase = 'review';
-        } else if (saved.transcript && saved.transcript.trim()) {
-          phase = 'recorded';
+      version: 1,
+      partialize: (state) => {
+        // Flush working copy into sessions before serializing
+        const sessions = { ...state.sessions };
+        if (state._activeDocumentId) {
+          sessions[state._activeDocumentId] = {
+            transcript: state.transcript,
+            cards: state.cards,
+            takes: state.takes,
+            brainstormAutoProbe: state.brainstormAutoProbe,
+          };
         }
-
         return {
-          ...current,
-          transcript: saved.transcript || '',
-          cards: saved.cards || [],
-          takes: saved.takes || 0,
-          brainstormAutoProbe: saved.brainstormAutoProbe ?? true,
-          phase,
+          sessions,
+          _activeDocumentId: state._activeDocumentId,
         };
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const activeId = state._activeDocumentId;
+        if (activeId && state.sessions[activeId]) {
+          const docData = state.sessions[activeId];
+          state.transcript = docData.transcript;
+          state.cards = docData.cards;
+          state.takes = docData.takes;
+          state.brainstormAutoProbe = docData.brainstormAutoProbe;
+          state.phase = derivePhase(docData);
+        }
+      },
+      migrate: (persisted: any, version: number) => {
+        if (version < 1) {
+          // Migrate from v0 (top-level transcript/cards/takes) to v1 (per-document sessions)
+          const state = persisted as any;
+          const DEFAULT_DOC_ID = '00000000-0000-4000-8000-000000000001';
+
+          const docData: DocumentCaptureData = {
+            transcript: state.transcript || '',
+            cards: state.cards || [],
+            takes: state.takes || 0,
+            brainstormAutoProbe: state.brainstormAutoProbe ?? true,
+          };
+
+          state.sessions = { [DEFAULT_DOC_ID]: docData };
+          state._activeDocumentId = DEFAULT_DOC_ID;
+
+          // Clean up old top-level fields
+          delete state.transcript;
+          delete state.cards;
+          delete state.takes;
+          delete state.brainstormAutoProbe;
+        }
+        return persisted;
       },
     },
   ),
 );
 
 registerScopedStore(() => useCaptureStore.persist.rehydrate());
+
+// --- Subscribe to document store changes ---
+let _captureDocStoreSubscribed = false;
+let _captureLastDocIds: Set<string> | null = null;
+
+function ensureCaptureDocSubscription() {
+  if (_captureDocStoreSubscribed) return;
+  _captureDocStoreSubscribed = true;
+
+  import('./documentStore').then(({ useDocumentStore }) => {
+    const docState = useDocumentStore.getState();
+    if (docState.activeDocumentId) {
+      useCaptureStore.getState().setActiveDocument(docState.activeDocumentId);
+    }
+    _captureLastDocIds = new Set(docState.documents.map((d) => d.id));
+
+    useDocumentStore.subscribe((state, prevState) => {
+      if (state.activeDocumentId && state.activeDocumentId !== prevState.activeDocumentId) {
+        useCaptureStore.getState().setActiveDocument(state.activeDocumentId);
+      }
+
+      const currentIds = new Set(state.documents.map((d) => d.id));
+      if (_captureLastDocIds) {
+        for (const id of _captureLastDocIds) {
+          if (!currentIds.has(id)) {
+            useCaptureStore.getState().deleteDocumentSession(id);
+          }
+        }
+      }
+      _captureLastDocIds = currentIds;
+    });
+  });
+}
+
+setTimeout(ensureCaptureDocSubscription, 0);

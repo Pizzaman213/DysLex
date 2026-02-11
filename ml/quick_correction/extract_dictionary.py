@@ -197,7 +197,7 @@ def extract_dictionary(
     logger.info(f"  Valid word filter: {len(valid_words)} words loaded")
 
     # Import parsers
-    from ml.datasets.process_datasets import (
+    from ml.datasets.process_datasets import (  # type: ignore[import-not-found]
         parse_aspell,
         parse_birkbeck,
         parse_github_typo,

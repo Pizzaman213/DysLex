@@ -12,6 +12,19 @@ from app.db.models import User
 logger = logging.getLogger(__name__)
 
 
+async def get_all_user_ids(db: AsyncSession) -> list[str]:
+    """Return all user IDs (lightweight — no full ORM objects loaded)."""
+    try:
+        result = await db.execute(select(User.id))
+        return list(result.scalars().all())
+    except OperationalError as e:
+        logger.error(f"Database connection error in get_all_user_ids: {e}")
+        raise ConnectionError("Database connection failed") from e
+    except Exception as e:
+        logger.error(f"Unexpected error in get_all_user_ids: {e}")
+        raise DatabaseError(f"Failed to get user IDs: {e}") from e
+
+
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     """Get a user by ID."""
     try:

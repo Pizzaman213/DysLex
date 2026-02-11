@@ -144,15 +144,7 @@ class ErrorProfileService:
         breakdown = self._build_breakdown(type_counts)
 
         # Fetch enrichment data in parallel — all gracefully degradable
-        (
-            trends_result,
-            mastered_result,
-            stats_result,
-            streak_result,
-            top_errors_result,
-            user_settings_result,
-            docs_result,
-        ) = await asyncio.gather(
+        results = await asyncio.gather(
             progress_repo.get_improvement_by_error_type(db, user_id),
             progress_repo.get_mastered_words(db, user_id),
             progress_repo.get_total_stats(db, user_id),
@@ -163,35 +155,43 @@ class ErrorProfileService:
             return_exceptions=True,
         )
 
+        trends_result = results[0]
+        mastered_result = results[1]
+        stats_result = results[2]
+        streak_result = results[3]
+        top_errors_result = results[4]
+        user_settings_result = results[5]
+        docs_result = results[6]
+
         improvement_trends: list[dict] = []
         if not isinstance(trends_result, BaseException):
-            improvement_trends = trends_result
+            improvement_trends = trends_result  # type: ignore[assignment]
 
         mastered_words: list[str] = []
         if not isinstance(mastered_result, BaseException):
-            mastered_words = [m["word"] for m in mastered_result]
+            mastered_words = [m["word"] for m in mastered_result]  # type: ignore[union-attr]
 
         total_stats: dict | None = None
         if not isinstance(stats_result, BaseException):
-            total_stats = stats_result
+            total_stats = stats_result  # type: ignore[assignment]
 
         writing_streak: dict | None = None
         if not isinstance(streak_result, BaseException):
-            writing_streak = streak_result
+            writing_streak = streak_result  # type: ignore[assignment]
 
         recent_error_count: int | None = None
         if not isinstance(top_errors_result, BaseException):
-            recent_error_count = len(top_errors_result)
+            recent_error_count = len(top_errors_result)  # type: ignore[arg-type]
 
         correction_aggressiveness = 50
         if not isinstance(user_settings_result, BaseException) and user_settings_result is not None:
-            correction_aggressiveness = user_settings_result.correction_aggressiveness
+            correction_aggressiveness = user_settings_result.correction_aggressiveness  # type: ignore[union-attr]
 
         recent_document_topics: list[str] = []
         if not isinstance(docs_result, BaseException):
             recent_document_topics = [
-                d.title for d in docs_result[:10]
-                if d.title and d.title != "Untitled Document"
+                d.title for d in docs_result[:10]  # type: ignore[union-attr]
+                if d.title and d.title != "Untitled Document"  # type: ignore[union-attr]
             ]
 
         # Derive a rough writing level from total pattern count

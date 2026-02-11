@@ -1,7 +1,7 @@
 """Progress repository for dashboard queries."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, literal_column, select
@@ -23,7 +23,7 @@ def _to_isoformat(value: Any) -> str:
     return value.isoformat()
 
 
-def _to_date(value: Any) -> "datetime.date | None":
+def _to_date(value: Any) -> date | None:
     """Convert a date string or date object to a date object."""
     if value is None:
         return None
@@ -123,7 +123,7 @@ async def get_error_breakdown_by_type(
         rows = result.all()
 
         # Group by week
-        weeks_dict: dict[str, dict[str, int]] = {}
+        weeks_dict: dict[str, dict[str, Any]] = {}
         for row in rows:
             week_key = _to_isoformat(row.week_start)
             if week_key not in weeks_dict:
@@ -138,7 +138,7 @@ async def get_error_breakdown_by_type(
             # Map error types to standard categories
             error_type = row.error_type
             if error_type in ["spelling", "grammar", "confusion", "phonetic"]:
-                weeks_dict[week_key][error_type] = row.count
+                weeks_dict[week_key][error_type] = row[2]  # count column
 
         return list(weeks_dict.values())
     except OperationalError as e:
@@ -258,7 +258,8 @@ async def get_writing_streak(db: AsyncSession, user_id: str) -> dict[str, Any]:
         )
 
         result = await db.execute(query)
-        dates = [_to_date(row.activity_date) for row in result.all()]
+        dates_raw = [_to_date(row.activity_date) for row in result.all()]
+        dates = [d for d in dates_raw if d is not None]
 
         if not dates:
             return {
@@ -388,7 +389,7 @@ async def get_improvement_by_error_type(
             error_type = row.error_type
             if error_type not in type_data:
                 type_data[error_type] = []
-            type_data[error_type].append(row.count)
+            type_data[error_type].append(row[2])  # count column
 
         # Calculate trends
         improvements = []

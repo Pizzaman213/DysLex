@@ -623,6 +623,10 @@ export const api = {
     message: string,
     writingContext?: string,
     sessionStats?: { totalWordsWritten: number; timeSpent: number; correctionsApplied: number },
+    correctionsContext?: {
+      active_corrections: Array<{ original: string; suggested: string; type: string; explanation?: string }>;
+      focused_correction: { original: string; suggested: string; type: string; explanation?: string } | null;
+    },
   ) =>
     request<{ status: string; data: { reply: string } }>('/api/v1/coach/chat', {
       method: 'POST',
@@ -630,6 +634,7 @@ export const api = {
         message,
         writing_context: writingContext,
         session_stats: sessionStats,
+        corrections_context: correctionsContext,
       }),
     }),
 

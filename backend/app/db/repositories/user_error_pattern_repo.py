@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -32,7 +32,7 @@ async def get_profile_data(
         )
         all_patterns = list(result.scalars().all())
 
-        cutoff = datetime.utcnow() - timedelta(days=mastered_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=mastered_days)
 
         top_patterns = all_patterns[:top_limit]
         mastered_patterns = [p for p in all_patterns if p.last_seen < cutoff]
@@ -101,7 +101,7 @@ async def upsert_pattern(
 
         if pattern is not None:
             pattern.frequency += 1
-            pattern.last_seen = datetime.utcnow()
+            pattern.last_seen = datetime.now(timezone.utc)
             if error_type:
                 pattern.error_type = error_type
             await db.flush()
@@ -115,8 +115,8 @@ async def upsert_pattern(
             error_type=error_type,
             frequency=1,
             language_code=language_code,
-            first_seen=datetime.utcnow(),
-            last_seen=datetime.utcnow(),
+            first_seen=datetime.now(timezone.utc),
+            last_seen=datetime.now(timezone.utc),
         )
         db.add(pattern)
         await db.flush()
@@ -146,7 +146,7 @@ async def get_error_type_counts(
             .where(UserErrorPattern.user_id == user_id)
             .group_by(UserErrorPattern.error_type)
         )
-        return list(result.all())
+        return [(row[0], row[1]) for row in result.all()]
     except OperationalError as e:
         logger.error(f"Database connection error in get_error_type_counts for user {user_id}: {e}")
         raise ConnectionError("Database connection failed") from e
@@ -162,7 +162,7 @@ async def get_mastered_patterns(
 ) -> list[UserErrorPattern]:
     """Get patterns not seen in the last N days (considered mastered)."""
     try:
-        cutoff = datetime.utcnow() - timedelta(days=days_threshold)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_threshold)
         result = await db.execute(
             select(UserErrorPattern).where(
                 UserErrorPattern.user_id == user_id,
@@ -220,6 +220,28 @@ async def bulk_mark_improving(
     except Exception as e:
         logger.error(f"Unexpected error in bulk_mark_improving: {e}")
         raise DatabaseError(f"Failed to bulk mark improving: {e}") from e
+
+
+async def count_patterns_since(
+    db: AsyncSession,
+    user_id: str,
+    since: datetime,
+) -> int:
+    """Count patterns where last_seen >= *since* for a given user."""
+    try:
+        result = await db.execute(
+            select(func.count()).select_from(UserErrorPattern).where(
+                UserErrorPattern.user_id == user_id,
+                UserErrorPattern.last_seen >= since,
+            )
+        )
+        return result.scalar_one()
+    except OperationalError as e:
+        logger.error(f"Database connection error in count_patterns_since for user {user_id}: {e}")
+        raise ConnectionError("Database connection failed") from e
+    except Exception as e:
+        logger.error(f"Unexpected error in count_patterns_since for user {user_id}: {e}")
+        raise DatabaseError(f"Failed to count patterns since: {e}") from e
 
 
 async def get_pattern_count(

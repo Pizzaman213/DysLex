@@ -65,7 +65,7 @@ def export_to_onnx(
                 model_input=str(model_file),
                 model_output=str(quantized_file),
                 weight_type=QuantType.QUInt8,
-                optimize_model=optimize,
+                optimize_model=optimize,  # type: ignore[call-arg]
             )
 
             logger.info(f"Quantized model saved to {quantized_file}")
@@ -133,6 +133,7 @@ def test_onnx_inference(model_path: Path | str, test_text: str = "teh cat sat on
     # Run inference and measure time
     logger.info(f"Running inference on: '{test_text}'")
 
+    outputs = None
     times = []
     for i in range(10):
         start = time.perf_counter()
@@ -160,7 +161,8 @@ def test_onnx_inference(model_path: Path | str, test_text: str = "teh cat sat on
         logger.info(f"✓ Latency within target (<50ms)")
 
     # Show predictions
-    predictions = outputs[0]
+    assert outputs is not None, "No inference outputs produced"
+    predictions = np.asarray(outputs[0])
     predicted_labels = np.argmax(predictions, axis=-1)[0]
 
     tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])

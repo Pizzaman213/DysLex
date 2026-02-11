@@ -36,7 +36,7 @@ class TestBuildCorrectionPrompt:
             def __init__(self, desc):
                 self.description = desc
         patterns = [FakePattern(f"pattern-{i}") for i in range(10)]
-        prompt = build_correction_prompt("text", patterns, [])
+        prompt = build_correction_prompt("text", patterns, [])  # type: ignore[arg-type]
         assert "pattern-4" in prompt
         assert "pattern-5" not in prompt
 

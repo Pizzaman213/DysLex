@@ -3,6 +3,7 @@
 import json
 import logging
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
@@ -92,7 +93,7 @@ async def _get_challenge(session_id: str) -> dict | None:
     return json.loads(raw)
 
 
-def _serialize_options(options: object) -> dict:
+def _serialize_options(options: Any) -> dict:
     """Convert a py_webauthn options object to a JSON-safe dict.
 
     py_webauthn >=2.0 returns dataclass objects. We use the built-in

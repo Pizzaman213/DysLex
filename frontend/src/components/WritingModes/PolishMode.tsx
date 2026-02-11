@@ -8,6 +8,7 @@ import { VoiceBar } from '../Shared/VoiceBar';
 import { StatusBar } from '../Shared/StatusBar';
 import { useCaptureVoice } from '../../hooks/useCaptureVoice';
 import { useReadAloud } from '../../hooks/useReadAloud';
+import { useTtsPrewarmer } from '../../hooks/useTtsPrewarmer';
 import { useEditorStore } from '../../stores/editorStore';
 import { usePolishStore } from '../../stores/polishStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -39,6 +40,7 @@ export function PolishMode() {
   const { isRecording, transcript: voiceTranscript, interimText, analyserNode, isTranscribing, micDenied, start: startVoice, stop: stopVoice } = useCaptureVoice();
   const { speak, stop, isPlaying, isLoading } = useReadAloud();
   const [editor, setEditor] = useState<Editor | null>(null);
+  useTtsPrewarmer(editor);
   const lastInsertedVoiceRef = useRef<string>('');
 
   // Batch-insert finalized voice text into editor as it arrives

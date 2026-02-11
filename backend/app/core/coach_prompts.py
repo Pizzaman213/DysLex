@@ -7,6 +7,7 @@ def build_coach_system_prompt(
     llm_context: LLMContext | None = None,
     writing_context: str | None = None,
     session_stats: dict | None = None,
+    corrections_context: dict | None = None,
 ) -> str:
     """Build the system prompt for the AI writing coach.
 
@@ -80,6 +81,30 @@ def build_coach_system_prompt(
             stats_parts.append(f"{corrections} suggestions applied")
         if stats_parts:
             parts.append("THIS SESSION: " + ", ".join(stats_parts))
+            parts.append("")
+
+    # Inject corrections context
+    if corrections_context:
+        focused = corrections_context.get("focused_correction")
+        active = corrections_context.get("active_corrections", [])
+
+        if focused:
+            parts.append("THE USER IS ASKING ABOUT THIS SPECIFIC SUGGESTION:")
+            parts.append(f'  "{focused["original"]}" → "{focused["suggested"]}" (type: {focused["type"]})')
+            if focused.get("explanation"):
+                parts.append(f"  Brief explanation shown: {focused['explanation']}")
+            parts.append("")
+            parts.append("When explaining this suggestion:")
+            parts.append("- Explain the underlying pattern (why this mix-up happens)")
+            parts.append("- Give a quick memory trick or mnemonic if possible")
+            parts.append("- Keep it warm and encouraging — 3-5 sentences")
+            parts.append("- Never say 'error' or 'mistake' — say 'mix-up' or 'pattern'")
+            parts.append("")
+
+        if active:
+            parts.append(f"ACTIVE SUGGESTIONS IN DOCUMENT ({len(active)} total):")
+            for c in active[:10]:
+                parts.append(f'  - "{c["original"]}" → "{c["suggested"]}" ({c["type"]})')
             parts.append("")
 
     # Inject truncated document context

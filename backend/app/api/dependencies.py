@@ -1,5 +1,6 @@
 """API dependencies — DB sessions and JWT authentication."""
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -18,7 +19,7 @@ DEMO_USER_ID = "00000000-0000-0000-0000-000000000000"
 # Database dependency
 # ---------------------------------------------------------------------------
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Get database session dependency."""
     async for session in get_session():
         yield session

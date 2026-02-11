@@ -257,6 +257,57 @@ textarea::placeholder {
   }
 }
 
+/* ===== ERROR BOUNDARY FALLBACK ===== */
+
+.error-boundary-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  padding: var(--sp-32);
+  text-align: center;
+  color: var(--text);
+}
+
+.error-boundary-fallback h2 {
+  font-size: var(--fs-20);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-8);
+}
+
+.error-boundary-fallback p {
+  font-size: var(--fs-14);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-24);
+  max-width: 420px;
+}
+
+.error-boundary-actions {
+  display: flex;
+  gap: var(--sp-12);
+}
+
+.error-boundary-btn {
+  padding: var(--sp-8) var(--sp-16);
+  border-radius: var(--r-md);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  border: none;
+}
+
+.error-boundary-btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.error-boundary-btn.secondary {
+  background: var(--bg-card, var(--bg-editor));
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
 /* ================================================================
    APP LAYOUT — CSS Grid with topbar spanning full width
    ================================================================ */
@@ -1669,6 +1720,10 @@ textarea::placeholder {
   border-radius: var(--r-lg);
   background: var(--bg-editor);
   transition: border-color var(--ease);
+  font-family: var(--editor-font-family, var(--font));
+  font-size: var(--editor-font-size, var(--fs-16));
+  line-height: var(--editor-line-height, var(--lh-normal));
+  letter-spacing: var(--editor-letter-spacing, var(--ls-normal));
 }
 .capture-transcript.has-text {
   border-style: solid;
@@ -1682,9 +1737,10 @@ textarea::placeholder {
   background: transparent;
   resize: vertical;
   font-family: inherit;
-  font-size: var(--fs-14);
+  font-size: inherit;
   color: var(--text);
-  line-height: var(--lh-relaxed);
+  line-height: inherit;
+  letter-spacing: inherit;
   outline: none;
 }
 
@@ -2249,6 +2305,10 @@ textarea::placeholder {
   background: var(--bg-editor);
   box-shadow: var(--shadow-page, var(--shadow-lg));
   border-radius: 2px;
+  font-family: var(--editor-font-family, var(--font));
+  font-size: var(--editor-font-size, var(--fs-16));
+  line-height: var(--editor-line-height, var(--lh-normal));
+  letter-spacing: var(--editor-letter-spacing, var(--ls-normal));
 }
 
 /* ProseMirror content sits above page cards */
@@ -2642,6 +2702,15 @@ textarea::placeholder {
 }
 .correction-card__btn--dismiss:hover { background: var(--bg-active); }
 
+.correction-card__btn--explain {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.correction-card__btn--explain:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 /* Correction Tooltip */
 .correction-tooltip {
   position: fixed;
@@ -3001,6 +3070,10 @@ textarea::placeholder {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  font-family: var(--editor-font-family, var(--font));
+  font-size: var(--editor-font-size, var(--fs-16));
+  line-height: var(--editor-line-height, var(--lh-normal));
+  letter-spacing: var(--editor-letter-spacing, var(--ls-normal));
 }
 
 .polish-panel {

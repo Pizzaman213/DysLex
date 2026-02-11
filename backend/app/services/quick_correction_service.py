@@ -304,7 +304,7 @@ class QuickCorrectionService:
             return []
 
         # Decode predictions
-        predictions = outputs[0]  # Logits
+        predictions: np.ndarray = outputs[0]  # type: ignore[assignment]  # Logits
         tokens = self.tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
         offset_mapping = inputs["offset_mapping"][0]
 

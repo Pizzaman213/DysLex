@@ -1,6 +1,6 @@
 """SQLAlchemy ORM models."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -128,8 +128,8 @@ class UserErrorPattern(Base):
     frequency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     improving: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     language_code: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
-    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship(back_populates="error_patterns")
 

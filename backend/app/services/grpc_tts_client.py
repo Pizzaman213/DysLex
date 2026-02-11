@@ -198,10 +198,10 @@ async def synthesize_cloud(
     )
     logger.debug("gRPC TTS encoded request: %d bytes", len(request_bytes))
 
-    metadata = [
+    metadata = (
         ("function-id", MAGPIE_TTS_FUNCTION_ID),
         ("authorization", f"Bearer {api_key}"),
-    ]
+    )
 
     channel = _get_channel()
     start_time = time.monotonic()
@@ -210,8 +210,8 @@ async def synthesize_cloud(
     def _call() -> bytes:
         response_bytes = channel.unary_unary(
             _FULL_METHOD,
-            request_serializer=lambda x: x,     # already serialized
-            response_deserializer=lambda x: x,   # return raw bytes
+            request_serializer=lambda x: x,     # type: ignore[arg-type]  # already serialized
+            response_deserializer=lambda x: x,   # type: ignore[arg-type]  # return raw bytes
         )(request_bytes, metadata=metadata, timeout=30.0)
         return response_bytes
 

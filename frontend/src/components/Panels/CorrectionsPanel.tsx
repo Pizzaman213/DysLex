@@ -1,6 +1,7 @@
 import { Editor } from '@tiptap/react';
 import { useEditorStore, Correction } from '../../stores/editorStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useCoachStore } from '../../stores/coachStore';
 import { Card } from '../Shared/Card';
 import { Badge } from '../Shared/Badge';
 
@@ -173,6 +174,17 @@ export function CorrectionsPanel({ editor }: CorrectionsPanelProps) {
                 type="button"
               >
                 Dismiss
+              </button>
+              <button
+                className="correction-card__btn correction-card__btn--explain"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useCoachStore.getState().requestExplanation(correction);
+                }}
+                type="button"
+                aria-label="Get a deeper explanation for this suggestion"
+              >
+                Why?
               </button>
             </div>
           </Card>

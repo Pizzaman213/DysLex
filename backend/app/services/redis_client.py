@@ -111,7 +111,7 @@ class SnapshotStore:
         """
         # Get current snapshot count
         list_key = self._snapshot_list_key(user_id)
-        count = await self.redis.llen(list_key)
+        count = await self.redis.llen(list_key)  # type: ignore[misc]
 
         # Store snapshot data
         snapshot_data = {
@@ -121,23 +121,23 @@ class SnapshotStore:
         }
 
         snapshot_key = self._snapshot_key(user_id, count)
-        await self.redis.setex(
+        await self.redis.setex(  # type: ignore[misc]
             snapshot_key,
             self.ttl_seconds,
             json.dumps(snapshot_data),
         )
 
         # Add to user's snapshot list
-        await self.redis.rpush(list_key, str(count))
-        await self.redis.expire(list_key, self.ttl_seconds)
+        await self.redis.rpush(list_key, str(count))  # type: ignore[misc]
+        await self.redis.expire(list_key, self.ttl_seconds)  # type: ignore[misc]
 
         # Limit to last 50 snapshots (memory bounded)
         if count >= 50:
             # Remove oldest snapshot reference
-            oldest_idx = await self.redis.lpop(list_key)
+            oldest_idx = await self.redis.lpop(list_key)  # type: ignore[misc]
             if oldest_idx:
-                oldest_key = self._snapshot_key(user_id, int(oldest_idx))
-                await self.redis.delete(oldest_key)
+                oldest_key = self._snapshot_key(user_id, int(str(oldest_idx)))
+                await self.redis.delete(oldest_key)  # type: ignore[misc]
 
         logger.debug(
             "Stored snapshot for user %s (index %d, %d words)",
@@ -147,20 +147,20 @@ class SnapshotStore:
     async def get_last_snapshot(self, user_id: str) -> TextSnapshot | None:
         """Retrieve the most recent snapshot for a user."""
         list_key = self._snapshot_list_key(user_id)
-        count = await self.redis.llen(list_key)
+        count = await self.redis.llen(list_key)  # type: ignore[misc]
 
         if count == 0:
             return None
 
         # Get last index
-        indices = await self.redis.lrange(list_key, -1, -1)
+        indices = await self.redis.lrange(list_key, -1, -1)  # type: ignore[misc]
         if not indices:
             return None
 
         last_index = int(indices[0])
         snapshot_key = self._snapshot_key(user_id, last_index)
 
-        data = await self.redis.get(snapshot_key)
+        data = await self.redis.get(snapshot_key)  # type: ignore[misc]
         if not data:
             return None
 
@@ -176,19 +176,19 @@ class SnapshotStore:
     ) -> list[TextSnapshot]:
         """Retrieve recent snapshots for a user (for debugging/analysis)."""
         list_key = self._snapshot_list_key(user_id)
-        count = await self.redis.llen(list_key)
+        count = await self.redis.llen(list_key)  # type: ignore[misc]
 
         if count == 0:
             return []
 
         # Get last N indices
         start = max(0, count - limit)
-        indices = await self.redis.lrange(list_key, start, -1)
+        indices = await self.redis.lrange(list_key, start, -1)  # type: ignore[misc]
 
         snapshots = []
         for idx_str in indices:
             snapshot_key = self._snapshot_key(user_id, int(idx_str))
-            data = await self.redis.get(snapshot_key)
+            data = await self.redis.get(snapshot_key)  # type: ignore[misc]
 
             if data:
                 snapshot_dict = json.loads(data)
@@ -203,15 +203,15 @@ class SnapshotStore:
     async def clear_user_snapshots(self, user_id: str) -> None:
         """Clear all snapshots for a user (privacy/testing)."""
         list_key = self._snapshot_list_key(user_id)
-        indices = await self.redis.lrange(list_key, 0, -1)
+        indices = await self.redis.lrange(list_key, 0, -1)  # type: ignore[misc]
 
         # Delete all snapshot keys
         for idx_str in indices:
             snapshot_key = self._snapshot_key(user_id, int(idx_str))
-            await self.redis.delete(snapshot_key)
+            await self.redis.delete(snapshot_key)  # type: ignore[misc]
 
         # Delete list key
-        await self.redis.delete(list_key)
+        await self.redis.delete(list_key)  # type: ignore[misc]
 
         logger.info("Cleared all snapshots for user %s", user_id)
 

@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ml.datasets.combine_datasets import (
+from ml.datasets.combine_datasets import (  # type: ignore[import-not-found]
     convert_corrections_to_labels,
     load_processed_real_data,
 )
@@ -174,7 +174,7 @@ class TestCombineAndSplit:
 
     def test_combine_and_split_ratios(self, tmp_processed_dir: Path, tmp_output_dir: Path, monkeypatch):
         """Verify train/val/test split ratios approximately match targets."""
-        from ml.datasets import combine_datasets
+        from ml.datasets import combine_datasets  # type: ignore[import-not-found]
 
         # Write 200 real samples
         self._write_real_data(tmp_processed_dir, 200)
@@ -224,7 +224,7 @@ class TestCombineAndSplit:
 
     def test_combine_and_split_deterministic(self, tmp_processed_dir: Path, tmp_output_dir: Path, monkeypatch):
         """Same seed should produce the same split."""
-        from ml.datasets import combine_datasets
+        from ml.datasets import combine_datasets  # type: ignore[import-not-found]
 
         self._write_real_data(tmp_processed_dir, 100)
 

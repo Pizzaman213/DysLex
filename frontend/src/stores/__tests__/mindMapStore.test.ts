@@ -11,6 +11,7 @@ const defaultRootNode = {
 describe('mindMapStore', () => {
   beforeEach(() => {
     useMindMapStore.getState().resetMindMap();
+    useMindMapStore.getState().setActiveDocument('test-doc');
   });
 
   // ---------- Default state ----------
@@ -359,6 +360,161 @@ describe('mindMapStore', () => {
       expect(state.clusterNames[1]).toBe('Cluster 1');
       expect(state._past).toEqual([]);
       expect(state._future).toEqual([]);
+    });
+
+    it('clears persisted map for active document', () => {
+      useMindMapStore.getState().addNode('root', { x: 600, y: 300 }, { title: 'Child' });
+
+      // Save by switching away
+      useMindMapStore.getState().setActiveDocument('other-doc');
+      expect(useMindMapStore.getState().maps['test-doc']).toBeDefined();
+      expect(useMindMapStore.getState().maps['test-doc'].nodes).toHaveLength(2);
+
+      // Switch back and reset
+      useMindMapStore.getState().setActiveDocument('test-doc');
+      useMindMapStore.getState().resetMindMap();
+
+      // Map entry for test-doc should be removed
+      expect(useMindMapStore.getState().maps['test-doc']).toBeUndefined();
+    });
+  });
+
+  // ---------- Per-Document Mind Maps ----------
+
+  describe('Per-Document Mind Maps', () => {
+    it('switching documents saves and loads mind map data', () => {
+      // Add a node to doc A (test-doc)
+      useMindMapStore.getState().addNode('root', { x: 600, y: 300 }, { title: 'Doc A Node' });
+      expect(useMindMapStore.getState().nodes).toHaveLength(2);
+
+      // Switch to doc B — should get a fresh empty mind map
+      useMindMapStore.getState().setActiveDocument('doc-b');
+      expect(useMindMapStore.getState().nodes).toHaveLength(1);
+      expect(useMindMapStore.getState().nodes[0].id).toBe('root');
+      expect(useMindMapStore.getState().edges).toEqual([]);
+
+      // Add a node to doc B
+      useMindMapStore.getState().addNode('root', { x: 500, y: 400 }, { title: 'Doc B Node' });
+      expect(useMindMapStore.getState().nodes).toHaveLength(2);
+
+      // Switch back to doc A — should see doc A's mind map
+      useMindMapStore.getState().setActiveDocument('test-doc');
+      expect(useMindMapStore.getState().nodes).toHaveLength(2);
+      const docAChild = useMindMapStore.getState().nodes.find((n) => n.id !== 'root');
+      expect(docAChild!.data.title).toBe('Doc A Node');
+
+      // Switch back to doc B — should see doc B's mind map
+      useMindMapStore.getState().setActiveDocument('doc-b');
+      expect(useMindMapStore.getState().nodes).toHaveLength(2);
+      const docBChild = useMindMapStore.getState().nodes.find((n) => n.id !== 'root');
+      expect(docBChild!.data.title).toBe('Doc B Node');
+    });
+
+    it('new document gets empty mind map', () => {
+      useMindMapStore.getState().addNode('root', { x: 600, y: 300 }, { title: 'Existing' });
+
+      useMindMapStore.getState().setActiveDocument('brand-new-doc');
+
+      const state = useMindMapStore.getState();
+      expect(state.nodes).toHaveLength(1);
+      expect(state.nodes[0].id).toBe('root');
+      expect(state.edges).toEqual([]);
+      expect(state.suggestions).toEqual([]);
+      expect(state.scaffold).toBeNull();
+      expect(state._past).toEqual([]);
+      expect(state._future).toEqual([]);
+    });
+
+    it('setActiveDocument is a no-op for the same document', () => {
+      useMindMapStore.getState().addNode('root', { x: 600, y: 300 }, { title: 'Child' });
+      const nodesBefore = useMindMapStore.getState().nodes;
+
+      useMindMapStore.getState().setActiveDocument('test-doc');
+
+      expect(useMindMapStore.getState().nodes).toBe(nodesBefore);
+    });
+
+    it('deleteDocumentMap removes persisted data for a document', () => {
+      // Add data to doc A
+      useMindMapStore.getState().addNode('root', { x: 600, y: 300 }, { title: 'Child' });
+
+      // Switch to doc B so doc A is persisted
+      useMindMapStore.getState().setActiveDocument('doc-b');
+      expect(useMindMapStore.getState().maps['test-doc']).toBeDefined();
+
+      // Delete doc A's map
+      useMindMapStore.getState().deleteDocumentMap('test-doc');
+      expect(useMindMapStore.getState().maps['test-doc']).toBeUndefined();
+    });
+
+    it('transient data (suggestions, history) is preserved per document', () => {
+      // Set suggestions for doc A
+      useMindMapStore.getState().setSuggestions([
+        { id: 's1', type: 'gap', description: 'Gap in doc A' },
+      ]);
+      useMindMapStore.getState().addNode('root', { x: 600, y: 300 }, { title: 'Child' });
+      expect(useMindMapStore.getState().canUndo()).toBe(true);
+
+      // Switch to doc B
+      useMindMapStore.getState().setActiveDocument('doc-b');
+      expect(useMindMapStore.getState().suggestions).toEqual([]);
+      expect(useMindMapStore.getState().canUndo()).toBe(false);
+
+      // Switch back to doc A — suggestions and history should be restored
+      useMindMapStore.getState().setActiveDocument('test-doc');
+      expect(useMindMapStore.getState().suggestions).toHaveLength(1);
+      expect(useMindMapStore.getState().suggestions[0].id).toBe('s1');
+      expect(useMindMapStore.getState().canUndo()).toBe(true);
+    });
+
+    it('scaffold and clusterNames are saved per document', () => {
+      useMindMapStore.getState().setScaffold({ title: 'Doc A Scaffold', sections: [] });
+      useMindMapStore.getState().setClusterName(1, 'Intro');
+
+      useMindMapStore.getState().setActiveDocument('doc-b');
+      expect(useMindMapStore.getState().scaffold).toBeNull();
+      expect(useMindMapStore.getState().clusterNames[1]).toBe('Cluster 1');
+
+      useMindMapStore.getState().setActiveDocument('test-doc');
+      expect(useMindMapStore.getState().scaffold).toEqual({ title: 'Doc A Scaffold', sections: [] });
+      expect(useMindMapStore.getState().clusterNames[1]).toBe('Intro');
+    });
+  });
+
+  // ---------- Migration ----------
+
+  describe('Migration v3 → v4', () => {
+    it('wraps top-level nodes/edges into maps with default doc ID', () => {
+      const DEFAULT_DOC_ID = '00000000-0000-4000-8000-000000000001';
+      const v3State = {
+        nodes: [
+          { id: 'root', type: 'mindMapNode', position: { x: 400, y: 200 }, data: { title: 'Test', body: '', cluster: 1 } },
+          { id: 'n1', type: 'mindMapNode', position: { x: 600, y: 300 }, data: { title: 'Child', body: '', cluster: 2 } },
+        ],
+        edges: [
+          { id: 'e1', source: 'root', target: 'n1', data: { relationship: null } },
+        ],
+        scaffold: { title: 'My Scaffold', sections: [] },
+        clusterNames: { 1: 'Intro', 2: 'Body', 3: 'Cluster 3', 4: 'Cluster 4', 5: 'Cluster 5' },
+      };
+
+      // Access the persist API to call migrate directly
+      const { migrate } = (useMindMapStore as any).persist.getOptions();
+      const migrated = migrate(structuredClone(v3State), 3);
+
+      expect(migrated.maps).toBeDefined();
+      expect(migrated.maps[DEFAULT_DOC_ID]).toBeDefined();
+      expect(migrated.maps[DEFAULT_DOC_ID].nodes).toHaveLength(2);
+      expect(migrated.maps[DEFAULT_DOC_ID].edges).toHaveLength(1);
+      expect(migrated.maps[DEFAULT_DOC_ID].scaffold).toEqual(v3State.scaffold);
+      expect(migrated.maps[DEFAULT_DOC_ID].clusterNames[1]).toBe('Intro');
+      expect(migrated._activeDocumentId).toBe(DEFAULT_DOC_ID);
+
+      // Old top-level fields should be removed
+      expect(migrated.nodes).toBeUndefined();
+      expect(migrated.edges).toBeUndefined();
+      expect(migrated.scaffold).toBeUndefined();
+      expect(migrated.clusterNames).toBeUndefined();
     });
   });
 });

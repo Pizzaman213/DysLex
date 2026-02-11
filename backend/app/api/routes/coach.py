@@ -41,10 +41,20 @@ async def coach_chat(
     except Exception:
         logger.warning("Failed to load LLM context for coach", exc_info=True)
 
+    corrections_ctx = (
+        body.corrections_context.model_dump() if body.corrections_context else None
+    )
+
     system_prompt = build_coach_system_prompt(
         llm_context=llm_context,
         writing_context=body.writing_context,
         session_stats=body.session_stats,
+        corrections_context=corrections_ctx,
+    )
+
+    has_focused = (
+        body.corrections_context is not None
+        and body.corrections_context.focused_correction is not None
     )
 
     messages = [
@@ -64,7 +74,7 @@ async def coach_chat(
                 json={
                     "model": settings.nvidia_nim_llm_model,
                     "messages": messages,
-                    "max_tokens": 512,
+                    "max_tokens": 768 if has_focused else 512,
                     "temperature": 0.7,
                 },
             )
