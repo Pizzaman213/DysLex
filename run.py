@@ -374,15 +374,19 @@ class PackageInstaller:
                         ['sudo', 'apt-get', 'install', '-y', '-qq', 'curl'],
                         timeout=120,
                     )
-                # NodeSource setup
+                # NodeSource setup — its nodejs package already includes npm,
+                # so do NOT install the separate npm package alongside it.
                 result = subprocess.run(
                     ['bash', '-c', 'curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -'],
                     timeout=120,
                 )
-                if result.returncode != 0:
+                if result.returncode == 0:
+                    self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
+                else:
+                    # NodeSource failed — fall back to distro packages (older Node, separate npm)
                     print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
                     subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
-                self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
+                    self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
             elif pkg == 'dnf':
                 # Ensure curl is available for NodeSource setup
                 if not self._is_command_available('curl'):
