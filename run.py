@@ -1243,6 +1243,28 @@ class PrerequisiteChecker:
         try:
             backend_dir = Path('backend').resolve()
 
+            # On Debian/Ubuntu, python3-venv is a separate package
+            check = subprocess.run(
+                [sys.executable, '-m', 'venv', '--help'],
+                capture_output=True, timeout=10,
+            )
+            if check.returncode != 0:
+                if platform.system() == 'Linux' and self.installer:
+                    pkg = self.installer._detect_package_manager()
+                    if pkg == 'apt':
+                        py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+                        print(f"{self._colorize(f'  Installing python3-venv (required on Ubuntu)...', Color.GRAY)}")
+                        subprocess.run(
+                            ['sudo', 'apt-get', 'install', '-y', '-qq', f'python{py_ver}-venv', 'python3-venv'],
+                            timeout=120,
+                        )
+                    elif pkg == 'dnf':
+                        print(f"{self._colorize(f'  Installing python3-venv...', Color.GRAY)}")
+                        subprocess.run(
+                            ['sudo', 'dnf', 'install', '-y', '-q', 'python3-libs'],
+                            timeout=120,
+                        )
+
             # Create venv
             print(f"{self._colorize('  Creating virtual environment...', Color.GRAY)}")
             result = subprocess.run(
