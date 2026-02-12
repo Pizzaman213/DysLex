@@ -117,5 +117,13 @@ class TranscriptionService:
         return mime_types.get(ext, "audio/webm")
 
 
+def _create_transcription_service() -> TranscriptionService:
+    """Factory: select STT provider based on STT_PROVIDER setting."""
+    if settings.stt_provider.lower() == "nvidia":
+        from app.services.nvidia_stt_service import NvidiaTranscriptionService
+        return NvidiaTranscriptionService()  # type: ignore[return-value]
+    return TranscriptionService()
+
+
 # Singleton instance
-transcription_service = TranscriptionService()
+transcription_service = _create_transcription_service()

@@ -14,6 +14,7 @@ import { api } from '../../services/api';
 import { mergeCards } from '../../utils/mergeCards';
 import { ThoughtCardGrid } from './ThoughtCardGrid';
 import { BrainstormPanel } from './BrainstormPanel';
+import { VisionCapturePanel } from '../Shared/VisionCapturePanel';
 
 interface CaptureModeProps {
   onNavigateToMindMap?: () => void;
@@ -37,6 +38,12 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
   const brainstormAutoProbe = useCaptureStore((s) => s.brainstormAutoProbe);
   const setBrainstormActive = useCaptureStore((s) => s.setBrainstormActive);
   const setBrainstormAutoProbe = useCaptureStore((s) => s.setBrainstormAutoProbe);
+
+  const showVisionCapture = useCaptureStore((s) => s.showVisionCapture);
+  const isVisionProcessing = useCaptureStore((s) => s.isVisionProcessing);
+  const setShowVisionCapture = useCaptureStore((s) => s.setShowVisionCapture);
+  const setIsVisionProcessing = useCaptureStore((s) => s.setIsVisionProcessing);
+  const appendCards = useCaptureStore((s) => s.appendCards);
 
   const voice = useCaptureVoice();
   const micDenied = voice.micDenied;
@@ -252,6 +259,37 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
     }
   };
 
+  const handleVisionCapture = async (base64: string, mimeType: string) => {
+    const previousPhase = phase;
+    setIsVisionProcessing(true);
+    setPhase('extracting');
+    setError(null);
+
+    try {
+      const result = await api.extractIdeasFromImage(base64, mimeType);
+      const normalized = result.cards.map((c) => ({
+        ...c,
+        sub_ideas: c.sub_ideas || [],
+      }));
+
+      if (cards.length > 0) {
+        const merged = mergeCards(cards, normalized);
+        setCards(merged);
+      } else {
+        appendCards(normalized);
+      }
+
+      setShowVisionCapture(false);
+      setPhase('review');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Image extraction failed';
+      setError(message);
+      setPhase(previousPhase === 'extracting' ? 'idle' : previousPhase);
+    } finally {
+      setIsVisionProcessing(false);
+    }
+  };
+
   const isBrainstorming = phase === 'brainstorming';
 
   const showThoughtCards =
@@ -284,6 +322,21 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
             <line x1="8" y1="23" x2="16" y2="23" />
           </svg>
         </button>
+
+        {!isRecording && !isBrainstorming && phase !== 'transcribing' && phase !== 'extracting' && (
+          <button
+            className={`capture-vision-toggle${showVisionCapture ? ' active' : ''}`}
+            onClick={() => setShowVisionCapture(!showVisionCapture)}
+            aria-label={showVisionCapture ? 'Hide photo capture' : 'Snap a photo'}
+            aria-expanded={showVisionCapture}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+              <circle cx="12" cy="13" r="4" />
+            </svg>
+            Snap a photo
+          </button>
+        )}
 
         <div className={`big-wave ${isRecording ? 'active' : ''}`} aria-hidden="true">
           {bars.map((h, i) => (
@@ -334,6 +387,16 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
                 Try Again
               </button>
             )}
+          </div>
+        )}
+
+        {showVisionCapture && (
+          <div className="capture-vision-wrapper">
+            <VisionCapturePanel
+              onCapture={handleVisionCapture}
+              isProcessing={isVisionProcessing}
+              onCancel={() => setShowVisionCapture(false)}
+            />
           </div>
         )}
 

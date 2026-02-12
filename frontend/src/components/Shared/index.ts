@@ -8,6 +8,7 @@ export { LoadingSkeleton } from './LoadingSkeleton';
 export { LoadingSpinner } from './LoadingSpinner';
 export { StatCard } from './StatCard';
 export { StatusBar } from './StatusBar';
+export { VisionCapturePanel } from './VisionCapturePanel';
 export { VoiceBar } from './VoiceBar';
 
 // Legacy exports for backward compatibility

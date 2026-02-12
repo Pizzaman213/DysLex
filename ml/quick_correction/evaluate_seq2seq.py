@@ -4,8 +4,10 @@ Reports:
 - Exact match accuracy (% of sentences where output == target exactly)
 - Word Error Rate (WER): edit distance at word level
 - Character Error Rate (CER): edit distance at character level
-- Per-error-type breakdown (reversal/transposition/phonetic/omission/spelling)
-- Per-source breakdown (birkbeck, wikipedia, github_typo, aspell, synthetic)
+- Per-error-type breakdown (reversal/transposition/phonetic/omission/spelling + grammar types)
+- Per-source breakdown (birkbeck, wikipedia, github_typo, aspell, synthetic, grammar)
+- No-change accuracy (correct text must not be modified)
+- Spelling regression check (when grammar test data is available)
 - Latency benchmark (100 samples, greedy decode)
 """
 
@@ -175,11 +177,35 @@ def _compute_metrics(
     }
 
 
+def _compute_no_change_accuracy(
+    predictions: list[str], inputs: list[str]
+) -> float:
+    """Compute no-change accuracy: correct text must not be modified.
+
+    Args:
+        predictions: Model outputs
+        inputs: Original input texts (without "correct: " prefix)
+
+    Returns:
+        Fraction of inputs that were correctly left unchanged
+    """
+    if not predictions:
+        return 0.0
+
+    correct = sum(
+        1 for pred, inp in zip(predictions, inputs)
+        if pred.strip() == inp.strip()
+    )
+    return correct / len(predictions)
+
+
 def evaluate_seq2seq_model(
     model_dir: Path | None = None,
     test_file: Path | None = None,
     output_file: Path | None = None,
     latency_samples: int = 100,
+    spelling_test_file: Path | None = None,
+    grammar_test_file: Path | None = None,
 ) -> dict[str, Any]:
     """Evaluate the trained seq2seq model on test data.
 
@@ -188,6 +214,8 @@ def evaluate_seq2seq_model(
         test_file: Path to test data JSONL
         output_file: Optional path to save JSON report
         latency_samples: Number of samples for latency benchmark
+        spelling_test_file: Optional spelling-only test file for regression check
+        grammar_test_file: Optional grammar-only test file
 
     Returns:
         Evaluation results dictionary
@@ -196,6 +224,17 @@ def evaluate_seq2seq_model(
         model_dir = MODEL_DIR
     if test_file is None:
         test_file = TEST_FILE
+
+    # Auto-detect grammar/spelling test files
+    data_dir = test_file.parent
+    if spelling_test_file is None:
+        candidate = data_dir / "test_seq2seq_spelling.jsonl"
+        if candidate.exists():
+            spelling_test_file = candidate
+    if grammar_test_file is None:
+        candidate = data_dir / "test_seq2seq_grammar.jsonl"
+        if candidate.exists():
+            grammar_test_file = candidate
 
     # Load model
     logger.info(f"Loading seq2seq model from {model_dir}...")
@@ -212,8 +251,16 @@ def evaluate_seq2seq_model(
     # Generate predictions for all samples
     all_predictions = []
     all_targets = []
+    no_change_predictions: list[str] = []
+    no_change_inputs: list[str] = []
     per_source: dict[str, dict[str, list[str]]] = {}
     per_error_type: dict[str, dict[str, list[str]]] = {}
+
+    # Grammar error types for separate reporting
+    grammar_types = {
+        "subject_verb", "article", "verb_tense", "function_word",
+        "word_order", "run_on", "pronoun_case", "grammar",
+    }
 
     logger.info(f"Running inference on {len(samples)} test samples...")
     for i, sample in enumerate(samples):
@@ -226,6 +273,12 @@ def evaluate_seq2seq_model(
 
         all_predictions.append(prediction)
         all_targets.append(target_text)
+
+        # Track no-change (passthrough) accuracy
+        raw_input = input_text.removeprefix("correct: ").strip()
+        if raw_input == target_text.strip():
+            no_change_predictions.append(prediction)
+            no_change_inputs.append(raw_input)
 
         # Per-source tracking
         if source not in per_source:
@@ -248,10 +301,22 @@ def evaluate_seq2seq_model(
         "per_source": {},
         "per_error_type": {},
         "latency": {},
+        "no_change_accuracy": 0.0,
+        "grammar_summary": {},
+        "spelling_regression": {},
     }
 
     logger.info("\n--- Overall Metrics ---")
     _print_metrics(results["overall"])
+
+    # No-change accuracy
+    if no_change_predictions:
+        no_change_acc = _compute_no_change_accuracy(no_change_predictions, no_change_inputs)
+        results["no_change_accuracy"] = no_change_acc
+        logger.info(f"\n--- No-Change Accuracy (correct text stays unchanged) ---")
+        logger.info(f"  Accuracy: {no_change_acc:.4f} ({len(no_change_predictions)} samples)")
+        target_met = no_change_acc >= 0.98
+        logger.info(f"  Target (>=98%): {'MET' if target_met else 'NOT MET'}")
 
     # Per-source breakdown
     logger.info("\n--- Per-Source Breakdown ---")
@@ -263,11 +328,86 @@ def evaluate_seq2seq_model(
 
     # Per-error-type breakdown
     logger.info("\n--- Per-Error-Type Breakdown ---")
+    grammar_preds: list[str] = []
+    grammar_targets: list[str] = []
+    spelling_preds: list[str] = []
+    spelling_targets: list[str] = []
+
     for error_type, data in sorted(per_error_type.items()):
         metrics = _compute_metrics(data["predictions"], data["targets"])
         results["per_error_type"][error_type] = metrics
         logger.info(f"\n  {error_type} ({metrics['num_samples']} samples):")
         _print_metrics(metrics, indent=4)
+
+        # Aggregate into grammar vs spelling
+        if error_type in grammar_types:
+            grammar_preds.extend(data["predictions"])
+            grammar_targets.extend(data["targets"])
+        elif error_type not in ("none", "unknown"):
+            spelling_preds.extend(data["predictions"])
+            spelling_targets.extend(data["targets"])
+
+    # Grammar summary
+    if grammar_preds:
+        grammar_metrics = _compute_metrics(grammar_preds, grammar_targets)
+        results["grammar_summary"] = grammar_metrics
+        logger.info(f"\n--- Grammar Summary ({grammar_metrics['num_samples']} samples) ---")
+        _print_metrics(grammar_metrics)
+        target_met = grammar_metrics["exact_match"] >= 0.85
+        logger.info(f"  Target (>=85% exact match): {'MET' if target_met else 'NOT MET'}")
+
+    # Spelling summary (for regression tracking)
+    if spelling_preds:
+        spelling_metrics = _compute_metrics(spelling_preds, spelling_targets)
+        logger.info(f"\n--- Spelling Summary ({spelling_metrics['num_samples']} samples) ---")
+        _print_metrics(spelling_metrics)
+
+    # Spelling regression check on dedicated spelling-only test file
+    if spelling_test_file and spelling_test_file.exists():
+        logger.info(f"\n--- Spelling Regression Check ({spelling_test_file.name}) ---")
+        spelling_samples = load_test_data(spelling_test_file)
+        sp_preds = []
+        sp_tgts = []
+        for sample in spelling_samples:
+            pred = generate_prediction(sample["input_text"], tokenizer, model)
+            sp_preds.append(pred)
+            sp_tgts.append(sample["target_text"])
+        sp_metrics = _compute_metrics(sp_preds, sp_tgts)
+        results["spelling_regression"] = sp_metrics
+        _print_metrics(sp_metrics)
+        # Spelling must stay >= 95%
+        target_met = sp_metrics["exact_match"] >= 0.95
+        logger.info(f"  Target (>=95% exact match): {'MET' if target_met else 'NOT MET'}")
+
+    # Grammar-only test file evaluation
+    if grammar_test_file and grammar_test_file.exists():
+        logger.info(f"\n--- Grammar-Only Evaluation ({grammar_test_file.name}) ---")
+        grammar_samples = load_test_data(grammar_test_file)
+        gr_preds = []
+        gr_tgts = []
+        gr_per_type: dict[str, dict[str, list[str]]] = {}
+        for sample in grammar_samples:
+            pred = generate_prediction(sample["input_text"], tokenizer, model)
+            gr_preds.append(pred)
+            gr_tgts.append(sample["target_text"])
+            etype = sample.get("error_type", "grammar")
+            if etype not in gr_per_type:
+                gr_per_type[etype] = {"predictions": [], "targets": []}
+            gr_per_type[etype]["predictions"].append(pred)
+            gr_per_type[etype]["targets"].append(sample["target_text"])
+
+        gr_metrics = _compute_metrics(gr_preds, gr_tgts)
+        results["grammar_only"] = gr_metrics
+        _print_metrics(gr_metrics)
+        target_met = gr_metrics["exact_match"] >= 0.85
+        logger.info(f"  Target (>=85% exact match): {'MET' if target_met else 'NOT MET'}")
+
+        # Per-grammar-type breakdown
+        results["grammar_per_type"] = {}
+        for etype, data in sorted(gr_per_type.items()):
+            metrics = _compute_metrics(data["predictions"], data["targets"])
+            results["grammar_per_type"][etype] = metrics
+            logger.info(f"    {etype} ({metrics['num_samples']}): EM={metrics['exact_match']:.4f}")
 
     # Latency benchmark
     logger.info(f"\n--- Latency Benchmark ({latency_samples} samples, CPU, greedy decode) ---")
@@ -369,11 +509,25 @@ def main():
         default=100,
         help="Number of samples for latency benchmark (default: 100)",
     )
+    parser.add_argument(
+        "--spelling-test",
+        type=str,
+        default=None,
+        help="Path to spelling-only test JSONL (for regression check)",
+    )
+    parser.add_argument(
+        "--grammar-test",
+        type=str,
+        default=None,
+        help="Path to grammar-only test JSONL",
+    )
     args = parser.parse_args()
 
     model_dir = Path(args.model) if args.model else MODEL_DIR
     test_file = Path(args.test) if args.test else TEST_FILE
     output_file = Path(args.output) if args.output else model_dir / "eval_report.json"
+    spelling_test = Path(args.spelling_test) if args.spelling_test else None
+    grammar_test = Path(args.grammar_test) if args.grammar_test else None
 
     if not model_dir.exists():
         logger.error(f"Model not found at {model_dir}")
@@ -392,6 +546,8 @@ def main():
         test_file=test_file,
         output_file=output_file,
         latency_samples=args.latency_samples,
+        spelling_test_file=spelling_test,
+        grammar_test_file=grammar_test,
     )
 
 

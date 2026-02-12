@@ -42,3 +42,6 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing"
+markers = [
+    "nvidia: tests that ping live NVIDIA NIM servers (require API key + network)",
+]

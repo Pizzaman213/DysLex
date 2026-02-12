@@ -15,7 +15,10 @@ Model types:
     --model-type bio       BIO token classification (DistilBERT, default)
     --model-type seq2seq   Seq2seq text correction (T5-small)
 
-Stages: download -> process -> combine -> train -> evaluate -> export
+Grammar support:
+    --grammar              Include grammar error data (seq2seq only)
+
+Stages: download -> process -> [grammar] -> combine -> train -> evaluate -> export
 """
 
 import argparse
@@ -235,6 +238,79 @@ def stage_export(quantize: bool = False) -> bool:
     return True
 
 
+def stage_generate_grammar(target_samples: int = 30000) -> bool:
+    """Stage: Generate synthetic grammar error training data."""
+    logger.info("=" * 60)
+    logger.info("STAGE: Generate Grammar Training Data")
+    logger.info("=" * 60)
+
+    from ml.synthetic_data.grammar_generator import GrammarErrorGenerator
+
+    generator = GrammarErrorGenerator()
+    output_file = PROCESSED_DIR / "grammar_synthetic_seq2seq.jsonl"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    samples = generator.generate_training_pairs(
+        num_samples=target_samples,
+        output_file=output_file,
+    )
+
+    if not samples:
+        logger.error("No grammar samples generated.")
+        return False
+
+    logger.info(f"Grammar generation complete: {len(samples)} samples -> {output_file}")
+    return True
+
+
+def stage_generate_mixed(target_samples: int = 5000) -> bool:
+    """Stage: Generate mixed spelling+grammar error training data."""
+    logger.info("=" * 60)
+    logger.info("STAGE: Generate Mixed (Spelling+Grammar) Training Data")
+    logger.info("=" * 60)
+
+    from ml.synthetic_data.generator import SyntheticDataGenerator
+
+    generator = SyntheticDataGenerator()
+    output_file = PROCESSED_DIR / "mixed_synthetic_seq2seq.jsonl"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    samples = generator.generate_mixed_training_pairs(
+        num_samples=target_samples,
+        output_file=output_file,
+    )
+
+    if not samples:
+        logger.error("No mixed samples generated.")
+        return False
+
+    logger.info(f"Mixed generation complete: {len(samples)} samples -> {output_file}")
+    return True
+
+
+def stage_process_gec() -> bool:
+    """Stage: Process GEC datasets (JFLEG, W&I+LOCNESS) into seq2seq format."""
+    logger.info("=" * 60)
+    logger.info("STAGE: Process GEC Datasets")
+    logger.info("=" * 60)
+
+    from ml.datasets.process_gec_datasets import process_gec_data
+
+    results = process_gec_data(
+        raw_dir=RAW_DIR,
+        output_dir=PROCESSED_DIR,
+    )
+    total = sum(results.values())
+
+    if total == 0:
+        logger.warning("No GEC datasets found. This is expected if JFLEG/W&I data hasn't been downloaded.")
+        logger.info("Grammar training will use synthetic data only.")
+        return True  # Not a failure — GEC data is optional
+
+    logger.info(f"GEC processing complete: {total} samples from {len(results)} sources")
+    return True
+
+
 def stage_process_seq2seq() -> bool:
     """Stage 2 (seq2seq): Process downloaded datasets into seq2seq training format."""
     logger.info("=" * 60)
@@ -261,10 +337,17 @@ def stage_process_seq2seq() -> bool:
     return True
 
 
-def stage_combine_seq2seq(target_total: int = 80000) -> bool:
-    """Stage 3 (seq2seq): Combine real and synthetic data into seq2seq train/val/test splits."""
+def stage_combine_seq2seq(target_total: int = 80000, include_grammar: bool = False) -> bool:
+    """Stage 3 (seq2seq): Combine real and synthetic data into seq2seq train/val/test splits.
+
+    Args:
+        target_total: Target total number of samples
+        include_grammar: Whether to include grammar data in the mix
+    """
     logger.info("=" * 60)
     logger.info("STAGE 3: Combine Datasets (seq2seq)")
+    if include_grammar:
+        logger.info("  (Including grammar data)")
     logger.info("=" * 60)
 
     from ml.datasets.combine_datasets import combine_and_split_seq2seq  # type: ignore[import-not-found]
@@ -332,12 +415,18 @@ def stage_evaluate_seq2seq() -> bool:
         logger.error(f"Seq2seq test data not found at {test_file}. Run --combine first.")
         return False
 
+    # Check for grammar/spelling-specific test files
+    spelling_test = DATA_DIR / "test_seq2seq_spelling.jsonl"
+    grammar_test = DATA_DIR / "test_seq2seq_grammar.jsonl"
+
     from ml.quick_correction.evaluate_seq2seq import evaluate_seq2seq_model
 
     results = evaluate_seq2seq_model(
         model_dir=SEQ2SEQ_MODEL_DIR,
         test_file=test_file,
         output_file=SEQ2SEQ_MODEL_DIR / "eval_report.json",
+        spelling_test_file=spelling_test if spelling_test.exists() else None,
+        grammar_test_file=grammar_test if grammar_test.exists() else None,
     )
 
     if not results:
@@ -394,6 +483,9 @@ Examples:
   # Run everything (seq2seq T5 model)
   python ml/quick_correction/train_pipeline.py --all --model-type seq2seq
 
+  # Run everything with grammar support (seq2seq + grammar errors)
+  python ml/quick_correction/train_pipeline.py --all --model-type seq2seq --grammar
+
   # Download and process only
   python ml/quick_correction/train_pipeline.py --download --process
 
@@ -423,6 +515,16 @@ Examples:
     stages.add_argument("--train", action="store_true", help="Train model")
     stages.add_argument("--evaluate", action="store_true", help="Evaluate model")
     stages.add_argument("--export", action="store_true", help="Export to ONNX")
+
+    # Grammar support
+    grammar = parser.add_argument_group("grammar")
+    grammar.add_argument(
+        "--grammar",
+        action="store_true",
+        help="Include grammar error data in training (seq2seq only). "
+             "Generates synthetic grammar errors, processes GEC datasets, "
+             "and mixes them with spelling data.",
+    )
 
     # Training parameters
     training = parser.add_argument_group("training parameters")
@@ -497,9 +599,16 @@ def main():
         args.export = True
 
     is_seq2seq = args.model_type == "seq2seq"
+    include_grammar = args.grammar
     model_type_label = "Seq2Seq (T5)" if is_seq2seq else "BIO (DistilBERT)"
 
+    if include_grammar and not is_seq2seq:
+        logger.warning("--grammar flag requires --model-type seq2seq. Ignoring grammar flag.")
+        include_grammar = False
+
     logger.info(f"Quick Correction Model Training Pipeline [{model_type_label}]")
+    if include_grammar:
+        logger.info("  Grammar support: ENABLED")
     logger.info(f"  Project root: {PROJECT_ROOT}")
     logger.info(f"  Raw data: {RAW_DIR}")
     logger.info(f"  Processed data: {PROCESSED_DIR}")
@@ -531,9 +640,29 @@ def main():
             _print_summary(stage_results)
             return
 
+    # Grammar-specific stages (run after process, before combine)
+    if include_grammar and (args.process or args.all):
+        # Generate synthetic grammar errors
+        success = stage_generate_grammar(target_samples=30000)
+        stage_results["generate_grammar"] = success
+
+        # Generate mixed spelling+grammar errors
+        success = stage_generate_mixed(target_samples=5000)
+        stage_results["generate_mixed"] = success
+
+        # Process real GEC datasets if available
+        success = stage_process_gec()
+        stage_results["process_gec"] = success
+
     if args.combine:
         if is_seq2seq:
-            success = stage_combine_seq2seq(target_total=args.target_samples)
+            target = args.target_samples
+            if include_grammar and target == 80000:
+                target = 110000  # Larger target when including grammar data
+            success = stage_combine_seq2seq(
+                target_total=target,
+                include_grammar=include_grammar,
+            )
         else:
             success = stage_combine(target_total=args.target_samples)
         stage_results["combine"] = success
@@ -546,10 +675,14 @@ def main():
         if is_seq2seq:
             # Use seq2seq defaults if user didn't override
             model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "t5-small"
-            lr = args.lr if args.lr != 2e-5 else 3e-4
+            # Use lower LR when grammar is included to avoid forgetting spelling
+            default_lr = 2e-4 if include_grammar else 3e-4
+            lr = args.lr if args.lr != 2e-5 else default_lr
+            # More epochs for grammar-augmented training
+            epochs = args.epochs if args.epochs != 5 else (8 if include_grammar else 5)
             success = stage_train_seq2seq(
                 model_name=model_name,
-                epochs=args.epochs,
+                epochs=epochs,
                 batch_size=args.batch_size,
                 learning_rate=lr,
                 patience=args.patience,

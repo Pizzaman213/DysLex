@@ -5,7 +5,7 @@ export interface Correction {
   id: string;
   original: string;
   suggested: string;
-  type: 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style';
+  type: 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style' | 'subject_verb' | 'article' | 'verb_tense' | 'function_word' | 'pronoun_case' | 'run_on';
   start: number;
   end: number;
   explanation?: string;

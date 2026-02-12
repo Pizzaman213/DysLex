@@ -1,0 +1,33 @@
+{
+  "description": "Article usage patterns for grammar error generation",
+  "common_nouns_needing_articles": [
+    "dog", "cat", "house", "car", "book", "table", "chair", "door", "window",
+    "phone", "computer", "school", "store", "park", "garden", "kitchen",
+    "bedroom", "bathroom", "office", "hospital", "library", "restaurant",
+    "teacher", "student", "doctor", "friend", "child", "baby", "man", "woman",
+    "boy", "girl", "ball", "game", "movie", "song", "letter", "message",
+    "picture", "problem", "question", "answer", "idea", "plan", "story",
+    "cup", "glass", "plate", "bottle", "box", "bag", "key", "clock",
+    "tree", "flower", "bird", "fish", "river", "mountain", "beach",
+    "bus", "train", "plane", "boat", "bridge", "road", "street"
+  ],
+  "an_words": {
+    "description": "Words requiring 'an' (vowel sound at start)",
+    "vowel_start": ["apple", "egg", "idea", "orange", "umbrella", "elephant",
+      "answer", "animal", "artist", "attempt", "event", "example", "exercise",
+      "eye", "island", "ocean", "office", "old", "only", "open", "important",
+      "interesting", "unusual", "ugly", "upset", "uncle", "aunt", "inch",
+      "opportunity", "opinion", "afternoon", "evening", "accident", "adventure",
+      "airplane", "apartment", "argument", "article", "assignment", "audience",
+      "enemy", "engine", "envelope", "essay", "issue", "item", "offer",
+      "operation", "opposite", "ordinary", "oven", "owner", "ugly"],
+    "silent_h": ["hour", "honest", "honor", "heir", "herb", "homage"]
+  },
+  "a_exceptions": {
+    "description": "Words starting with vowel letter but consonant sound (need 'a' not 'an')",
+    "words": ["university", "uniform", "union", "unique", "unit", "united",
+      "universal", "universe", "unicorn", "uranium", "usage", "use", "used",
+      "useful", "user", "usual", "usually", "utility", "one", "once",
+      "european", "eulogy"]
+  }
+}

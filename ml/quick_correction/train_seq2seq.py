@@ -34,8 +34,8 @@ MODEL_NAME = "t5-small"
 MAX_INPUT_LENGTH = 128
 MAX_TARGET_LENGTH = 128
 BATCH_SIZE = 32
-LEARNING_RATE = 3e-4
-EPOCHS = 5
+LEARNING_RATE = 2e-4  # Lower LR for combined spelling+grammar training
+EPOCHS = 8  # More epochs for grammar-augmented data variety
 OUTPUT_DIR = Path(__file__).parent / "models" / "quick_correction_seq2seq_v1"
 
 

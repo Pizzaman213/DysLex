@@ -85,6 +85,13 @@ export function VisionCapturePanel({ onCapture, isProcessing, onCancel }: Vision
     };
   }, [stopCamera, previewUrl]);
 
+  // Attach stream to video element once the camera step renders
+  useEffect(() => {
+    if (step === 'camera' && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [step]);
+
   const startCamera = useCallback(async () => {
     setError(null);
     try {
@@ -92,9 +99,7 @@ export function VisionCapturePanel({ onCapture, isProcessing, onCancel }: Vision
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      // Set step first so <video> mounts, then the effect above attaches the stream
       setStep('camera');
     } catch {
       setError('Could not access camera. Try uploading a file instead.');

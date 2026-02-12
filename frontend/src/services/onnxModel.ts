@@ -17,6 +17,7 @@ import {
   suggestCorrection,
   phoneticCorrection,
   isKnownWord,
+  isSymSpellReady,
 } from './symspellService';
 
 export type SpellingErrorType =
@@ -25,7 +26,14 @@ export type SpellingErrorType =
   | 'transposition'   // swapped letters: "teh" → "the"
   | 'substitution'    // wrong letter: "hallo" → "hello"
   | 'phonetic'        // sound-alike: "fone" → "phone"
-  | 'spelling';       // generic fallback
+  | 'spelling'        // generic fallback
+  | 'subject_verb'    // "he go" → "he goes"
+  | 'article'         // "I have cat" → "I have a cat"
+  | 'verb_tense'      // "walked and talk" → "walked and talked"
+  | 'function_word'   // "went the store" → "went to the store"
+  | 'pronoun_case'    // "him went" → "he went"
+  | 'run_on'          // "I ran home I was tired" → "I ran home. I was tired."
+  | 'grammar';        // generic grammar fallback
 
 export interface LocalCorrection {
   original: string;
@@ -115,6 +123,11 @@ export async function loadModel(): Promise<void> {
       console.warn('[ONNX] Failed to load seq2seq pipeline:', pipelineErr);
       state.error = 'Seq2seq pipeline not available — using dictionary-only mode';
     }
+    console.log('[ONNX] Ready — pipeline:%s dict:%d symspell:%s',
+      state.pipeline ? 'seq2seq' : 'dictionary-only',
+      Object.keys(state.baseDictionary).length,
+      isSymSpellReady() ? 'yes' : 'no'
+    );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.warn('[ONNX] Failed to load model:', errorMessage);
@@ -146,15 +159,64 @@ export function getDictionarySize(): { base: number; user: number; total: number
 }
 
 /**
- * Classify the type of spelling error by analyzing edit operations
- * between the original word and its correction.
- * Connor Secrist — Feb 8 2026
+ * Common verb conjugation pairs for grammar classification.
+ */
+const VERB_CONJUGATIONS: Record<string, string> = {
+  go: 'goes', goes: 'go', do: 'does', does: 'do', have: 'has', has: 'have',
+  run: 'runs', runs: 'run', come: 'comes', comes: 'come', make: 'makes',
+  makes: 'make', take: 'takes', takes: 'take', say: 'says', says: 'say',
+  get: 'gets', gets: 'get', give: 'gives', gives: 'give', know: 'knows',
+  knows: 'know', think: 'thinks', thinks: 'think', want: 'wants', wants: 'want',
+  need: 'needs', needs: 'need', like: 'likes', likes: 'like', see: 'sees',
+  sees: 'see', look: 'looks', looks: 'look', seem: 'seems', seems: 'seem',
+  feel: 'feels', feels: 'feel', walk: 'walks', walks: 'walk', talk: 'talks',
+  talks: 'talk', work: 'works', works: 'work', eat: 'eats', eats: 'eat',
+  write: 'writes', writes: 'write',
+};
+
+/**
+ * Pronoun case forms for grammar classification.
+ */
+const PRONOUN_FORMS: Record<string, string> = {
+  i: 'me', me: 'i', he: 'him', him: 'he', she: 'her', her: 'she',
+  we: 'us', us: 'we', they: 'them', them: 'they',
+};
+
+/**
+ * Classify the type of error by analyzing edit operations
+ * between the original and corrected text.
+ * Handles both spelling and grammar error types.
+ * Connor Secrist — Feb 8 2026, updated for grammar support
  */
 function classifyError(original: string, corrected: string): SpellingErrorType {
   const a = original.toLowerCase();
   const b = corrected.toLowerCase();
 
   if (a === b) return 'spelling';
+
+  // --- Grammar classification (word-level changes) ---
+
+  // Check for verb conjugation change (subject-verb agreement)
+  if (VERB_CONJUGATIONS[a] === b) {
+    return 'subject_verb';
+  }
+
+  // Check for pronoun case change
+  if (PRONOUN_FORMS[a] === b) {
+    return 'pronoun_case';
+  }
+
+  // Check for verb tense change (e.g., "walk" vs "walked", irregular pairs)
+  if ((a.endsWith('ed') && !b.endsWith('ed')) || (!a.endsWith('ed') && b.endsWith('ed'))) {
+    // Check if it's a regular tense change
+    const baseA = a.replace(/ed$/, '');
+    const baseB = b.replace(/ed$/, '');
+    if (baseA === b || baseB === a || baseA === baseB) {
+      return 'verb_tense';
+    }
+  }
+
+  // --- Spelling classification (character-level changes) ---
 
   // Transposition: same letters, two adjacent ones swapped
   if (a.length === b.length) {
@@ -215,6 +277,48 @@ function classifyError(original: string, corrected: string): SpellingErrorType {
   }
 
   return 'spelling';
+}
+
+/**
+ * Classify error type when grammar corrections change word count.
+ * Used by the LCS-based diff when insertions/deletions are detected.
+ */
+function classifyGrammarDiffType(
+  inputWords: string[],
+  outputWords: string[],
+  inputStart: number,
+  inputEnd: number,
+  outputStart: number,
+  outputEnd: number,
+): SpellingErrorType {
+  const removed = inputWords.slice(inputStart, inputEnd).map(w => w.toLowerCase().replace(/[^\w]/g, ''));
+  const added = outputWords.slice(outputStart, outputEnd).map(w => w.toLowerCase().replace(/[^\w]/g, ''));
+
+  // Insertion: model added words that weren't in input
+  if (removed.length === 0 && added.length > 0) {
+    if (added.some(w => ['a', 'an', 'the'].includes(w))) return 'article';
+    if (added.some(w => ['to', 'in', 'on', 'at', 'for', 'with', 'of', 'from'].includes(w))) return 'function_word';
+    return 'grammar';
+  }
+
+  // Deletion: model removed words
+  if (removed.length > 0 && added.length === 0) {
+    return 'grammar';
+  }
+
+  // Substitution with word count change
+  if (removed.length === 1 && added.length === 1) {
+    return classifyError(removed[0], added[0]);
+  }
+
+  // Punctuation added (run-on fix): "home I" -> "home. I"
+  const addedStr = added.join(' ');
+  const removedStr = removed.join(' ');
+  if (addedStr.replace(/[.!?]/g, '') === removedStr.replace(/[.!?]/g, '')) {
+    return 'run_on';
+  }
+
+  return 'grammar';
 }
 
 /**
@@ -346,71 +450,215 @@ function levenshteinSimilarity(a: string, b: string): number {
 }
 
 /**
+ * Compute Longest Common Subsequence table for word-level alignment.
+ * Returns the LCS length matrix.
+ */
+function computeLCS(a: string[], b: string[]): number[][] {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  return dp;
+}
+
+/**
+ * Backtrack through LCS matrix to produce an alignment.
+ * Returns list of operations: 'match', 'substitute', 'insert', 'delete'.
+ */
+interface AlignOp {
+  type: 'match' | 'substitute' | 'insert' | 'delete';
+  inputIdx?: number;   // index in input words (for match/substitute/delete)
+  outputIdx?: number;  // index in output words (for match/substitute/insert)
+}
+
+function backtrackLCS(dp: number[][], a: string[], b: string[]): AlignOp[] {
+  const ops: AlignOp[] = [];
+  let i = a.length;
+  let j = b.length;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      ops.push({ type: 'match', inputIdx: i - 1, outputIdx: j - 1 });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: 'insert', outputIdx: j - 1 });
+      j--;
+    } else if (i > 0) {
+      ops.push({ type: 'delete', inputIdx: i - 1 });
+      i--;
+    }
+  }
+
+  return ops.reverse();
+}
+
+/**
+ * Build a character offset map from input text to input words.
+ */
+function buildWordOffsets(text: string): number[] {
+  const offsets: number[] = [];
+  const parts = text.split(/(\s+)/);
+  let charOffset = 0;
+  for (const part of parts) {
+    if (/^\s+$/.test(part)) {
+      charOffset += part.length;
+    } else {
+      offsets.push(charOffset);
+      charOffset += part.length;
+    }
+  }
+  return offsets;
+}
+
+/**
  * Convert diffs between input text and model-generated text into LocalCorrection[].
  *
- * Word-level diff: for each word that differs between input and output,
- * if the words are similar enough (>0.3 similarity), treat it as a targeted
- * spelling correction. Complete rewrites (low similarity) are skipped.
+ * Uses LCS-based alignment to handle grammar corrections that change word count
+ * (article insertions, function word additions, run-on fixes, etc.).
+ *
+ * Fast path: when word counts match, uses simple word-by-word comparison
+ * (common case for spelling-only corrections).
  */
 function diffToCorrections(inputText: string, generatedText: string): LocalCorrection[] {
   const corrections: LocalCorrection[] = [];
 
   const inputWords = inputText.split(/\s+/).filter(Boolean);
   const outputWords = generatedText.split(/\s+/).filter(Boolean);
+  const wordOffsets = buildWordOffsets(inputText);
 
-  // Simple word-by-word alignment when lengths match or are close
-  // For more complex diffs we could use the full LCS-based diffEngine,
-  // but for spelling correction the model rarely changes word count.
-  const minLen = Math.min(inputWords.length, outputWords.length);
+  // Fast path: same word count — simple 1:1 comparison
+  if (inputWords.length === outputWords.length) {
+    for (let i = 0; i < inputWords.length; i++) {
+      const inputWord = inputWords[i];
+      const outputWord = outputWords[i];
 
-  // Build character offset map for input words
-  let charOffset = 0;
-  const wordOffsets: number[] = [];
-  const parts = inputText.split(/(\s+)/);
-  let wordIdx = 0;
-  for (const part of parts) {
-    if (/^\s+$/.test(part)) {
-      charOffset += part.length;
-    } else {
-      wordOffsets[wordIdx] = charOffset;
-      charOffset += part.length;
-      wordIdx++;
+      if (inputWord === outputWord) continue;
+
+      const inputCore = inputWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+      const outputCore = outputWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+
+      if (!inputCore || !outputCore) continue;
+      if (inputCore.toLowerCase() === outputCore.toLowerCase()) continue;
+
+      const similarity = levenshteinSimilarity(inputCore.toLowerCase(), outputCore.toLowerCase());
+      if (similarity <= 0.3) continue;
+      if (personalDictionary.has(inputCore.toLowerCase())) continue;
+
+      const start = wordOffsets[i] ?? 0;
+      const end = start + inputWord.length;
+
+      corrections.push({
+        original: inputWord,
+        correction: outputWord,
+        position: { start, end },
+        confidence: similarity,
+        errorType: classifyError(inputCore, outputCore),
+      });
     }
+    return corrections;
   }
 
-  for (let i = 0; i < minLen; i++) {
-    const inputWord = inputWords[i];
-    const outputWord = outputWords[i];
+  // LCS-based alignment for word count changes (grammar corrections)
+  const dp = computeLCS(inputWords, outputWords);
+  const ops = backtrackLCS(dp, inputWords, outputWords);
 
-    if (inputWord === outputWord) continue;
+  // Group consecutive non-match operations into correction spans
+  let i = 0;
+  while (i < ops.length) {
+    const op = ops[i];
 
-    // Strip punctuation for comparison
-    const inputCore = inputWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
-    const outputCore = outputWord.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+    if (op.type === 'match') {
+      i++;
+      continue;
+    }
 
-    if (!inputCore || !outputCore) continue;
-    if (inputCore.toLowerCase() === outputCore.toLowerCase()) continue;
+    // Collect a contiguous span of non-match operations
+    const spanStart = i;
+    while (i < ops.length && ops[i].type !== 'match') {
+      i++;
+    }
 
-    const similarity = levenshteinSimilarity(
-      inputCore.toLowerCase(),
-      outputCore.toLowerCase()
-    );
+    // Extract the input and output ranges for this span
+    const spanOps = ops.slice(spanStart, i);
+    const inputIndices = spanOps.filter(o => o.inputIdx !== undefined).map(o => o.inputIdx!);
+    const outputIndices = spanOps.filter(o => o.outputIdx !== undefined).map(o => o.outputIdx!);
 
-    // Only include changes where similarity > 0.3 (skip complete rewrites)
-    if (similarity <= 0.3) continue;
+    if (inputIndices.length === 0 && outputIndices.length === 0) continue;
 
-    // Skip if the word is in the personal dictionary
-    if (personalDictionary.has(inputCore.toLowerCase())) continue;
+    const inputSpanWords = inputIndices.map(idx => inputWords[idx]);
+    const outputSpanWords = outputIndices.map(idx => outputWords[idx]);
 
-    const start = wordOffsets[i] ?? 0;
-    const end = start + inputWord.length;
+    const originalText = inputSpanWords.join(' ');
+    const correctedText = outputSpanWords.join(' ');
+
+    if (!originalText && !correctedText) continue;
+
+    // For pure insertions (model added words), we anchor to the word before
+    let start: number;
+    let end: number;
+
+    if (inputIndices.length > 0) {
+      start = wordOffsets[inputIndices[0]] ?? 0;
+      const lastIdx = inputIndices[inputIndices.length - 1];
+      end = (wordOffsets[lastIdx] ?? 0) + inputWords[lastIdx].length;
+    } else {
+      // Pure insertion: find the position between surrounding words
+      const prevMatchIdx = spanStart > 0 ? ops[spanStart - 1].inputIdx : undefined;
+      if (prevMatchIdx !== undefined) {
+        start = (wordOffsets[prevMatchIdx] ?? 0) + inputWords[prevMatchIdx].length;
+        end = start;
+      } else {
+        start = 0;
+        end = 0;
+      }
+    }
+
+    // Skip corrections on words in the personal dictionary
+    if (inputSpanWords.some(w => personalDictionary.has(w.toLowerCase().replace(/[^\w]/g, '')))) {
+      continue;
+    }
+
+    // Determine error type
+    let errorType: SpellingErrorType;
+    if (inputIndices.length === 1 && outputIndices.length === 1) {
+      // 1:1 substitution — use character-level classification
+      const inCore = inputSpanWords[0].replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+      const outCore = outputSpanWords[0].replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+      const similarity = levenshteinSimilarity(inCore.toLowerCase(), outCore.toLowerCase());
+      if (similarity <= 0.3) continue;
+      errorType = classifyError(inCore, outCore);
+    } else {
+      // Multi-word change — use grammar-aware classification
+      errorType = classifyGrammarDiffType(
+        inputWords, outputWords,
+        inputIndices.length > 0 ? inputIndices[0] : 0,
+        inputIndices.length > 0 ? inputIndices[inputIndices.length - 1] + 1 : 0,
+        outputIndices.length > 0 ? outputIndices[0] : 0,
+        outputIndices.length > 0 ? outputIndices[outputIndices.length - 1] + 1 : 0,
+      );
+    }
+
+    // For insertions, the "original" is empty and "correction" is the inserted word(s)
+    // We construct the correction to show the full replacement in context
+    const original = originalText || '';
+    const correction = correctedText || '';
 
     corrections.push({
-      original: inputWord,
-      correction: outputWord,
+      original: original || '(missing)',
+      correction,
       position: { start, end },
-      confidence: similarity,
-      errorType: classifyError(inputCore, outputCore),
+      confidence: inputIndices.length === 0 ? 0.85 : 0.8,
+      errorType,
     });
   }
 

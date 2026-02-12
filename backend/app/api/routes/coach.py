@@ -45,11 +45,16 @@ async def coach_chat(
         body.corrections_context.model_dump() if body.corrections_context else None
     )
 
+    mind_map_ctx = (
+        body.mind_map_context.model_dump() if body.mind_map_context else None
+    )
+
     system_prompt = build_coach_system_prompt(
         llm_context=llm_context,
         writing_context=body.writing_context,
         session_stats=body.session_stats,
         corrections_context=corrections_ctx,
+        mind_map_context=mind_map_ctx,
     )
 
     has_focused = (

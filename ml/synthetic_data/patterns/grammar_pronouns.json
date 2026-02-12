@@ -1,0 +1,36 @@
+{
+  "description": "Pronoun case forms for grammar error generation",
+  "case_forms": {
+    "description": "Subject (nominative) vs object (accusative) pronoun pairs",
+    "pairs": [
+      {"subject": "I", "object": "me"},
+      {"subject": "he", "object": "him"},
+      {"subject": "she", "object": "her"},
+      {"subject": "we", "object": "us"},
+      {"subject": "they", "object": "them"},
+      {"subject": "who", "object": "whom"}
+    ]
+  },
+  "subject_position_cues": {
+    "description": "Contexts where subject form is required (before a verb)",
+    "verbs_after": ["go", "goes", "went", "going", "do", "does", "did", "doing",
+      "have", "has", "had", "having", "make", "makes", "made", "making",
+      "take", "takes", "took", "taking", "come", "comes", "came", "coming",
+      "see", "sees", "saw", "seeing", "know", "knows", "knew", "knowing",
+      "think", "thinks", "thought", "thinking", "want", "wants", "wanted",
+      "need", "needs", "needed", "like", "likes", "liked", "get", "gets",
+      "got", "getting", "run", "runs", "ran", "running", "walk", "walks",
+      "walked", "walking", "eat", "eats", "ate", "eating", "will", "would",
+      "can", "could", "shall", "should", "may", "might", "must"]
+  },
+  "object_position_cues": {
+    "description": "Contexts where object form is required (after a verb or preposition)",
+    "verbs_before": ["told", "tell", "tells", "gave", "give", "gives", "asked",
+      "ask", "asks", "showed", "show", "shows", "helped", "help", "helps",
+      "called", "call", "calls", "saw", "see", "sees", "met", "meet",
+      "meets", "love", "loves", "loved", "like", "likes", "liked",
+      "want", "wants", "wanted", "need", "needs", "needed"],
+    "prepositions_before": ["to", "for", "with", "from", "about", "between",
+      "without", "after", "before", "behind", "beside", "near", "against"]
+  }
+}

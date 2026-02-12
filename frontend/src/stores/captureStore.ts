@@ -40,6 +40,8 @@ interface TransientCaptureData {
   lastExtractedOffset: number;
   isIncrementalExtracting: boolean;
   brainstormActive: boolean;
+  showVisionCapture: boolean;
+  isVisionProcessing: boolean;
 }
 
 interface CaptureState {
@@ -61,6 +63,10 @@ interface CaptureState {
   brainstormActive: boolean;
   /** Whether AI auto-probes after pauses (persisted preference) */
   brainstormAutoProbe: boolean;
+  /** Whether VisionCapturePanel is visible (transient) */
+  showVisionCapture: boolean;
+  /** Whether vision image extraction is in progress (transient) */
+  isVisionProcessing: boolean;
 
   // Per-document storage
   sessions: Record<string, DocumentCaptureData>;
@@ -92,6 +98,10 @@ interface CaptureState {
   setBrainstormActive: (active: boolean) => void;
   setBrainstormAutoProbe: (enabled: boolean) => void;
 
+  // Vision actions
+  setShowVisionCapture: (show: boolean) => void;
+  setIsVisionProcessing: (processing: boolean) => void;
+
   // Per-document
   setActiveDocument: (docId: string) => void;
   deleteDocumentSession: (docId: string) => void;
@@ -111,6 +121,8 @@ const initialState = {
   isIncrementalExtracting: false,
   brainstormActive: false,
   brainstormAutoProbe: true,
+  showVisionCapture: false,
+  isVisionProcessing: false,
 };
 
 function emptyDocumentData(): DocumentCaptureData {
@@ -131,6 +143,8 @@ function emptyTransientData(): TransientCaptureData {
     lastExtractedOffset: 0,
     isIncrementalExtracting: false,
     brainstormActive: false,
+    showVisionCapture: false,
+    isVisionProcessing: false,
   };
 }
 
@@ -259,6 +273,10 @@ export const useCaptureStore = create<CaptureState>()(
       setBrainstormActive: (active) => set({ brainstormActive: active }),
       setBrainstormAutoProbe: (enabled) => set({ brainstormAutoProbe: enabled }),
 
+      // Vision actions
+      setShowVisionCapture: (show) => set({ showVisionCapture: show }),
+      setIsVisionProcessing: (processing) => set({ isVisionProcessing: processing }),
+
       setActiveDocument: (docId: string) => {
         const state = get();
         const oldDocId = state._activeDocumentId;
@@ -284,6 +302,8 @@ export const useCaptureStore = create<CaptureState>()(
             lastExtractedOffset: state.lastExtractedOffset,
             isIncrementalExtracting: state.isIncrementalExtracting,
             brainstormActive: state.brainstormActive,
+            showVisionCapture: state.showVisionCapture,
+            isVisionProcessing: state.isVisionProcessing,
           };
         }
 
@@ -311,6 +331,8 @@ export const useCaptureStore = create<CaptureState>()(
           lastExtractedOffset: transientData.lastExtractedOffset,
           isIncrementalExtracting: transientData.isIncrementalExtracting,
           brainstormActive: transientData.brainstormActive,
+          showVisionCapture: transientData.showVisionCapture,
+          isVisionProcessing: transientData.isVisionProcessing,
         });
       },
 

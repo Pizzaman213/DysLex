@@ -28,7 +28,7 @@ describe('formatStore', () => {
     const issues: FormatIssue[] = [
       {
         id: 'i1', ruleId: 'r1', label: 'Font size',
-        category: 'formatting', severity: 'error',
+        category: 'font', severity: 'error',
         description: 'Wrong font size', currentValue: '11pt',
         expectedValue: '12pt', canAutoFix: true,
       },
@@ -61,13 +61,13 @@ describe('formatStore', () => {
     const issues: FormatIssue[] = [
       {
         id: 'i1', ruleId: 'r1', label: 'Margins',
-        category: 'formatting', severity: 'warning',
+        category: 'font', severity: 'warning',
         description: 'Margins too narrow', currentValue: '0.5in',
         expectedValue: '1in', canAutoFix: true,
       },
       {
         id: 'i2', ruleId: 'r2', label: 'Spacing',
-        category: 'formatting', severity: 'error',
+        category: 'font', severity: 'error',
         description: 'Wrong spacing', currentValue: '1.0',
         expectedValue: '2.0', canAutoFix: true,
       },
@@ -80,13 +80,13 @@ describe('formatStore', () => {
     const issues: FormatIssue[] = [
       {
         id: 'i1', ruleId: 'r1', label: 'A',
-        category: 'formatting', severity: 'warning',
+        category: 'font', severity: 'warning',
         description: '', currentValue: '', expectedValue: '',
         canAutoFix: false,
       },
       {
         id: 'i2', ruleId: 'r2', label: 'B',
-        category: 'formatting', severity: 'error',
+        category: 'font', severity: 'error',
         description: '', currentValue: '', expectedValue: '',
         canAutoFix: false,
       },

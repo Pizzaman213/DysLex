@@ -126,6 +126,9 @@ export function DraftMode() {
               explanation: c.explanation,
             });
           });
+          if (results.length > 0 && mapped.length === 0) {
+            console.warn('[DraftMode] All %d corrections lost during position mapping', results.length);
+          }
           setCorrections(mapped);
         } catch (err) {
           console.warn('[DraftMode] Correction failed:', err);

@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import { useCoachStore } from '../stores/coachStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useEditorStore, Correction } from '../stores/editorStore';
+import { useMindMapStore } from '../stores/mindMapStore';
 
 export function useCoachChat(editor: Editor | null) {
   const { addMessage, setLoading } = useCoachStore();
@@ -53,7 +54,36 @@ export function useCoachChat(editor: Editor | null) {
             }
           : undefined;
 
-        const response = await api.coachChat(text, writingContext, sessionStats, correctionsContext);
+        // Gather mind map context
+        const mindMapState = useMindMapStore.getState();
+        const { nodes, edges, clusterNames } = mindMapState;
+        const rootNode = nodes.find((n) => n.id === 'root');
+        const nonRootNodes = nodes.filter((n) => n.id !== 'root');
+
+        const mindMapContext = nonRootNodes.length > 0
+          ? {
+              central_idea: rootNode?.data.title || null,
+              ideas: nonRootNodes.slice(0, 20).map((n) => ({
+                title: n.data.title,
+                body: n.data.body || null,
+                theme: clusterNames[n.data.cluster] || null,
+              })),
+              connections: edges.slice(0, 15).map((e) => {
+                const sourceNode = nodes.find((n) => n.id === e.source);
+                const targetNode = nodes.find((n) => n.id === e.target);
+                return {
+                  from_idea: sourceNode?.data.title || e.source,
+                  to_idea: targetNode?.data.title || e.target,
+                  relationship: e.data?.relationship || null,
+                };
+              }),
+              themes: Object.values(clusterNames).filter(
+                (name) => !name.startsWith('Cluster ')
+              ),
+            }
+          : undefined;
+
+        const response = await api.coachChat(text, writingContext, sessionStats, correctionsContext, mindMapContext);
         const reply = response.data?.reply || "I'm here to help! Tell me more about what you're working on.";
         addMessage('coach', reply);
       } catch {

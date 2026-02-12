@@ -35,6 +35,48 @@
       "name": "Word Confusion",
       "description": "Mixing up homophones and similar words",
       "examples": ["their/there/they're", "your/you're", "its/it's"]
+    },
+    {
+      "id": "subject_verb",
+      "name": "Subject-Verb Agreement",
+      "description": "Mismatch between subject and verb form",
+      "examples": ["he go/he goes", "they goes/they go"]
+    },
+    {
+      "id": "article",
+      "name": "Article Errors",
+      "description": "Missing, extra, or wrong article (a/an/the)",
+      "examples": ["I have cat/I have a cat", "a apple/an apple"]
+    },
+    {
+      "id": "verb_tense",
+      "name": "Verb Tense Errors",
+      "description": "Inconsistent or incorrect verb tense",
+      "examples": ["I walked and talk/I walked and talked"]
+    },
+    {
+      "id": "function_word",
+      "name": "Function Word Omission",
+      "description": "Missing prepositions or conjunctions",
+      "examples": ["went the store/went to the store"]
+    },
+    {
+      "id": "word_order",
+      "name": "Word Order Errors",
+      "description": "Words in the wrong sequence",
+      "examples": ["I always am late/I am always late"]
+    },
+    {
+      "id": "run_on",
+      "name": "Run-On Sentences",
+      "description": "Two sentences joined without proper punctuation",
+      "examples": ["I ran home I was tired/I ran home. I was tired."]
+    },
+    {
+      "id": "pronoun_case",
+      "name": "Pronoun Case Errors",
+      "description": "Wrong pronoun form (subject vs object)",
+      "examples": ["him went/he went", "give it to I/give it to me"]
     }
   ]
 }

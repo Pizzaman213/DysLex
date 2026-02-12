@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { setAuthToken, getAuthToken, api } from '../api';
 import { ApiError } from '../apiErrors';
-import { apiRequestManager } from '../apiRequestManager';
+import { ApiRequestManager } from '../apiRequestManager';
 
 describe('API Service', () => {
   beforeEach(() => {
@@ -75,20 +75,20 @@ describe('API Service', () => {
 
   describe('Request Cancellation', () => {
     it('cancels in-flight request', () => {
-      const manager = new apiRequestManager.constructor();
-      const signal = (manager as typeof apiRequestManager).startRequest('test');
+      const manager = new ApiRequestManager();
+      const signal = manager.startRequest('test');
 
-      (manager as typeof apiRequestManager).cancelRequest('test');
+      manager.cancelRequest('test');
 
       expect(signal.aborted).toBe(true);
     });
 
     it('cancels all requests', () => {
-      const manager = new apiRequestManager.constructor();
-      const signal1 = (manager as typeof apiRequestManager).startRequest('test1');
-      const signal2 = (manager as typeof apiRequestManager).startRequest('test2');
+      const manager = new ApiRequestManager();
+      const signal1 = manager.startRequest('test1');
+      const signal2 = manager.startRequest('test2');
 
-      (manager as typeof apiRequestManager).cancelAll();
+      manager.cancelAll();
 
       expect(signal1.aborted).toBe(true);
       expect(signal2.aborted).toBe(true);

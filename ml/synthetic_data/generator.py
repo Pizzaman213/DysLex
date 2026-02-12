@@ -283,6 +283,74 @@ class SyntheticDataGenerator:
         return samples
 
 
+    def generate_mixed_training_pairs(
+        self,
+        corpus: list[str] | None = None,
+        num_samples: int = 5000,
+        output_file: Path | None = None,
+    ) -> list[dict[str, str]]:
+        """Generate samples with both spelling AND grammar errors in the same sentence.
+
+        Applies a spelling error from this generator and a grammar error from
+        GrammarErrorGenerator to the same sentence (~5% of combined training data).
+
+        Args:
+            corpus: List of clean sentences
+            num_samples: Number of combined-error samples
+            output_file: Optional path to save JSONL output
+
+        Returns:
+            List of training samples in seq2seq format
+        """
+        from ml.synthetic_data.grammar_generator import GrammarErrorGenerator
+
+        grammar_gen = GrammarErrorGenerator(self.patterns_dir)
+
+        if corpus is None:
+            corpus_file = Path(__file__).parent.parent / "datasets" / "corpus" / "sentences.txt"
+            if corpus_file.exists():
+                with open(corpus_file) as f:
+                    corpus = [line.strip() for line in f if line.strip()]
+            else:
+                corpus = SAMPLE_SENTENCES
+
+        samples: list[dict[str, str]] = []
+
+        for i in range(num_samples):
+            sentence = random.choice(corpus)
+
+            # Apply grammar error first
+            error_text, clean_text, grammar_type = grammar_gen.generate_grammar_error(
+                sentence, corpus
+            )
+            if grammar_type is None:
+                continue
+
+            # Apply spelling error on top of the grammar-errored text
+            spelling_error_text, corrections = self.apply_error_patterns(error_text)
+            if not corrections:
+                continue
+
+            samples.append({
+                "input_text": f"correct: {spelling_error_text}",
+                "target_text": clean_text,
+                "error_type": f"mixed_{grammar_type}",
+                "source": "synthetic_mixed",
+            })
+
+            if (i + 1) % 1000 == 0:
+                print(f"Generated {i + 1}/{num_samples} mixed samples...")
+
+        if output_file:
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_file, "w") as f:
+                for sample in samples:
+                    f.write(json.dumps(sample) + "\n")
+            print(f"Saved {len(samples)} mixed samples to {output_file}")
+
+        return samples
+
+
 def main():
     """Generate training data for Quick Correction Model."""
     generator = SyntheticDataGenerator()

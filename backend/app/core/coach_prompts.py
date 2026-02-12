@@ -8,6 +8,7 @@ def build_coach_system_prompt(
     writing_context: str | None = None,
     session_stats: dict | None = None,
     corrections_context: dict | None = None,
+    mind_map_context: dict | None = None,
 ) -> str:
     """Build the system prompt for the AI writing coach.
 
@@ -115,5 +116,55 @@ def build_coach_system_prompt(
         parts.append("CURRENT DOCUMENT (truncated):")
         parts.append(f'"""{truncated}"""')
         parts.append("")
+
+    # Inject mind map context (brainstormed ideas)
+    if mind_map_context:
+        central = mind_map_context.get("central_idea")
+        ideas: list[dict] = mind_map_context.get("ideas", [])
+        connections: list[dict] = mind_map_context.get("connections", [])
+        themes: list[str] = mind_map_context.get("themes", [])
+
+        if central or ideas:
+            parts.append("MIND MAP (writer's brainstormed ideas):")
+
+            if central:
+                parts.append(f"  Central idea / thesis: {central}")
+
+            # Group ideas by theme, limit to 20
+            if ideas:
+                by_theme: dict[str, list[dict]] = {}
+                for idea in ideas[:20]:
+                    theme = idea.get("theme") or "Ungrouped"
+                    by_theme.setdefault(theme, []).append(idea)
+
+                for theme, theme_ideas in by_theme.items():
+                    parts.append(f"  [{theme}]")
+                    for idea in theme_ideas:
+                        body = idea.get("body")
+                        if body:
+                            parts.append(f"    - {idea['title']}: {body[:80]}")
+                        else:
+                            parts.append(f"    - {idea['title']}")
+
+            # Show connections, limit to 15
+            if connections:
+                parts.append("  Connections:")
+                for conn in connections[:15]:
+                    rel = conn.get("relationship")
+                    if rel:
+                        parts.append(
+                            f"    - {conn['from_idea']} --[{rel}]--> {conn['to_idea']}"
+                        )
+                    else:
+                        parts.append(
+                            f"    - {conn['from_idea']} --> {conn['to_idea']}"
+                        )
+
+            parts.append("")
+            parts.append(
+                "Reference the writer's own brainstormed ideas by name when relevant. "
+                "If they seem stuck, suggest which idea from their mind map they could develop next."
+            )
+            parts.append("")
 
     return "\n".join(parts)

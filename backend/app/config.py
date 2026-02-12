@@ -39,8 +39,15 @@ class Settings(BaseSettings):
     nvidia_nim_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b"
     nvidia_nim_vision_model: str = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
 
+    # Speech-to-Text provider: "faster-whisper" (default) or "nvidia"
+    stt_provider: str = "faster-whisper"
+
     # Transcription (local faster-whisper for desktop; not used when browser handles STT)
     transcription_url: str = "http://localhost:8786/v1"
+
+    # NVIDIA ASR NIM (cloud or self-hosted)
+    nvidia_nim_stt_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_nim_stt_model: str = "nvidia/parakeet-ctc-0.6b-asr"
 
     # WebAuthn / Passkeys
     webauthn_rp_id: str = "localhost"

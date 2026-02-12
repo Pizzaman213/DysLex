@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import { useMindMapStore } from '../../../stores/mindMapStore';
-import { VisionCapturePanel } from './VisionCapturePanel';
+import { VisionCapturePanel } from '../../Shared/VisionCapturePanel';
 
 interface MindMapToolbarProps {
   onBuildScaffold: () => void;

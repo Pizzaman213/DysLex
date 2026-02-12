@@ -205,6 +205,13 @@ export async function initSymSpell(): Promise<void> {
 }
 
 /**
+ * Check if SymSpell has been initialized successfully.
+ */
+export function isSymSpellReady(): boolean {
+  return initialized;
+}
+
+/**
  * Check if a word is a known valid English word.
  */
 export function isKnownWord(word: string): boolean {

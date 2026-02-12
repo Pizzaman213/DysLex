@@ -38,7 +38,7 @@ const createMockEditor = () => ({
   state: {
     selection: { from: 50, to: 50 },
     doc: {
-      resolve: (pos: number) => ({
+      resolve: (_pos: number) => ({
         parent: { content: { size: 100 } },
         start: () => 0,
       }),

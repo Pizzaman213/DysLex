@@ -8,13 +8,15 @@ checking, colored log output, health monitoring, and graceful shutdown.
 
 Usage:
     python run.py                    # Development mode (backend + frontend)
+    python run.py --auto-setup       # Install prerequisites + start everything
+    python run.py --auto-setup -y    # Same, skip confirmation prompts
     python run.py --host 0.0.0.0     # Network accessible (other devices can connect)
     python run.py --docker           # Docker Compose mode
     python run.py --backend-only     # Backend only
     python run.py --frontend-only    # Frontend only
     python run.py --check-only       # Run checks without starting services
 
-Requirements:
+Requirements (auto-installed with --auto-setup):
     - Python 3.11+
     - Node.js 20+
     - PostgreSQL 15+ (localhost:5432)
@@ -112,6 +114,551 @@ class CheckSkipped(Exception):
 
 
 # ============================================================================
+# PackageInstaller
+# ============================================================================
+
+class PackageInstaller:
+    """Platform-aware package installer for auto-setup mode.
+
+    Ports installation logic from scripts/setup-mac.sh, scripts/setup-linux.sh,
+    and scripts/setup-windows.ps1 into Python so that `run.py --auto-setup`
+    can install missing prerequisites automatically.
+    """
+
+    def __init__(self, color_enabled: bool = True, yes: bool = False):
+        self.color_enabled = color_enabled
+        self.yes = yes  # Skip confirmation prompts
+        self.platform_name = platform.system()
+        self._pkg_manager: Optional[str] = None
+        self._linux_distro: Optional[str] = None
+
+    def _colorize(self, text: str, color: str) -> str:
+        if not self.color_enabled:
+            return text
+        return f"{color}{text}{Color.RESET}"
+
+    # ------------------------------------------------------------------
+    # User confirmation
+    # ------------------------------------------------------------------
+
+    def _confirm(self, prompt: str) -> bool:
+        """Ask user for confirmation. Returns True if --yes or user accepts."""
+        if self.yes:
+            print(f"{self._colorize(prompt + ' (auto-confirmed with --yes)', Color.GRAY)}")
+            return True
+        try:
+            answer = input(f"{prompt} [Y/n] ").strip().lower()
+            return answer in ('', 'y', 'yes')
+        except (EOFError, KeyboardInterrupt):
+            return False
+
+    # ------------------------------------------------------------------
+    # Platform detection
+    # ------------------------------------------------------------------
+
+    def _detect_package_manager(self) -> Optional[str]:
+        """Detect the system package manager."""
+        if self._pkg_manager is not None:
+            return self._pkg_manager
+
+        if self.platform_name == 'Darwin':
+            self._pkg_manager = 'brew'
+        elif self.platform_name == 'Windows':
+            self._pkg_manager = 'choco'
+        elif self.platform_name == 'Linux':
+            distro = self._detect_linux_distro()
+            manager_map = {
+                'debian': 'apt',
+                'fedora': 'dnf',
+                'arch': 'pacman',
+            }
+            self._pkg_manager = manager_map.get(distro)
+        return self._pkg_manager
+
+    def _detect_linux_distro(self) -> Optional[str]:
+        """Parse /etc/os-release to determine Linux distro family."""
+        if self._linux_distro is not None:
+            return self._linux_distro
+
+        os_release = Path('/etc/os-release')
+        if not os_release.exists():
+            return None
+
+        info: Dict[str, str] = {}
+        with open(os_release) as f:
+            for line in f:
+                line = line.strip()
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    info[key] = value.strip('"')
+
+        distro_id = info.get('ID', '').lower()
+        id_like = info.get('ID_LIKE', '').lower()
+
+        debian_ids = {'ubuntu', 'debian', 'pop', 'linuxmint', 'elementary', 'zorin'}
+        fedora_ids = {'fedora', 'rhel', 'centos', 'rocky', 'alma'}
+        arch_ids = {'arch', 'manjaro', 'endeavouros'}
+
+        if distro_id in debian_ids:
+            self._linux_distro = 'debian'
+        elif distro_id in fedora_ids:
+            self._linux_distro = 'fedora'
+        elif distro_id in arch_ids:
+            self._linux_distro = 'arch'
+        elif any(d in id_like for d in ('debian', 'ubuntu')):
+            self._linux_distro = 'debian'
+        elif any(d in id_like for d in ('fedora', 'rhel')):
+            self._linux_distro = 'fedora'
+        elif 'arch' in id_like:
+            self._linux_distro = 'arch'
+
+        return self._linux_distro
+
+    # ------------------------------------------------------------------
+    # Command helpers
+    # ------------------------------------------------------------------
+
+    def _run_command(
+        self,
+        cmd: List[str],
+        timeout: int = 300,
+        capture: bool = False,
+        cwd: Optional[str] = None,
+    ) -> subprocess.CompletedProcess:
+        """Run a command with timeout and error handling."""
+        return subprocess.run(
+            cmd,
+            capture_output=capture,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+        )
+
+    def _is_command_available(self, cmd: str) -> bool:
+        """Check if a command is available on PATH."""
+        try:
+            result = subprocess.run(
+                ['which', cmd] if self.platform_name != 'Windows' else ['where', cmd],
+                capture_output=True,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Homebrew (macOS)
+    # ------------------------------------------------------------------
+
+    def _ensure_homebrew(self) -> bool:
+        """Install Homebrew on macOS if missing. Returns True on success."""
+        if self._is_command_available('brew'):
+            return True
+
+        print(self._colorize('⚙️  Homebrew not found. It is required to install packages on macOS.', Color.YELLOW))
+        if not self._confirm('Install Homebrew?'):
+            return False
+
+        print(self._colorize('  Installing Homebrew...', Color.GRAY))
+        try:
+            result = subprocess.run(
+                ['/bin/bash', '-c',
+                 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'],
+                timeout=600,
+            )
+            if result.returncode != 0:
+                return False
+
+            # Add brew to PATH for Apple Silicon
+            brew_path = Path('/opt/homebrew/bin/brew')
+            if brew_path.exists():
+                result = subprocess.run(
+                    [str(brew_path), 'shellenv'],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split('\n'):
+                        if line.startswith('export '):
+                            parts = line.replace('export ', '').split('=', 1)
+                            if len(parts) == 2:
+                                key = parts[0]
+                                value = parts[1].strip('"').strip("'")
+                                # Expand $PATH references
+                                value = value.replace('${PATH}', os.environ.get('PATH', ''))
+                                value = value.replace('$PATH', os.environ.get('PATH', ''))
+                                os.environ[key] = value
+
+            print(self._colorize('✓ Homebrew installed', Color.GREEN))
+            return True
+        except Exception as e:
+            print(self._colorize(f'  Error installing Homebrew: {e}', Color.RED))
+            return False
+
+    # ------------------------------------------------------------------
+    # Chocolatey (Windows)
+    # ------------------------------------------------------------------
+
+    def _ensure_chocolatey(self) -> bool:
+        """Install Chocolatey on Windows if missing. Returns True on success."""
+        if self._is_command_available('choco'):
+            return True
+
+        print(self._colorize('⚙️  Chocolatey not found. It is required to install packages on Windows.', Color.YELLOW))
+        if not self._confirm('Install Chocolatey?'):
+            return False
+
+        print(self._colorize('  Installing Chocolatey...', Color.GRAY))
+        try:
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+                 "[System.Net.ServicePointManager]::SecurityProtocol = "
+                 "[System.Net.ServicePointManager]::SecurityProtocol -bor 3072; "
+                 "iex ((New-Object System.Net.WebClient).DownloadString("
+                 "'https://community.chocolatey.org/install.ps1'))"],
+                timeout=300,
+            )
+            if result.returncode == 0:
+                # Refresh PATH
+                self._refresh_windows_path()
+                print(self._colorize('✓ Chocolatey installed', Color.GREEN))
+                return True
+            return False
+        except Exception as e:
+            print(self._colorize(f'  Error installing Chocolatey: {e}', Color.RED))
+            return False
+
+    def _refresh_windows_path(self):
+        """Refresh PATH on Windows after package installations."""
+        if self.platform_name != 'Windows':
+            return
+        try:
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command',
+                 '[System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + '
+                 '[System.Environment]::GetEnvironmentVariable("Path","User")'],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                os.environ['PATH'] = result.stdout.strip()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Node.js
+    # ------------------------------------------------------------------
+
+    def install_node(self) -> bool:
+        """Install Node.js 20+ via platform package manager."""
+        print(self._colorize('⚙️  Node.js not found or too old.', Color.YELLOW))
+        if not self._confirm('Install Node.js 20?'):
+            return False
+
+        pkg = self._detect_package_manager()
+        if not pkg:
+            print(self._colorize('  Could not detect package manager', Color.RED))
+            return False
+
+        print(self._colorize('  Installing Node.js 20...', Color.GRAY))
+        try:
+            if pkg == 'brew':
+                if not self._ensure_homebrew():
+                    return False
+                self._run_command(['brew', 'install', 'node@20'], timeout=600)
+                subprocess.run(['brew', 'link', '--overwrite', 'node@20'],
+                               capture_output=True, timeout=30)
+            elif pkg == 'apt':
+                # NodeSource setup
+                subprocess.run(
+                    ['bash', '-c', 'curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -'],
+                    timeout=120,
+                )
+                self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
+            elif pkg == 'dnf':
+                subprocess.run(
+                    ['bash', '-c', 'curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo -E bash -'],
+                    timeout=120,
+                )
+                self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'nodejs'], timeout=300)
+            elif pkg == 'pacman':
+                self._run_command(['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'nodejs', 'npm'], timeout=300)
+            elif pkg == 'choco':
+                if not self._ensure_chocolatey():
+                    return False
+                self._run_command(['choco', 'install', 'nodejs-lts', '-y', '--no-progress'], timeout=600)
+                self._refresh_windows_path()
+
+            print(self._colorize('✓ Node.js installed', Color.GREEN))
+            return True
+        except Exception as e:
+            print(self._colorize(f'  Error installing Node.js: {e}', Color.RED))
+            return False
+
+    # ------------------------------------------------------------------
+    # PostgreSQL
+    # ------------------------------------------------------------------
+
+    def _is_postgres_installed(self) -> bool:
+        """Check if PostgreSQL is installed (not necessarily running)."""
+        if self.platform_name == 'Darwin':
+            # Check brew
+            for version in ['postgresql@17', 'postgresql@16', 'postgresql@15', 'postgresql']:
+                result = subprocess.run(
+                    ['brew', 'list', version],
+                    capture_output=True, timeout=10,
+                )
+                if result.returncode == 0:
+                    return True
+            return False
+        elif self.platform_name == 'Windows':
+            return (self._is_command_available('psql')
+                    or Path('C:/Program Files/PostgreSQL').exists())
+        else:
+            return self._is_command_available('psql') or self._is_command_available('pg_isready')
+
+    def install_postgres(self) -> bool:
+        """Install PostgreSQL 15+ via platform package manager."""
+        print(self._colorize('⚙️  PostgreSQL not found.', Color.YELLOW))
+        if not self._confirm('Install PostgreSQL?'):
+            return False
+
+        pkg = self._detect_package_manager()
+        if not pkg:
+            print(self._colorize('  Could not detect package manager', Color.RED))
+            return False
+
+        print(self._colorize('  Installing PostgreSQL...', Color.GRAY))
+        try:
+            if pkg == 'brew':
+                if not self._ensure_homebrew():
+                    return False
+                self._run_command(['brew', 'install', 'postgresql@15'], timeout=600)
+            elif pkg == 'apt':
+                self._run_command(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                self._run_command(
+                    ['sudo', 'apt-get', 'install', '-y', '-qq',
+                     'postgresql', 'postgresql-contrib', 'libpq-dev'],
+                    timeout=300,
+                )
+            elif pkg == 'dnf':
+                self._run_command(
+                    ['sudo', 'dnf', 'install', '-y', '-q',
+                     'postgresql-server', 'postgresql-devel'],
+                    timeout=300,
+                )
+                subprocess.run(
+                    ['sudo', 'postgresql-setup', '--initdb'],
+                    capture_output=True, timeout=60,
+                )
+            elif pkg == 'pacman':
+                self._run_command(
+                    ['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'postgresql'],
+                    timeout=300,
+                )
+                subprocess.run(
+                    ['sudo', '-u', 'postgres', 'initdb', '--locale', 'en_US.UTF-8',
+                     '-D', '/var/lib/postgres/data'],
+                    capture_output=True, timeout=60,
+                )
+            elif pkg == 'choco':
+                if not self._ensure_chocolatey():
+                    return False
+                self._run_command(
+                    ['choco', 'install', 'postgresql15', '--params', '/Password:postgres',
+                     '-y', '--no-progress'],
+                    timeout=600,
+                )
+                self._refresh_windows_path()
+
+            print(self._colorize('✓ PostgreSQL installed', Color.GREEN))
+            return True
+        except Exception as e:
+            print(self._colorize(f'  Error installing PostgreSQL: {e}', Color.RED))
+            return False
+
+    # ------------------------------------------------------------------
+    # Redis
+    # ------------------------------------------------------------------
+
+    def _is_redis_installed(self) -> bool:
+        """Check if Redis is installed (not necessarily running)."""
+        if self.platform_name == 'Darwin':
+            result = subprocess.run(
+                ['brew', 'list', 'redis'],
+                capture_output=True, timeout=10,
+            )
+            return result.returncode == 0
+        elif self.platform_name == 'Windows':
+            return self._is_command_available('redis-server')
+        else:
+            return self._is_command_available('redis-server')
+
+    def install_redis(self) -> bool:
+        """Install Redis via platform package manager."""
+        print(self._colorize('⚙️  Redis not found.', Color.YELLOW))
+        if not self._confirm('Install Redis?'):
+            return False
+
+        pkg = self._detect_package_manager()
+        if not pkg:
+            print(self._colorize('  Could not detect package manager', Color.RED))
+            return False
+
+        print(self._colorize('  Installing Redis...', Color.GRAY))
+        try:
+            if pkg == 'brew':
+                if not self._ensure_homebrew():
+                    return False
+                self._run_command(['brew', 'install', 'redis'], timeout=300)
+            elif pkg == 'apt':
+                self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'redis-server'], timeout=300)
+            elif pkg == 'dnf':
+                self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'redis'], timeout=300)
+            elif pkg == 'pacman':
+                self._run_command(['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'redis'], timeout=300)
+            elif pkg == 'choco':
+                if not self._ensure_chocolatey():
+                    return False
+                result = subprocess.run(
+                    ['choco', 'install', 'redis-64', '-y', '--no-progress'],
+                    capture_output=True, timeout=300,
+                )
+                if result.returncode != 0:
+                    # Fallback: Memurai
+                    subprocess.run(
+                        ['choco', 'install', 'memurai-developer', '-y', '--no-progress'],
+                        capture_output=True, timeout=300,
+                    )
+                self._refresh_windows_path()
+
+            print(self._colorize('✓ Redis installed', Color.GREEN))
+            return True
+        except Exception as e:
+            print(self._colorize(f'  Error installing Redis: {e}', Color.RED))
+            return False
+
+    # ------------------------------------------------------------------
+    # Frontend dependencies
+    # ------------------------------------------------------------------
+
+    def install_frontend_deps(self) -> bool:
+        """Run npm install in frontend/."""
+        print(self._colorize('⚙️  Installing frontend dependencies...', Color.YELLOW))
+        try:
+            frontend_dir = Path('frontend').resolve()
+            result = self._run_command(
+                ['npm', 'install'],
+                timeout=600,
+                cwd=str(frontend_dir),
+            )
+            if result.returncode == 0:
+                print(self._colorize('✓ Frontend dependencies installed', Color.GREEN))
+                return True
+            print(self._colorize('  npm install failed', Color.RED))
+            return False
+        except Exception as e:
+            print(self._colorize(f'  Error installing frontend deps: {e}', Color.RED))
+            return False
+
+    # ------------------------------------------------------------------
+    # Database setup
+    # ------------------------------------------------------------------
+
+    def setup_database(self) -> bool:
+        """Create the 'dyslex' PostgreSQL user and database."""
+        print(self._colorize('⚙️  Setting up database...', Color.GRAY))
+        try:
+            if self.platform_name == 'Darwin':
+                # macOS: Homebrew PostgreSQL — ensure pg bin is on PATH
+                for pg_dir in Path('/opt/homebrew/opt').glob('postgresql@*/bin'):
+                    os.environ['PATH'] = str(pg_dir) + ':' + os.environ.get('PATH', '')
+                    break
+                else:
+                    for pg_dir in Path('/usr/local/opt').glob('postgresql@*/bin'):
+                        os.environ['PATH'] = str(pg_dir) + ':' + os.environ.get('PATH', '')
+                        break
+
+                subprocess.run(['createuser', 'dyslex'], capture_output=True, timeout=10)
+                subprocess.run(['createdb', '-O', 'dyslex', 'dyslex'], capture_output=True, timeout=10)
+                subprocess.run(
+                    ['psql', '-d', 'dyslex', '-c', "ALTER USER dyslex WITH PASSWORD 'dyslex';"],
+                    capture_output=True, timeout=10,
+                )
+            elif self.platform_name == 'Linux':
+                subprocess.run(
+                    ['sudo', '-u', 'postgres', 'psql', '-c',
+                     "CREATE USER dyslex WITH PASSWORD 'dyslex';"],
+                    capture_output=True, timeout=10,
+                )
+                subprocess.run(
+                    ['sudo', '-u', 'postgres', 'psql', '-c',
+                     "CREATE DATABASE dyslex OWNER dyslex;"],
+                    capture_output=True, timeout=10,
+                )
+                subprocess.run(
+                    ['sudo', '-u', 'postgres', 'psql', '-c',
+                     "GRANT ALL PRIVILEGES ON DATABASE dyslex TO dyslex;"],
+                    capture_output=True, timeout=10,
+                )
+            elif self.platform_name == 'Windows':
+                # Find psql on Windows
+                psql_cmd = 'psql'
+                if not self._is_command_available('psql'):
+                    pg_base = Path('C:/Program Files/PostgreSQL')
+                    if pg_base.exists():
+                        for pg_dir in sorted(pg_base.iterdir(), reverse=True):
+                            psql_path = pg_dir / 'bin' / 'psql.exe'
+                            if psql_path.exists():
+                                psql_cmd = str(psql_path)
+                                os.environ['PATH'] += ';' + str(pg_dir / 'bin')
+                                break
+
+                subprocess.run(
+                    [psql_cmd, '-U', 'postgres', '-c',
+                     "CREATE USER dyslex WITH PASSWORD 'dyslex';"],
+                    capture_output=True, timeout=10,
+                )
+                subprocess.run(
+                    [psql_cmd, '-U', 'postgres', '-c',
+                     "CREATE DATABASE dyslex OWNER dyslex;"],
+                    capture_output=True, timeout=10,
+                )
+
+            print(self._colorize('✓ Database \'dyslex\' ready', Color.GREEN))
+            return True
+        except Exception as e:
+            print(self._colorize(f'  Warning: Database setup issue: {e}', Color.YELLOW))
+            return False
+
+    # ------------------------------------------------------------------
+    # .env file
+    # ------------------------------------------------------------------
+
+    def create_env_file(self) -> bool:
+        """Create .env from template if missing."""
+        env_file = Path('.env')
+        if env_file.exists():
+            return True
+
+        print(self._colorize('⚙️  Creating .env file...', Color.GRAY))
+        env_content = """# DysLex AI Environment Configuration
+# Get your API key at: https://build.nvidia.com
+NVIDIA_NIM_API_KEY=
+
+# Database (defaults work with local PostgreSQL)
+DATABASE_URL=postgresql+asyncpg://dyslex:dyslex@localhost:5432/dyslex
+
+# Redis (optional)
+REDIS_URL=redis://localhost:6379/0
+
+# Auth
+JWT_SECRET_KEY=change-me-in-production
+"""
+        env_file.write_text(env_content)
+        print(self._colorize('✓ .env created — edit it to add your NVIDIA_NIM_API_KEY', Color.GREEN))
+        return True
+
+
+# ============================================================================
 # PrerequisiteChecker
 # ============================================================================
 
@@ -128,6 +675,12 @@ class PrerequisiteChecker:
         self.auto_setup = config.get('auto_setup', False)
         self.kill_ports = config.get('kill_ports', False)
         self.services_started: List[str] = []  # Track what we started
+        self.installer: Optional[PackageInstaller] = None
+        if self.auto_setup:
+            self.installer = PackageInstaller(
+                color_enabled=color_enabled,
+                yes=config.get('yes', False),
+            )
 
     def _colorize(self, text: str, color: str) -> str:
         """Apply color to text if colors are enabled."""
@@ -136,7 +689,21 @@ class PrerequisiteChecker:
         return f"{color}{text}{Color.RESET}"
 
     def check_all(self) -> bool:
-        """Run all applicable checks. Returns True if all critical checks pass."""
+        """Run all applicable checks. Returns True if all critical checks pass.
+
+        Check order is dependency-aware:
+        1. Python version (always first — we're running in it)
+        2. Node.js (needed before frontend deps)
+        3. PostgreSQL (install → start → database setup)
+        4. Redis (install → start)
+        5. Backend dependencies (venv)
+        6. Backend port
+        7. Frontend dependencies (npm install)
+        8. Frontend port
+        9. Environment file (.env)
+        10. Environment variables (NVIDIA key prompt)
+        11. NVIDIA NIM API ping
+        """
         checks = [
             ("Python version", self.check_python_version),
         ]
@@ -144,10 +711,15 @@ class PrerequisiteChecker:
         if self.mode == 'docker':
             checks.append(("Docker availability", self.check_docker_availability))
         else:
-            # Development mode checks
+            # Node.js is needed by both frontend-only and dev modes
+            if self.mode in ['dev', 'frontend']:
+                checks.append(("Node.js version", self.check_node_version))
+
+            # Development mode checks — services
             if self.mode in ['dev', 'backend']:
                 checks.extend([
                     ("PostgreSQL service", self.check_postgres_service),
+                    ("Database setup", self.check_database_setup),
                     ("Redis service", self.check_redis_service),
                     ("Backend dependencies", self.check_backend_dependencies),
                     ("Backend port availability", self.check_backend_port),
@@ -155,10 +727,12 @@ class PrerequisiteChecker:
 
             if self.mode in ['dev', 'frontend']:
                 checks.extend([
-                    ("Node.js version", self.check_node_version),
                     ("Frontend dependencies", self.check_frontend_dependencies),
                     ("Frontend port availability", self.check_frontend_port),
                 ])
+
+        # Environment file (create .env before prompting for variables)
+        checks.append(("Environment file", self.check_env_file))
 
         # Environment variables (warning only)
         checks.append(("Environment variables", self.check_environment_variables))
@@ -189,7 +763,8 @@ class PrerequisiteChecker:
             )
 
     def check_node_version(self):
-        """Verify Node.js version is 20+."""
+        """Verify Node.js version is 20+. Install if missing and auto_setup."""
+        need_install = False
         try:
             result = subprocess.run(
                 ['node', '--version'],
@@ -201,20 +776,36 @@ class PrerequisiteChecker:
             major = int(version_str.split('.')[0])
 
             if major < NODE_MIN_VERSION[0]:
-                raise CheckError(
-                    f"Node.js {NODE_MIN_VERSION[0]}+ required, found {major}\n"
-                    f"    Fix: Install Node.js 20+: https://nodejs.org"
-                )
+                need_install = True
         except FileNotFoundError:
-            raise CheckError(
-                "Node.js not found\n"
-                "    Fix: Install Node.js 20+: https://nodejs.org"
-            )
+            need_install = True
         except (subprocess.TimeoutExpired, ValueError, IndexError) as e:
             raise CheckError(f"Could not determine Node.js version: {e}")
 
+        if need_install:
+            if self.auto_setup and self.installer:
+                if self.installer.install_node():
+                    return  # Successfully installed
+                raise CheckError(
+                    "Failed to install Node.js automatically\n"
+                    "    Fix: Install Node.js 20+ manually: https://nodejs.org"
+                )
+            raise CheckError(
+                "Node.js 20+ not found\n"
+                "    Fix: Install Node.js 20+: https://nodejs.org\n"
+                "    Or use: python3 run.py --auto-setup"
+            )
+
     def check_postgres_service(self):
-        """Check if PostgreSQL is running on localhost:5432."""
+        """Check if PostgreSQL is installed and running on localhost:5432."""
+        # First check if PostgreSQL is installed at all
+        if self.auto_setup and self.installer and not self.installer._is_postgres_installed():
+            if not self.installer.install_postgres():
+                raise CheckError(
+                    "Failed to install PostgreSQL automatically\n"
+                    "    Fix: Install PostgreSQL 15+ manually"
+                )
+
         if not self._is_port_open('localhost', POSTGRES_PORT):
             if self.auto_setup:
                 print(f"{self._colorize('⚙️  Starting PostgreSQL...', Color.YELLOW)}")
@@ -237,7 +828,15 @@ class PrerequisiteChecker:
                 )
 
     def check_redis_service(self):
-        """Check if Redis is running on localhost:6379 (warning only)."""
+        """Check if Redis is installed and running on localhost:6379 (warning only)."""
+        # First check if Redis is installed at all
+        if self.auto_setup and self.installer and not self.installer._is_redis_installed():
+            if not self.installer.install_redis():
+                raise CheckWarning(
+                    "Failed to install Redis automatically\n"
+                    "    Note: Redis is optional but recommended for snapshot storage"
+                )
+
         if not self._is_port_open('localhost', REDIS_PORT):
             if self.auto_setup:
                 print(f"{self._colorize('⚙️  Starting Redis...', Color.YELLOW)}")
@@ -394,13 +993,39 @@ class PrerequisiteChecker:
             raise CheckError("backend/requirements.txt not found")
 
     def check_frontend_dependencies(self):
-        """Verify frontend node_modules are installed."""
+        """Verify frontend node_modules are installed. Auto-install if auto_setup."""
         node_modules = Path('frontend/node_modules')
         if not node_modules.exists():
+            if self.auto_setup and self.installer:
+                if self.installer.install_frontend_deps():
+                    return
+                raise CheckError(
+                    "Failed to install frontend dependencies automatically\n"
+                    "    Fix: cd frontend && npm install"
+                )
             raise CheckError(
                 "Frontend dependencies not installed\n"
-                "    Fix: cd frontend && npm install"
+                "    Fix: cd frontend && npm install\n"
+                "    Or use: python3 run.py --auto-setup"
             )
+
+    def check_database_setup(self):
+        """Verify the 'dyslex' database and user exist. Create if auto_setup."""
+        if not self.auto_setup:
+            # Without auto_setup, we just check connectivity via the port
+            # (the backend will fail with a clear error if the DB doesn't exist)
+            return
+
+        if self.installer:
+            self.installer.setup_database()
+
+    def check_env_file(self):
+        """Create .env from template if missing and auto_setup is enabled."""
+        if not self.auto_setup:
+            return
+
+        if self.installer:
+            self.installer.create_env_file()
 
     def check_docker_availability(self):
         """Verify Docker is installed and running."""
@@ -1287,6 +1912,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   python run.py                    # Start backend + frontend (localhost only)
+  python run.py --auto-setup       # Install everything + start (one command!)
+  python run.py --auto-setup -y    # Same, skip confirmation prompts
   python run.py --host 0.0.0.0     # Start on all interfaces (network accessible)
   python run.py --docker           # Start with Docker Compose
   python run.py --backend-only     # Start only backend
@@ -1358,7 +1985,12 @@ For more information, see: https://github.com/anthropics/dyslex-ai
     parser.add_argument(
         '--auto-setup',
         action='store_true',
-        help='Automatically start services (PostgreSQL, Redis) and create venv if needed'
+        help='Automatically install missing prerequisites, start services, and create venv'
+    )
+    parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help='Skip confirmation prompts for package installations (use with --auto-setup)'
     )
     parser.add_argument(
         '--kill-ports',
@@ -1447,6 +2079,7 @@ async def main():
         'verbose': args.verbose,
         'color_enabled': not args.no_color and sys.stdout.isatty(),
         'auto_setup': args.auto_setup,
+        'yes': args.yes,
         'kill_ports': args.kill_ports,
         'https': args.https,
         'ssl_cert': ssl_cert,

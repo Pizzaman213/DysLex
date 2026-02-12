@@ -1,7 +1,12 @@
 /**
- * Client-side grammar rules engine.
+ * Client-side grammar rules engine (regex-based fallback).
  *
- * Catches common grammar errors locally without requiring a backend API call.
+ * These regex rules act as a fallback when the ONNX model is unavailable.
+ * When the model IS loaded, it handles grammar corrections with full
+ * contextual understanding (subject-verb agreement, articles, tense, etc.).
+ * The correction merge logic in correctionService.ts gives model-based
+ * grammar corrections priority over these regex-based ones.
+ *
  * Each rule returns corrections with type 'grammar', position info, and a
  * friendly explanation.
  */

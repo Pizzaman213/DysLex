@@ -1,0 +1,19 @@
+{
+  "description": "Function words (prepositions, conjunctions) for grammar error generation",
+  "prepositions": {
+    "description": "Common prepositions that dyslexic writers may omit",
+    "patterns": [
+      {"word": "to", "context_before": ["go", "went", "going", "come", "came", "walk", "walked", "run", "ran", "drive", "drove", "move", "moved", "travel", "traveled", "return", "returned", "listen", "listened"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "our", "your", "school", "work", "home", "town", "store", "church"]},
+      {"word": "in", "context_before": ["live", "lived", "lives", "stay", "stayed", "work", "worked", "put", "arrive", "arrived"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
+      {"word": "on", "context_before": ["put", "sit", "sat", "place", "placed", "rely", "relied", "depend", "depended"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
+      {"word": "at", "context_before": ["look", "looked", "arrive", "arrived", "stay", "stayed", "work", "worked"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
+      {"word": "for", "context_before": ["wait", "waited", "look", "looked", "ask", "asked", "search", "searched", "pay", "paid", "thank", "thanked"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
+      {"word": "with", "context_before": ["play", "played", "talk", "talked", "work", "worked", "come", "came", "go", "went", "agree", "agreed"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
+      {"word": "of", "context_before": ["lot", "lots", "kind", "type", "sort", "part", "most", "some", "all", "many", "few", "one", "each", "group", "pair", "set", "number"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]}
+    ]
+  },
+  "conjunctions": {
+    "description": "Coordinating/subordinating conjunctions",
+    "words": ["and", "but", "or", "so", "because", "although", "while", "when", "before", "after", "until", "since", "if", "unless"]
+  }
+}

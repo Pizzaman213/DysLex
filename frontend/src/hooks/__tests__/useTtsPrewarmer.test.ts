@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useTtsPrewarmer } from '../useTtsPrewarmer';
 import { api } from '@/services/api';
-import { sentenceAudioCache, findUncachedSentences } from '@/services/ttsSentenceCache';
+import { sentenceAudioCache } from '@/services/ttsSentenceCache';
 
 vi.mock('@/services/api');
 

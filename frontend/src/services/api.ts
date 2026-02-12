@@ -627,6 +627,12 @@ export const api = {
       active_corrections: Array<{ original: string; suggested: string; type: string; explanation?: string }>;
       focused_correction: { original: string; suggested: string; type: string; explanation?: string } | null;
     },
+    mindMapContext?: {
+      central_idea: string | null;
+      ideas: Array<{ title: string; body: string | null; theme: string | null }>;
+      connections: Array<{ from_idea: string; to_idea: string; relationship: string | null }>;
+      themes: string[];
+    },
   ) =>
     request<{ status: string; data: { reply: string } }>('/api/v1/coach/chat', {
       method: 'POST',
@@ -635,6 +641,7 @@ export const api = {
         writing_context: writingContext,
         session_stats: sessionStats,
         corrections_context: correctionsContext,
+        mind_map_context: mindMapContext,
       }),
     }),
 

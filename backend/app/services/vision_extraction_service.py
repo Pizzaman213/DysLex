@@ -94,12 +94,12 @@ class VisionExtractionService:
                     "role": "user",
                     "content": [
                         {
-                            "type": "text",
-                            "text": build_vision_extract_prompt(user_hint),
-                        },
-                        {
                             "type": "image_url",
                             "image_url": {"url": data_uri},
+                        },
+                        {
+                            "type": "text",
+                            "text": build_vision_extract_prompt(user_hint),
                         },
                     ],
                 },
@@ -116,9 +116,11 @@ class VisionExtractionService:
                 result = response.json()
                 content = result["choices"][0]["message"]["content"]
 
-                logger.info(f"Vision LLM raw response: {content[:500]}")
+                logger.info(f"Vision LLM raw response ({len(content)} chars): {content[:1000]}")
 
                 parsed = _parse_cosmos_response(content)
+                if not parsed or (isinstance(parsed, dict) and not parsed.get("cards")):
+                    logger.warning(f"Vision parse produced no cards. Full content: {content[:2000]}")
 
                 topic = parsed.get("topic", "") if isinstance(parsed, dict) else ""
                 raw_cards = parsed.get("cards", []) if isinstance(parsed, dict) else []

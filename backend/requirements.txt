@@ -1,36 +1,48 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-pydantic[email]>=2.0.0
-pydantic-settings>=2.0.0
-sqlalchemy>=2.0.0
-greenlet>=3.0.0
-alembic>=1.12.0
-asyncpg>=0.28.0
-psycopg2-binary>=2.9.0
-httpx>=0.24.0
-python-multipart>=0.0.6
-python-jose[cryptography]>=3.3.0
+# Core Framework
+fastapi>=0.128.0
+uvicorn[standard]>=0.40.0
+pydantic[email]>=2.12.0
+pydantic-settings>=2.12.0
+starlette>=0.52.0
+
+# Database
+sqlalchemy>=2.0.46
+greenlet>=3.3.0
+alembic>=1.18.0
+asyncpg>=0.31.0
+psycopg2-binary>=2.9.11
+
+# HTTP & Networking
+httpx>=0.28.0
+python-multipart>=0.0.22
+grpcio>=1.78.0
+
+# Auth
+python-jose[cryptography]>=3.5.0
 passlib[bcrypt]>=1.7.4
-webauthn>=2.0.0
-ruff>=0.1.0
-mypy>=1.5.0
+webauthn>=2.7.0
+
+# Utilities
 slowapi>=0.1.9
-tenacity>=8.2.0
-grpcio>=1.60.0
-aiofiles>=23.0.0
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-pytest-cov>=4.1.0
-redis>=5.0.0
-apscheduler>=3.10.0
+tenacity>=9.1.0
+aiofiles>=25.1.0
+redis>=7.1.0
+apscheduler>=3.11.0
+
+# Dev & Testing
+ruff>=0.15.0
+mypy>=1.19.0
+pytest>=9.0.0
+pytest-asyncio>=1.3.0
+pytest-cov>=6.0.0
 
 # ML Dependencies for Quick Correction Engine
-transformers>=4.35.0
-torch>=2.1.0
-datasets>=2.14.0
-accelerate>=0.24.0
-onnx>=1.15.0
-onnxruntime>=1.16.0
-optimum[exporters]>=1.14.0
-peft>=0.6.0
-numpy>=1.24.0
+transformers>=4.57.0
+torch>=2.10.0
+datasets>=4.5.0
+accelerate>=1.12.0
+onnx>=1.20.0
+onnxruntime>=1.24.0
+optimum[exporters]>=2.1.0
+peft>=0.18.0
+numpy>=2.4.0

@@ -34,13 +34,14 @@ npm-debug.log*
 *.db
 *.sqlite
 
-# ML models & training artifacts (use Git LFS or external storage)
-ml/models/
-ml/datasets/
+# ML training artifacts (checkpoints, raw data, training splits)
 ml/quick_correction/models/
 ml/datasets/raw/
 ml/datasets/processed/
 ml/quick_correction/data/
+
+# Large frequency dictionaries in completed models
+ml/models/**/frequency_dictionary_*.txt
 
 # ONNX WASM runtime
 frontend/public/onnx/*.wasm

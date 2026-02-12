@@ -9,11 +9,15 @@ import type { ContextCorrection } from './contextRules';
 export interface Correction {
   original: string;
   suggested: string;
-  type: 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution' | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style';
+  type: 'spelling' | 'omission' | 'insertion' | 'transposition' | 'substitution'
+    | 'grammar' | 'confusion' | 'phonetic' | 'homophone' | 'clarity' | 'style'
+    | 'subject_verb' | 'article' | 'verb_tense' | 'function_word'
+    | 'pronoun_case' | 'run_on';
   start: number;
   end: number;
   confidence: number;
   explanation?: string;
+  source?: 'model' | 'regex' | 'api';
 }
 
 /**
@@ -27,6 +31,7 @@ function mapLocalCorrection(lc: LocalCorrection): Correction {
     start: lc.position.start,
     end: lc.position.end,
     confidence: lc.confidence,
+    source: 'model',
   };
 }
 
@@ -39,6 +44,7 @@ function mapGrammarCorrection(gc: GrammarCorrection): Correction {
     end: gc.end,
     confidence: gc.confidence,
     explanation: gc.explanation,
+    source: 'regex',
   };
 }
 
@@ -75,7 +81,8 @@ function mapApiCorrection(c: any): Correction | null {
 
 /**
  * Merge corrections from multiple sources, removing overlapping ranges.
- * Priority: spelling > context > grammar (earlier in the array wins).
+ * Priority: AI API > model (spelling + grammar) > context rules > regex grammar.
+ * Model-based grammar corrections take precedence over regex-based ones.
  * When corrections overlap at the same start position, larger spans are preferred
  * since they represent more meaningful corrections.
  */
@@ -84,8 +91,17 @@ function mergeCorrections(...groups: Correction[][]): Correction[] {
   const all: Correction[] = groups.flat();
   const merged: Correction[] = [];
 
-  // Sort by start position, then prefer larger spans for same start
-  all.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  // Sort by start position, then prefer model over regex for same position,
+  // then prefer larger spans
+  all.sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    // Model corrections win over regex at same position
+    const aIsModel = a.source === 'model' || a.source === 'api';
+    const bIsModel = b.source === 'model' || b.source === 'api';
+    if (aIsModel !== bIsModel) return aIsModel ? -1 : 1;
+    // Larger spans preferred
+    return (b.end - b.start) - (a.end - a.start);
+  });
 
   for (const correction of all) {
     // Skip words the user added to their personal dictionary
@@ -117,12 +133,20 @@ export async function getCorrections(text: string): Promise<Correction[]> {
           .map(mapApiCorrection)
           .filter((c): c is Correction => c !== null)
       )
-      .catch(() => [] as Correction[]),
+      .catch((err) => {
+        console.warn('[Corrections] API call failed:', err?.message ?? err);
+        return [] as Correction[];
+      }),
   ]);
 
   const spelling = localCorrections.map(mapLocalCorrection);
   const context = contextResults.map(mapContextCorrection);
   const grammar = grammarResults.map(mapGrammarCorrection);
+
+  console.log(
+    '[Corrections] Results — local:%d grammar:%d context:%d api:%d',
+    spelling.length, grammar.length, context.length, apiCorrections.length
+  );
 
   // Merge with priority: AI > spelling > context > grammar
   return mergeCorrections(apiCorrections, spelling, context, grammar);

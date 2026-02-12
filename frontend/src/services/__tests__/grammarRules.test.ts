@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { checkGrammar } from '@/services/grammarRules';
-import type { GrammarCorrection } from '@/services/grammarRules';
 
 describe('checkGrammar', () => {
   // ── Empty / whitespace input ────────────────────────────────────────
