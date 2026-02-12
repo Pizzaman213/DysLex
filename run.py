@@ -247,6 +247,113 @@ class PackageInstaller:
             return False
 
     # ------------------------------------------------------------------
+    # Alternative install sources (fallbacks)
+    # ------------------------------------------------------------------
+
+    def _has_winget(self) -> bool:
+        """Check if winget is available (Windows 10 1709+ / Windows 11)."""
+        return self.platform_name == 'Windows' and self._is_command_available('winget')
+
+    def _has_snap(self) -> bool:
+        """Check if snap is available (Ubuntu, many Linux distros)."""
+        return self.platform_name == 'Linux' and self._is_command_available('snap')
+
+    def _has_docker(self) -> bool:
+        """Check if Docker is available for container-based fallbacks."""
+        try:
+            result = subprocess.run(['docker', 'info'], capture_output=True, timeout=5)
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _install_via_winget(self, package_id: str) -> bool:
+        """Install a package via winget (Windows fallback). Returns True on success."""
+        if not self._has_winget():
+            return False
+        print(self._colorize(f'  Trying winget: {package_id}...', Color.GRAY))
+        try:
+            result = subprocess.run(
+                ['winget', 'install', '--id', package_id, '-e',
+                 '--accept-source-agreements', '--accept-package-agreements'],
+                timeout=600,
+            )
+            if result.returncode == 0:
+                self._refresh_windows_path()
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _install_node_via_fnm(self) -> bool:
+        """Install Node.js via fnm (Fast Node Manager) — works on all platforms.
+        fnm is a single binary with no dependencies.
+        """
+        print(self._colorize('  Trying fnm (Fast Node Manager)...', Color.GRAY))
+        try:
+            # Install fnm itself
+            if not self._is_command_available('fnm'):
+                if self.platform_name == 'Windows':
+                    result = subprocess.run(
+                        ['powershell', '-NoProfile', '-Command',
+                         'irm https://fnm.vercel.app/install | iex'],
+                        capture_output=True, timeout=120,
+                    )
+                    self._refresh_windows_path()
+                else:
+                    result = subprocess.run(
+                        ['bash', '-c', 'curl -fsSL https://fnm.vercel.app/install | bash'],
+                        capture_output=True, timeout=120,
+                    )
+                    # Add fnm to PATH for current session
+                    fnm_dir = Path.home() / '.local' / 'share' / 'fnm'
+                    if fnm_dir.exists():
+                        os.environ['PATH'] = str(fnm_dir) + ':' + os.environ.get('PATH', '')
+                    fnm_dir2 = Path.home() / '.fnm'
+                    if fnm_dir2.exists():
+                        os.environ['PATH'] = str(fnm_dir2) + ':' + os.environ.get('PATH', '')
+
+            if not self._is_command_available('fnm'):
+                return False
+
+            # Install Node.js 20 via fnm
+            subprocess.run(['fnm', 'install', '20'], timeout=120)
+            subprocess.run(['fnm', 'use', '20'], capture_output=True, timeout=10)
+            subprocess.run(['fnm', 'default', '20'], capture_output=True, timeout=10)
+
+            # fnm needs eval in shell — set PATH manually for this session
+            fnm_dir = subprocess.run(
+                ['fnm', 'env', '--shell', 'bash'],
+                capture_output=True, text=True, timeout=10,
+            )
+            if fnm_dir.returncode == 0:
+                for line in fnm_dir.stdout.strip().split('\n'):
+                    if 'PATH=' in line or 'FNM_' in line:
+                        line = line.replace('export ', '').strip()
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            value = value.strip('"').strip("'")
+                            value = value.replace('${PATH}', os.environ.get('PATH', ''))
+                            value = value.replace('$PATH', os.environ.get('PATH', ''))
+                            os.environ[key] = value
+
+            return self._is_command_available('node')
+        except Exception:
+            return False
+
+    def _install_via_snap(self, snap_name: str, classic: bool = False) -> bool:
+        """Install a package via snap (Linux fallback). Returns True on success."""
+        if not self._has_snap():
+            return False
+        print(self._colorize(f'  Trying snap: {snap_name}...', Color.GRAY))
+        try:
+            cmd = ['sudo', 'snap', 'install', snap_name]
+            if classic:
+                cmd.append('--classic')
+            result = subprocess.run(cmd, timeout=300)
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
     # Homebrew (macOS)
     # ------------------------------------------------------------------
 
@@ -561,15 +668,31 @@ class PackageInstaller:
             if self._is_command_available('node'):
                 print(self._colorize('✓ Node.js installed', Color.GREEN))
                 return True
-            else:
-                print(self._colorize('  Node.js installation did not complete successfully.', Color.RED))
-                if pkg == 'brew':
-                    print(self._colorize('  Try manually: brew install node', Color.YELLOW))
-                elif pkg == 'choco':
-                    print(self._colorize('  Try manually: choco install nodejs-lts -y', Color.YELLOW))
-                else:
-                    print(self._colorize('  Try manually: sudo apt-get update && sudo apt-get install -y nodejs npm', Color.YELLOW))
-                return False
+
+            # --- Fallback sources ---
+            print(self._colorize('  Primary install failed, trying alternative sources...', Color.YELLOW))
+
+            # Fallback 1: winget (Windows)
+            if pkg == 'choco' and self._install_via_winget('OpenJS.NodeJS.LTS'):
+                self._refresh_windows_path()
+                if self._is_command_available('node'):
+                    print(self._colorize('✓ Node.js installed (via winget)', Color.GREEN))
+                    return True
+
+            # Fallback 2: snap (Linux)
+            if self.platform_name == 'Linux' and self._install_via_snap('node', classic=True):
+                if self._is_command_available('node'):
+                    print(self._colorize('✓ Node.js installed (via snap)', Color.GREEN))
+                    return True
+
+            # Fallback 3: fnm (all platforms — downloads official Node.js binaries)
+            if self._install_node_via_fnm():
+                print(self._colorize('✓ Node.js installed (via fnm)', Color.GREEN))
+                return True
+
+            print(self._colorize('  All Node.js install sources failed.', Color.RED))
+            print(self._colorize('  Install manually from https://nodejs.org/en/download/', Color.YELLOW))
+            return False
         except Exception as e:
             print(self._colorize(f'  Error installing Node.js: {e}', Color.RED))
             return False
@@ -696,8 +819,57 @@ class PackageInstaller:
                                 os.environ['PATH'] += ';' + str(pg_dir / 'bin')
                                 break
 
-            print(self._colorize('✓ PostgreSQL installed', Color.GREEN))
-            return True
+            # Verify installation
+            if self._is_postgres_installed():
+                print(self._colorize('✓ PostgreSQL installed', Color.GREEN))
+                return True
+
+            # --- Fallback sources ---
+            print(self._colorize('  Primary install failed, trying alternative sources...', Color.YELLOW))
+
+            # Fallback: winget (Windows)
+            if pkg == 'choco':
+                if self._install_via_winget('PostgreSQL.PostgreSQL'):
+                    self._refresh_windows_path()
+                    if self._is_postgres_installed():
+                        print(self._colorize('✓ PostgreSQL installed (via winget)', Color.GREEN))
+                        return True
+
+            # Fallback: snap (Linux — not ideal for databases but works)
+            if self.platform_name == 'Linux':
+                # PostgreSQL via apt.postgresql.org official repo
+                if self._is_command_available('curl'):
+                    print(self._colorize('  Trying official PostgreSQL apt repo...', Color.GRAY))
+                    subprocess.run(
+                        ['bash', '-c',
+                         'curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | '
+                         'sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg 2>/dev/null'],
+                        capture_output=True, timeout=30,
+                    )
+                    # Get codename
+                    codename = subprocess.run(
+                        ['bash', '-c', 'lsb_release -cs 2>/dev/null || echo jammy'],
+                        capture_output=True, text=True, timeout=5,
+                    ).stdout.strip()
+                    subprocess.run(
+                        ['bash', '-c',
+                         f'echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] '
+                         f'https://apt.postgresql.org/pub/repos/apt {codename}-pgdg main" | '
+                         f'sudo tee /etc/apt/sources.list.d/pgdg.list'],
+                        capture_output=True, timeout=10,
+                    )
+                    subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                    result = subprocess.run(
+                        ['sudo', 'apt-get', 'install', '-y', '-qq', 'postgresql', 'postgresql-contrib'],
+                        timeout=300,
+                    )
+                    if result.returncode == 0 and self._is_postgres_installed():
+                        print(self._colorize('✓ PostgreSQL installed (via official apt repo)', Color.GREEN))
+                        return True
+
+            print(self._colorize('  All PostgreSQL install sources failed.', Color.RED))
+            print(self._colorize('  Install manually from https://www.postgresql.org/download/', Color.YELLOW))
+            return False
         except Exception as e:
             print(self._colorize(f'  Error installing PostgreSQL: {e}', Color.RED))
             return False
@@ -760,12 +932,32 @@ class PackageInstaller:
                     )
                 self._refresh_windows_path()
 
-            if self._is_command_available('redis-server'):
+            if self._is_redis_installed():
                 print(self._colorize('✓ Redis installed', Color.GREEN))
                 return True
-            else:
-                print(self._colorize('  Redis installation did not complete successfully.', Color.RED))
-                return False
+
+            # --- Fallback sources ---
+            print(self._colorize('  Primary install failed, trying alternative sources...', Color.YELLOW))
+
+            # Fallback: winget (Windows)
+            if pkg == 'choco':
+                # winget doesn't have Redis; try Memurai via winget
+                if self._install_via_winget('Memurai.MemuraiDeveloper'):
+                    self._refresh_windows_path()
+                    if self._is_redis_installed():
+                        print(self._colorize('✓ Redis installed (Memurai via winget)', Color.GREEN))
+                        return True
+
+            # Fallback: snap (Linux)
+            if self.platform_name == 'Linux':
+                if self._install_via_snap('redis'):
+                    if self._is_redis_installed():
+                        print(self._colorize('✓ Redis installed (via snap)', Color.GREEN))
+                        return True
+
+            # Redis is optional — warn but don't fail hard
+            print(self._colorize('  Redis install failed (optional — app works without it).', Color.YELLOW))
+            return False
         except Exception as e:
             print(self._colorize(f'  Error installing Redis: {e}', Color.RED))
             return False
