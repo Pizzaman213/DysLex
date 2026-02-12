@@ -1062,7 +1062,52 @@ class PackageInstaller:
                     capture_output=True, timeout=10,
                 )
 
-            print(self._colorize('✓ Database \'dyslex\' ready', Color.GREEN))
+            # Run init.sql to create tables (uses IF NOT EXISTS — safe to re-run)
+            init_sql = Path('database/schema/init.sql')
+            if init_sql.exists():
+                print(self._colorize('  Applying database schema...', Color.GRAY))
+                if self.platform_name == 'Darwin':
+                    subprocess.run(
+                        ['psql', '-d', 'dyslex', '-f', str(init_sql)],
+                        capture_output=True, timeout=30,
+                    )
+                elif self.platform_name == 'Linux':
+                    # Grant schema permissions first, then run as dyslex user
+                    subprocess.run(
+                        ['sudo', '-u', 'postgres', 'psql', '-d', 'dyslex', '-c',
+                         'GRANT ALL ON SCHEMA public TO dyslex;'],
+                        capture_output=True, timeout=10,
+                    )
+                    result = subprocess.run(
+                        ['sudo', '-u', 'postgres', 'psql', '-d', 'dyslex',
+                         '-f', str(init_sql.resolve())],
+                        capture_output=True, timeout=30,
+                    )
+                    if result.returncode != 0:
+                        # Fallback: try with PGPASSWORD
+                        env = os.environ.copy()
+                        env['PGPASSWORD'] = 'dyslex'
+                        subprocess.run(
+                            ['psql', '-U', 'dyslex', '-d', 'dyslex', '-h', 'localhost',
+                             '-f', str(init_sql.resolve())],
+                            capture_output=True, timeout=30, env=env,
+                        )
+                elif self.platform_name == 'Windows':
+                    psql_cmd = 'psql'
+                    if not self._is_command_available('psql'):
+                        pg_base = Path('C:/Program Files/PostgreSQL')
+                        if pg_base.exists():
+                            for pg_dir in sorted(pg_base.iterdir(), reverse=True):
+                                if (pg_dir / 'bin' / 'psql.exe').exists():
+                                    psql_cmd = str(pg_dir / 'bin' / 'psql.exe')
+                                    break
+                    subprocess.run(
+                        [psql_cmd, '-U', 'postgres', '-d', 'dyslex',
+                         '-f', str(init_sql.resolve())],
+                        capture_output=True, timeout=30,
+                    )
+
+            print(self._colorize('✓ Database \'dyslex\' ready (schema applied)', Color.GREEN))
             return True
         except Exception as e:
             print(self._colorize(f'  Warning: Database setup issue: {e}', Color.YELLOW))
