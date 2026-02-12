@@ -1823,14 +1823,62 @@ class PrerequisiteChecker:
                         os.environ['CPPFLAGS'] = os.environ.get('CPPFLAGS', '') + f' -I{lib_path}/include'
 
             # Install dependencies in batches to avoid OOM on low-memory VMs.
-            # torch alone can use 2GB+ RAM during install/resolve. Installing
-            # everything at once crashes machines with ≤4GB RAM.
             print(f"{self._colorize('  Installing dependencies in batches (this may take a while)...', Color.GRAY)}")
+
+            # --- Detect available memory and create swap if needed ---
+            low_memory = False
+            created_swap = False
+            try:
+                if platform.system() == 'Linux':
+                    with open('/proc/meminfo') as f:
+                        for line in f:
+                            if line.startswith('MemTotal:'):
+                                mem_kb = int(line.split()[1])
+                                mem_gb = mem_kb / 1024 / 1024
+                                if mem_gb < 4:
+                                    low_memory = True
+                                    print(f"{self._colorize(f'  Low memory detected ({mem_gb:.1f}GB). Creating swap file...', Color.YELLOW)}")
+                                    # Create a 4GB swap file
+                                    swap_path = '/swapfile_dyslex'
+                                    swap_cmds = [
+                                        ['sudo', 'fallocate', '-l', '4G', swap_path],
+                                        ['sudo', 'chmod', '600', swap_path],
+                                        ['sudo', 'mkswap', swap_path],
+                                        ['sudo', 'swapon', swap_path],
+                                    ]
+                                    for cmd in swap_cmds:
+                                        r = subprocess.run(cmd, capture_output=True, timeout=60)
+                                        if r.returncode != 0:
+                                            # fallocate may not work on all filesystems, try dd
+                                            if 'fallocate' in cmd:
+                                                subprocess.run(
+                                                    ['sudo', 'dd', 'if=/dev/zero', f'of={swap_path}',
+                                                     'bs=1M', 'count=4096'],
+                                                    capture_output=True, timeout=120,
+                                                )
+                                            else:
+                                                break
+                                    else:
+                                        created_swap = True
+                                        print(f"{self._colorize('  ✓ 4GB swap file created', Color.GREEN)}")
+                                break
+                elif platform.system() == 'Darwin':
+                    # macOS: check with sysctl
+                    result = subprocess.run(
+                        ['sysctl', '-n', 'hw.memsize'],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if result.returncode == 0:
+                        mem_bytes = int(result.stdout.strip())
+                        if mem_bytes < 4 * 1024 * 1024 * 1024:
+                            low_memory = True
+            except Exception:
+                pass  # Can't detect memory — proceed normally
 
             # Parse requirements.txt into ordered batches — heavy packages last
             requirements_file = backend_dir / 'requirements.txt'
             heavy_packages = {'torch', 'transformers', 'datasets', 'accelerate',
-                              'onnx', 'onnxruntime', 'optimum', 'peft'}
+                              'onnx', 'onnxruntime', 'optimum', 'peft', 'numpy'}
             light_reqs = []
             heavy_reqs = []
             with open(requirements_file) as f:
@@ -1838,7 +1886,6 @@ class PrerequisiteChecker:
                     line = line.strip()
                     if not line or line.startswith('#'):
                         continue
-                    # Extract package name (before any >=, [, etc.)
                     pkg_name = line.split('>=')[0].split('<=')[0].split('==')[0].split('[')[0].strip()
                     if pkg_name.lower() in heavy_packages:
                         heavy_reqs.append(line)
@@ -1860,19 +1907,42 @@ class PrerequisiteChecker:
                     print(f"{self._colorize('  Core package install failed', Color.RED)}")
                     return False
 
-            # Batch 2: ML packages one at a time (heaviest — torch can be 2GB+)
-            for i, req in enumerate(heavy_reqs, 1):
+            # Batch 2: ML packages one at a time
+            # Install order matters — torch first (others depend on it),
+            # numpy before datasets/transformers.
+            install_order = ['numpy', 'torch', 'onnx', 'onnxruntime',
+                             'accelerate', 'peft', 'transformers', 'datasets', 'optimum']
+            ordered_heavy = []
+            heavy_map = {}
+            for req in heavy_reqs:
+                pkg_name = req.split('>=')[0].split('<=')[0].split('==')[0].split('[')[0].strip().lower()
+                heavy_map[pkg_name] = req
+            for name in install_order:
+                if name in heavy_map:
+                    ordered_heavy.append(heavy_map.pop(name))
+            # Append any remaining that weren't in the explicit order
+            ordered_heavy.extend(heavy_map.values())
+
+            for i, req in enumerate(ordered_heavy, 1):
                 pkg_display = req.split('>=')[0].split('[')[0].strip()
-                print(f"{self._colorize(f'  [2/3] Installing ML package {i}/{len(heavy_reqs)}: {pkg_display}...', Color.GRAY)}")
+                print(f"{self._colorize(f'  [2/3] Installing ML package {i}/{len(ordered_heavy)}: {pkg_display}...', Color.GRAY)}")
+
+                install_cmd = pip_base.copy()
+
+                # For torch: use CPU-only build (much smaller, won't OOM)
+                if pkg_display.lower() == 'torch':
+                    install_cmd += ['--index-url', 'https://download.pytorch.org/whl/cpu']
+
+                install_cmd.append(req)
+
                 result = subprocess.run(
-                    pip_base + [req],
+                    install_cmd,
                     cwd=str(backend_dir),
                     capture_output=False,
-                    timeout=900,  # torch can take a while
+                    timeout=900,
                 )
                 if result.returncode != 0:
                     print(f"{self._colorize(f'  Warning: {pkg_display} failed to install (ML features may be limited)', Color.YELLOW)}")
-                    # Don't fail hard — core app works without ML packages
 
             # Batch 3: verify critical imports work
             print(f"{self._colorize('  [3/3] Verifying installation...', Color.GRAY)}")
@@ -1888,6 +1958,17 @@ class PrerequisiteChecker:
                 if check.returncode != 0:
                     print(f"{self._colorize('  Warning: core imports failed — dependencies may be incomplete', Color.YELLOW)}")
                     return False
+
+            # Clean up swap file if we created one
+            if created_swap:
+                try:
+                    subprocess.run(['sudo', 'swapoff', '/swapfile_dyslex'],
+                                   capture_output=True, timeout=30)
+                    subprocess.run(['sudo', 'rm', '-f', '/swapfile_dyslex'],
+                                   capture_output=True, timeout=10)
+                    print(f"{self._colorize('  ✓ Temporary swap file removed', Color.GREEN)}")
+                except Exception:
+                    pass
 
             return True
         except Exception as e:
@@ -2690,6 +2771,17 @@ async def main():
     # Parse arguments
     parser = create_argument_parser()
     args = parser.parse_args()
+
+    # First-run detection: if key setup artifacts are missing, enable auto-setup
+    if not args.auto_setup:
+        venv_exists = (script_dir / 'backend' / '.venv').is_dir()
+        node_modules_exists = (script_dir / 'frontend' / 'node_modules').is_dir()
+        env_exists = (script_dir / '.env').is_file() or (script_dir / 'backend' / '.env').is_file()
+        if not venv_exists and not node_modules_exists and not env_exists:
+            print(f"\n{Color.CYAN}{Color.BOLD}First run detected!{Color.RESET}")
+            print(f"  No backend venv, node_modules, or .env found.")
+            print(f"  Enabling --auto-setup to install prerequisites automatically.\n")
+            args.auto_setup = True
 
     # Determine mode
     if args.docker:
