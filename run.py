@@ -971,6 +971,7 @@ class PackageInstaller:
         print(self._colorize('⚙️  Installing frontend dependencies...', Color.YELLOW))
         try:
             frontend_dir = Path('frontend').resolve()
+            # Try strict install first
             result = self._run_command(
                 ['npm', 'install'],
                 timeout=600,
@@ -979,6 +980,18 @@ class PackageInstaller:
             if result.returncode == 0:
                 print(self._colorize('✓ Frontend dependencies installed', Color.GREEN))
                 return True
+
+            # Fallback: --legacy-peer-deps to resolve peer dep conflicts
+            print(self._colorize('  Retrying with --legacy-peer-deps...', Color.YELLOW))
+            result = self._run_command(
+                ['npm', 'install', '--legacy-peer-deps'],
+                timeout=600,
+                cwd=str(frontend_dir),
+            )
+            if result.returncode == 0:
+                print(self._colorize('✓ Frontend dependencies installed (with legacy peer deps)', Color.GREEN))
+                return True
+
             print(self._colorize('  npm install failed', Color.RED))
             return False
         except Exception as e:
