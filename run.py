@@ -344,6 +344,69 @@ class PackageInstaller:
             pass
 
     # ------------------------------------------------------------------
+    # System prerequisites (build tools, libraries)
+    # ------------------------------------------------------------------
+
+    def install_system_prerequisites(self) -> bool:
+        """Install system build tools and libraries needed by pip packages.
+
+        On a fresh Ubuntu/Debian or Fedora install, many packages are missing
+        that are required later (curl, git, build-essential, python3-venv,
+        libpq-dev for psycopg2, etc.).  Install them all upfront in one pass
+        so individual steps don't fail in surprising ways.
+        """
+        pkg = self._detect_package_manager()
+        if not pkg or pkg in ('brew', 'choco'):
+            # macOS/Homebrew and Windows/Chocolatey handle deps differently;
+            # individual install_* methods already cover them.
+            return True
+
+        print(self._colorize('⚙️  Installing system prerequisites...', Color.YELLOW))
+        try:
+            if pkg == 'apt':
+                subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+                self._run_command([
+                    'sudo', 'apt-get', 'install', '-y', '-qq',
+                    # Core tools
+                    'curl', 'wget', 'git', 'ca-certificates', 'gnupg',
+                    # Build toolchain (needed by pip packages with C extensions)
+                    'build-essential', 'gcc', 'g++', 'make', 'pkg-config',
+                    # Python venv & dev headers
+                    'python3-venv', f'python{py_ver}-venv',
+                    'python3-dev', 'python3-pip',
+                    # Libraries required by backend requirements.txt
+                    'libpq-dev',        # psycopg2
+                    'libffi-dev',       # cryptography / cffi
+                    'libssl-dev',       # cryptography
+                ], timeout=300)
+            elif pkg == 'dnf':
+                self._run_command([
+                    'sudo', 'dnf', 'install', '-y', '-q',
+                    'curl', 'wget', 'git', 'ca-certificates',
+                    'gcc', 'gcc-c++', 'make', 'pkgconfig',
+                    'python3-devel', 'python3-pip',
+                    'libpq-devel',
+                    'libffi-devel',
+                    'openssl-devel',
+                ], timeout=300)
+            elif pkg == 'pacman':
+                self._run_command([
+                    'sudo', 'pacman', '-Sy', '--noconfirm', '--needed',
+                    'curl', 'wget', 'git', 'base-devel',
+                    'python', 'python-pip',
+                    'postgresql-libs',
+                    'libffi',
+                    'openssl',
+                ], timeout=300)
+
+            print(self._colorize('✓ System prerequisites installed', Color.GREEN))
+            return True
+        except Exception as e:
+            print(self._colorize(f'  Warning: Some prerequisites may not have installed: {e}', Color.YELLOW))
+            return False
+
+    # ------------------------------------------------------------------
     # Node.js
     # ------------------------------------------------------------------
 
@@ -737,6 +800,10 @@ class PrerequisiteChecker:
         10. Environment variables (NVIDIA key prompt)
         11. NVIDIA NIM API ping
         """
+        # Install system build tools & libraries upfront on Linux
+        if self.auto_setup and self.installer and self.mode != 'docker':
+            self.installer.install_system_prerequisites()
+
         checks = [
             ("Python version", self.check_python_version),
         ]
@@ -1176,7 +1243,7 @@ class PrerequisiteChecker:
         if self.platform_name == 'Darwin':  # macOS
             return "Start Redis: brew services start redis"
         elif self.platform_name == 'Linux':
-            return "Start Redis: sudo systemctl start redis"
+            return "Start Redis: sudo systemctl start redis-server  (or redis)"
         else:  # Windows
             return "Start Redis: Download from https://redis.io/download or use Docker"
 
@@ -1225,13 +1292,18 @@ class PrerequisiteChecker:
                 time.sleep(2)
                 return self._is_port_open('localhost', REDIS_PORT)
             elif self.platform_name == 'Linux':
-                result = subprocess.run(
-                    ['sudo', 'systemctl', 'start', 'redis'],
-                    capture_output=True,
-                    timeout=30
-                )
+                # Try both service names: Debian/Ubuntu uses 'redis-server',
+                # Fedora/Arch use 'redis'
+                for svc_name in ['redis-server', 'redis']:
+                    result = subprocess.run(
+                        ['sudo', 'systemctl', 'start', svc_name],
+                        capture_output=True,
+                        timeout=30
+                    )
+                    if result.returncode == 0:
+                        break
                 time.sleep(2)
-                return result.returncode == 0 and self._is_port_open('localhost', REDIS_PORT)
+                return self._is_port_open('localhost', REDIS_PORT)
             else:
                 return False
         except Exception as e:
@@ -1288,6 +1360,14 @@ class PrerequisiteChecker:
             if not venv_pip.exists():
                 print(f"{self._colorize(f'  Error: pip not found in venv', Color.RED)}")
                 return False
+
+            # Upgrade pip first to avoid build failures with older versions
+            subprocess.run(
+                [str(venv_pip), 'install', '--upgrade', 'pip', 'setuptools', 'wheel'],
+                cwd=str(backend_dir),
+                capture_output=True,
+                timeout=120,
+            )
 
             # Install dependencies
             print(f"{self._colorize('  Installing dependencies (this may take a few minutes)...', Color.GRAY)}")
