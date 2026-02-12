@@ -367,17 +367,35 @@ class PackageInstaller:
                 subprocess.run(['brew', 'link', '--overwrite', 'node@20'],
                                capture_output=True, timeout=30)
             elif pkg == 'apt':
+                # Ensure curl is available for NodeSource setup
+                if not self._is_command_available('curl'):
+                    subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                    subprocess.run(
+                        ['sudo', 'apt-get', 'install', '-y', '-qq', 'curl'],
+                        timeout=120,
+                    )
                 # NodeSource setup
-                subprocess.run(
+                result = subprocess.run(
                     ['bash', '-c', 'curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -'],
                     timeout=120,
                 )
-                self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
+                if result.returncode != 0:
+                    print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
+                    subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
             elif pkg == 'dnf':
-                subprocess.run(
+                # Ensure curl is available for NodeSource setup
+                if not self._is_command_available('curl'):
+                    subprocess.run(
+                        ['sudo', 'dnf', 'install', '-y', '-q', 'curl'],
+                        timeout=120,
+                    )
+                result = subprocess.run(
                     ['bash', '-c', 'curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo -E bash -'],
                     timeout=120,
                 )
+                if result.returncode != 0:
+                    print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
                 self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'nodejs'], timeout=300)
             elif pkg == 'pacman':
                 self._run_command(['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'nodejs', 'npm'], timeout=300)
@@ -387,8 +405,14 @@ class PackageInstaller:
                 self._run_command(['choco', 'install', 'nodejs-lts', '-y', '--no-progress'], timeout=600)
                 self._refresh_windows_path()
 
-            print(self._colorize('✓ Node.js installed', Color.GREEN))
-            return True
+            # Verify node is actually available now
+            if self._is_command_available('node'):
+                print(self._colorize('✓ Node.js installed', Color.GREEN))
+                return True
+            else:
+                print(self._colorize('  Node.js installation did not complete successfully.', Color.RED))
+                print(self._colorize('  Try manually: sudo apt-get update && sudo apt-get install -y nodejs npm', Color.YELLOW))
+                return False
         except Exception as e:
             print(self._colorize(f'  Error installing Node.js: {e}', Color.RED))
             return False
@@ -510,6 +534,7 @@ class PackageInstaller:
                     return False
                 self._run_command(['brew', 'install', 'redis'], timeout=300)
             elif pkg == 'apt':
+                subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
                 self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'redis-server'], timeout=300)
             elif pkg == 'dnf':
                 self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'redis'], timeout=300)
@@ -530,8 +555,12 @@ class PackageInstaller:
                     )
                 self._refresh_windows_path()
 
-            print(self._colorize('✓ Redis installed', Color.GREEN))
-            return True
+            if self._is_command_available('redis-server'):
+                print(self._colorize('✓ Redis installed', Color.GREEN))
+                return True
+            else:
+                print(self._colorize('  Redis installation did not complete successfully.', Color.RED))
+                return False
         except Exception as e:
             print(self._colorize(f'  Error installing Redis: {e}', Color.RED))
             return False
