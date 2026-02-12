@@ -3,13 +3,78 @@
   "prepositions": {
     "description": "Common prepositions that dyslexic writers may omit",
     "patterns": [
-      {"word": "to", "context_before": ["go", "went", "going", "come", "came", "walk", "walked", "run", "ran", "drive", "drove", "move", "moved", "travel", "traveled", "return", "returned", "listen", "listened"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "our", "your", "school", "work", "home", "town", "store", "church"]},
-      {"word": "in", "context_before": ["live", "lived", "lives", "stay", "stayed", "work", "worked", "put", "arrive", "arrived"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
-      {"word": "on", "context_before": ["put", "sit", "sat", "place", "placed", "rely", "relied", "depend", "depended"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
-      {"word": "at", "context_before": ["look", "looked", "arrive", "arrived", "stay", "stayed", "work", "worked"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
-      {"word": "for", "context_before": ["wait", "waited", "look", "looked", "ask", "asked", "search", "searched", "pay", "paid", "thank", "thanked"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
-      {"word": "with", "context_before": ["play", "played", "talk", "talked", "work", "worked", "come", "came", "go", "went", "agree", "agreed"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
-      {"word": "of", "context_before": ["lot", "lots", "kind", "type", "sort", "part", "most", "some", "all", "many", "few", "one", "each", "group", "pair", "set", "number"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]}
+      {"word": "to", "context_before": ["go", "went", "going", "come", "came", "walk", "walked", "run", "ran", "drive", "drove", "move", "moved", "travel", "traveled", "return", "returned", "listen", "listened", "talk", "talked", "late", "close", "closer", "next", "according", "refer", "referred", "relate", "related", "belong", "belonged", "respond", "responded", "lead", "led", "contribute", "contributed", "add", "added", "attach", "attached", "connect", "connected", "send", "sent", "write", "wrote", "speak", "spoke"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "our", "your", "school", "work", "home", "town", "store", "church", "class", "practice", "bed", "lunch", "dinner"]},
+      {"word": "in", "context_before": ["live", "lived", "lives", "stay", "stayed", "work", "worked", "put", "arrive", "arrived", "believe", "believed", "participate", "participated", "result", "resulted", "interested", "involved", "include", "included", "engage", "engaged", "invest", "invested", "specialize", "specialized", "succeed", "succeeded"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "front", "time", "order", "addition", "fact", "case", "general"]},
+      {"word": "on", "context_before": ["put", "sit", "sat", "place", "placed", "rely", "relied", "depend", "depended", "focus", "focused", "work", "worked", "based", "count", "counted", "insist", "insisted", "concentrate", "concentrated", "comment", "commented", "agree", "agreed", "decide", "decided"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "time", "top", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]},
+      {"word": "at", "context_before": ["look", "looked", "arrive", "arrived", "stay", "stayed", "work", "worked", "stare", "stared", "laugh", "laughed", "point", "pointed", "aim", "aimed", "surprised", "amazed", "shocked", "angry", "good", "bad", "great", "excellent", "terrible", "late", "early"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "home", "school", "work", "night", "noon", "least", "first", "last"]},
+      {"word": "for", "context_before": ["wait", "waited", "look", "looked", "ask", "asked", "search", "searched", "pay", "paid", "thank", "thanked", "prepare", "prepared", "ready", "responsible", "sorry", "grateful", "famous", "known", "late", "early", "care", "cared", "hope", "hoped", "apply", "applied", "qualify", "qualified", "account", "accounted"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "help", "dinner", "lunch", "breakfast", "years", "months", "weeks", "days", "hours"]},
+      {"word": "with", "context_before": ["play", "played", "talk", "talked", "work", "worked", "come", "came", "go", "went", "agree", "agreed", "deal", "dealt", "cope", "coped", "fill", "filled", "cover", "covered", "replace", "replaced", "provide", "provided", "share", "shared", "compare", "compared", "familiar", "happy", "pleased", "satisfied", "angry", "frustrated", "patient", "impressed", "comfortable", "change", "changed"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "each", "one", "great", "new"]},
+      {"word": "of", "context_before": ["lot", "lots", "kind", "type", "sort", "part", "most", "some", "all", "many", "few", "one", "each", "group", "pair", "set", "number", "out", "because", "instead", "ahead", "capable", "aware", "fond", "proud", "afraid", "tired", "full", "short", "lack", "plenty", "couple", "rest", "end", "beginning", "middle", "top", "bottom"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "it", "them", "us", "people", "time", "money", "water", "food"]},
+      {"word": "from", "context_before": ["come", "came", "borrow", "borrowed", "take", "took", "learn", "learned", "hear", "heard", "receive", "received", "suffer", "suffered", "recover", "recovered", "escape", "escaped", "differ", "differed", "prevent", "prevented", "separate", "separated", "protect", "protected", "hide", "hid", "far", "away", "apart", "different", "absent"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "home", "school", "work"]},
+      {"word": "about", "context_before": ["think", "thought", "talk", "talked", "worry", "worried", "care", "cared", "know", "knew", "learn", "learned", "read", "forget", "forgot", "hear", "heard", "dream", "dreamed", "complain", "complained", "argue", "argued", "curious", "excited", "concerned", "serious", "passionate"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "it", "what", "how", "why"]},
+      {"word": "into", "context_before": ["go", "went", "walk", "walked", "run", "ran", "turn", "turned", "fall", "fell", "crash", "crashed", "bump", "bumped", "look", "looked", "move", "moved", "put", "divide", "divided", "break", "broke", "transform", "transformed", "translate", "translated"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]},
+      {"word": "by", "context_before": ["sit", "sat", "stand", "stood", "pass", "passed", "stop", "stopped", "walk", "walked", "drive", "drove", "surprised", "impressed", "written", "made", "built", "designed", "created", "caused", "followed", "accompanied"], "context_after": ["the", "a", "an", "my", "his", "her", "their", "hand", "car", "bus", "train"]},
+      {"word": "through", "context_before": ["go", "went", "walk", "walked", "run", "ran", "drive", "drove", "look", "looked", "pass", "passed", "get", "got", "break", "broke", "cut", "push", "pushed", "read"], "context_after": ["the", "a", "an", "my", "his", "her", "their"]}
+    ]
+  },
+  "preposition_substitution": {
+    "description": "Common preposition confusion pairs for substitution errors",
+    "confusion_matrix": {
+      "to": ["for", "at", "in"],
+      "for": ["to", "of", "at"],
+      "in": ["on", "at", "to"],
+      "on": ["in", "at", "for"],
+      "at": ["in", "on", "to"],
+      "with": ["by", "for", "to"],
+      "by": ["with", "from", "for"],
+      "of": ["for", "from", "about"],
+      "from": ["of", "by", "for"],
+      "about": ["of", "for", "on"]
+    },
+    "collocations": [
+      {"correct": "interested in", "errors": ["interested on", "interested for", "interested about"]},
+      {"correct": "good at", "errors": ["good in", "good for", "good on"]},
+      {"correct": "depend on", "errors": ["depend in", "depend of", "depend for"]},
+      {"correct": "listen to", "errors": ["listen at", "listen for"]},
+      {"correct": "arrive at", "errors": ["arrive to", "arrive in"]},
+      {"correct": "apologize for", "errors": ["apologize about", "apologize to"]},
+      {"correct": "consist of", "errors": ["consist in", "consist from"]},
+      {"correct": "belong to", "errors": ["belong for", "belong of"]},
+      {"correct": "result in", "errors": ["result to", "result for", "result with"]},
+      {"correct": "refer to", "errors": ["refer about", "refer for"]},
+      {"correct": "agree with", "errors": ["agree to", "agree on"]},
+      {"correct": "afraid of", "errors": ["afraid from", "afraid about", "afraid for"]},
+      {"correct": "responsible for", "errors": ["responsible of", "responsible about"]},
+      {"correct": "capable of", "errors": ["capable for", "capable to"]},
+      {"correct": "different from", "errors": ["different of", "different than", "different to"]},
+      {"correct": "proud of", "errors": ["proud for", "proud about"]},
+      {"correct": "tired of", "errors": ["tired from", "tired about", "tired with"]},
+      {"correct": "look forward to", "errors": ["look forward for"]},
+      {"correct": "pay attention to", "errors": ["pay attention on", "pay attention at", "pay attention for"]},
+      {"correct": "succeed in", "errors": ["succeed at", "succeed to"]},
+      {"correct": "participate in", "errors": ["participate at", "participate to"]},
+      {"correct": "concentrate on", "errors": ["concentrate in", "concentrate at"]},
+      {"correct": "based on", "errors": ["based in", "based from", "based of"]}
+    ]
+  },
+  "preposition_insertion": {
+    "description": "Verbs where a preposition is incorrectly inserted",
+    "patterns": [
+      {"correct_verb": "discuss", "wrong_insertion": "about", "example_correct": "discussed the plan", "example_error": "discussed about the plan"},
+      {"correct_verb": "enter", "wrong_insertion": "into", "example_correct": "entered the room", "example_error": "entered into the room"},
+      {"correct_verb": "reach", "wrong_insertion": "to", "example_correct": "reached the station", "example_error": "reached to the station"},
+      {"correct_verb": "mention", "wrong_insertion": "about", "example_correct": "mentioned the idea", "example_error": "mentioned about the idea"},
+      {"correct_verb": "explain", "wrong_insertion": "about", "example_correct": "explained the problem", "example_error": "explained about the problem"},
+      {"correct_verb": "describe", "wrong_insertion": "about", "example_correct": "described the scene", "example_error": "described about the scene"},
+      {"correct_verb": "approach", "wrong_insertion": "to", "example_correct": "approached the door", "example_error": "approached to the door"},
+      {"correct_verb": "address", "wrong_insertion": "to", "example_correct": "addressed the issue", "example_error": "addressed to the issue"},
+      {"correct_verb": "emphasize", "wrong_insertion": "on", "example_correct": "emphasized the point", "example_error": "emphasized on the point"},
+      {"correct_verb": "request", "wrong_insertion": "for", "example_correct": "requested a meeting", "example_error": "requested for a meeting"},
+      {"correct_verb": "demand", "wrong_insertion": "for", "example_correct": "demanded an answer", "example_error": "demanded for an answer"},
+      {"correct_verb": "join", "wrong_insertion": "in", "example_correct": "joined the team", "example_error": "joined in the team"},
+      {"correct_verb": "contact", "wrong_insertion": "with", "example_correct": "contacted the manager", "example_error": "contacted with the manager"},
+      {"correct_verb": "attend", "wrong_insertion": "to", "example_correct": "attended the meeting", "example_error": "attended to the meeting"},
+      {"correct_verb": "answer", "wrong_insertion": "to", "example_correct": "answered the question", "example_error": "answered to the question"}
     ]
   },
   "conjunctions": {

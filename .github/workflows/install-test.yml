@@ -1,0 +1,75 @@
+name: Cross-Platform Install Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'run.py'
+      - 'tests/**'
+      - '.github/workflows/install-test.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'run.py'
+      - 'tests/**'
+      - '.github/workflows/install-test.yml'
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6am UTC
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+  integration-check-only:
+    needs: unit-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04, macos-latest, macos-13]
+        python-version: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run prerequisite check (no auto-setup)
+        run: python run.py --check-only || true
+
+  auto-setup-integration:
+    needs: unit-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run auto-setup check
+        run: python run.py --check-only --auto-setup -y
+        timeout-minutes: 15

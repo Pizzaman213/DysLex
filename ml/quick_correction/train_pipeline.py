@@ -126,7 +126,7 @@ def stage_train(
     epochs: int = 5,
     batch_size: int = 32,
     learning_rate: float = 2e-5,
-    patience: int = 3,
+    patience: int = 10,
 ) -> bool:
     """Stage 4: Fine-tune DistilBERT on the combined dataset.
 
@@ -238,7 +238,26 @@ def stage_export(quantize: bool = False) -> bool:
     return True
 
 
-def stage_generate_grammar(target_samples: int = 30000) -> bool:
+def stage_expand_corpus() -> bool:
+    """Stage: Expand the sentence corpus with Tatoeba and Simple Wikipedia."""
+    logger.info("=" * 60)
+    logger.info("STAGE: Expand Sentence Corpus")
+    logger.info("=" * 60)
+
+    from ml.datasets.download_sentences import build_expanded_corpus
+
+    corpus = build_expanded_corpus(target_total=30000)
+
+    if len(corpus) < 5000:
+        logger.warning(f"Corpus expansion produced only {len(corpus)} sentences (expected 20K+)")
+        logger.info("Will continue with existing corpus.")
+        return True  # Non-fatal
+
+    logger.info(f"Corpus expansion complete: {len(corpus)} sentences")
+    return True
+
+
+def stage_generate_grammar(target_samples: int = 50000) -> bool:
     """Stage: Generate synthetic grammar error training data."""
     logger.info("=" * 60)
     logger.info("STAGE: Generate Grammar Training Data")
@@ -263,8 +282,13 @@ def stage_generate_grammar(target_samples: int = 30000) -> bool:
     return True
 
 
-def stage_generate_mixed(target_samples: int = 5000) -> bool:
-    """Stage: Generate mixed spelling+grammar error training data."""
+def stage_generate_mixed(target_samples: int = 75000) -> bool:
+    """Stage: Generate mixed spelling+grammar error training data.
+
+    Generates two types:
+    - Simple mixed (1 spelling + 1 grammar error): 25K samples
+    - Multi-error (2-4 errors, including long-sentence samples): 50K samples
+    """
     logger.info("=" * 60)
     logger.info("STAGE: Generate Mixed (Spelling+Grammar) Training Data")
     logger.info("=" * 60)
@@ -275,17 +299,35 @@ def stage_generate_mixed(target_samples: int = 5000) -> bool:
     output_file = PROCESSED_DIR / "mixed_synthetic_seq2seq.jsonl"
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
+    # Simple mixed: 1/3 of target
+    simple_count = target_samples // 3
     samples = generator.generate_mixed_training_pairs(
-        num_samples=target_samples,
-        output_file=output_file,
+        num_samples=simple_count,
+        output_file=None,  # Don't write yet
     )
+    logger.info(f"Simple mixed: {len(samples)} samples")
 
-    if not samples:
-        logger.error("No mixed samples generated.")
-        return False
+    # Multi-error: 2/3 of target
+    multi_count = target_samples - simple_count
+    multi_samples = generator.generate_multi_error_training_pairs(
+        num_samples=multi_count,
+        output_file=None,  # Don't write yet
+    )
+    logger.info(f"Multi-error mixed: {len(multi_samples)} samples")
 
-    logger.info(f"Mixed generation complete: {len(samples)} samples -> {output_file}")
-    return True
+    # Combine and write
+    import json
+    import random
+    all_samples = samples + multi_samples
+    random.shuffle(all_samples)
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, "w") as f:
+        for sample in all_samples:
+            f.write(json.dumps(sample) + "\n")
+
+    logger.info(f"Mixed generation complete: {len(all_samples)} samples -> {output_file}")
+    return bool(all_samples)
 
 
 def stage_process_gec() -> bool:
@@ -368,11 +410,12 @@ def stage_combine_seq2seq(target_total: int = 80000, include_grammar: bool = Fal
 
 
 def stage_train_seq2seq(
-    model_name: str = "t5-small",
-    epochs: int = 5,
+    model_name: str = "google/flan-t5-small",
+    epochs: int = 12,
     batch_size: int = 32,
-    learning_rate: float = 3e-4,
-    patience: int = 3,
+    learning_rate: float = 1e-4,
+    patience: int = 15,
+    max_eval_samples: int = 2000,
 ) -> bool:
     """Stage 4 (seq2seq): Fine-tune T5-small on the combined seq2seq dataset."""
     logger.info("=" * 60)
@@ -394,16 +437,23 @@ def stage_train_seq2seq(
         batch_size=batch_size,
         learning_rate=learning_rate,
         patience=patience,
+        max_eval_samples=max_eval_samples,
     )
 
     logger.info("Seq2seq training stage complete")
     return True
 
 
-def stage_evaluate_seq2seq() -> bool:
-    """Stage 5 (seq2seq): Evaluate the trained seq2seq model on held-out test data."""
+def stage_evaluate_seq2seq(gate: bool = False) -> bool:
+    """Stage 5 (seq2seq): Evaluate the trained seq2seq model on held-out test data.
+
+    Args:
+        gate: If True, fail pipeline if quality thresholds are not met
+    """
     logger.info("=" * 60)
     logger.info("STAGE 5: Evaluate Seq2Seq Model")
+    if gate:
+        logger.info("  (Regression gate: ENABLED)")
     logger.info("=" * 60)
 
     if not SEQ2SEQ_MODEL_DIR.exists():
@@ -427,10 +477,15 @@ def stage_evaluate_seq2seq() -> bool:
         output_file=SEQ2SEQ_MODEL_DIR / "eval_report.json",
         spelling_test_file=spelling_test if spelling_test.exists() else None,
         grammar_test_file=grammar_test if grammar_test.exists() else None,
+        gate=gate,
     )
 
     if not results:
         logger.error("Seq2seq evaluation failed")
+        return False
+
+    if gate and not results.get("gate_passed", True):
+        logger.error("Seq2seq evaluation: REGRESSION GATE FAILED")
         return False
 
     logger.info("Seq2seq evaluation stage complete")
@@ -526,6 +581,15 @@ Examples:
              "and mixes them with spelling data.",
     )
 
+    # Quality gates
+    quality = parser.add_argument_group("quality gates")
+    quality.add_argument(
+        "--gate",
+        action="store_true",
+        help="Enable regression gate: fail pipeline if spelling < 95%%, "
+             "grammar < 85%%, or P95 latency > 200ms",
+    )
+
     # Training parameters
     training = parser.add_argument_group("training parameters")
     training.add_argument(
@@ -555,8 +619,8 @@ Examples:
     training.add_argument(
         "--patience",
         type=int,
-        default=3,
-        help="Early stopping patience (default: 3)",
+        default=15,
+        help="Early stopping patience in eval steps (default: 15)",
     )
 
     # Dataset parameters
@@ -566,6 +630,12 @@ Examples:
         type=int,
         default=80000,
         help="Target total samples (default: 80000)",
+    )
+    dataset.add_argument(
+        "--max-eval-samples",
+        type=int,
+        default=2000,
+        help="Max eval samples during training, 0 = no cap (default: 2000)",
     )
 
     # Export parameters
@@ -642,12 +712,16 @@ def main():
 
     # Grammar-specific stages (run after process, before combine)
     if include_grammar and (args.process or args.all):
+        # Expand sentence corpus before generating synthetic data
+        success = stage_expand_corpus()
+        stage_results["expand_corpus"] = success
+
         # Generate synthetic grammar errors
-        success = stage_generate_grammar(target_samples=30000)
+        success = stage_generate_grammar(target_samples=50000)
         stage_results["generate_grammar"] = success
 
-        # Generate mixed spelling+grammar errors
-        success = stage_generate_mixed(target_samples=5000)
+        # Generate mixed spelling+grammar errors (now 75K)
+        success = stage_generate_mixed(target_samples=75000)
         stage_results["generate_mixed"] = success
 
         # Process real GEC datasets if available
@@ -658,7 +732,7 @@ def main():
         if is_seq2seq:
             target = args.target_samples
             if include_grammar and target == 80000:
-                target = 110000  # Larger target when including grammar data
+                target = 180000  # Larger target to accommodate expanded mixed data
             success = stage_combine_seq2seq(
                 target_total=target,
                 include_grammar=include_grammar,
@@ -674,18 +748,19 @@ def main():
     if args.train:
         if is_seq2seq:
             # Use seq2seq defaults if user didn't override
-            model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "t5-small"
-            # Use lower LR when grammar is included to avoid forgetting spelling
-            default_lr = 2e-4 if include_grammar else 3e-4
+            model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "google/flan-t5-small"
+            # Use lower LR for better convergence on larger dataset
+            default_lr = 1e-4 if include_grammar else 1e-4
             lr = args.lr if args.lr != 2e-5 else default_lr
-            # More epochs for grammar-augmented training
-            epochs = args.epochs if args.epochs != 5 else (8 if include_grammar else 5)
+            # More epochs with early stopping for larger dataset
+            epochs = args.epochs if args.epochs != 5 else (12 if include_grammar else 8)
             success = stage_train_seq2seq(
                 model_name=model_name,
                 epochs=epochs,
                 batch_size=args.batch_size,
                 learning_rate=lr,
                 patience=args.patience,
+                max_eval_samples=args.max_eval_samples,
             )
         else:
             success = stage_train(
@@ -703,7 +778,7 @@ def main():
 
     if args.evaluate:
         if is_seq2seq:
-            success = stage_evaluate_seq2seq()
+            success = stage_evaluate_seq2seq(gate=args.gate)
         else:
             success = stage_evaluate()
         stage_results["evaluate"] = success

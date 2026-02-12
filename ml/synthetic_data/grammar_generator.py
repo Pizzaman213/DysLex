@@ -66,6 +66,11 @@ class GrammarErrorGenerator:
         # Regular verbs
         self.regular_verbs: list[str] = self.verb_tenses.get("regular_verbs", {}).get("verbs", [])
 
+        # Past participles (base -> participle)
+        self.past_participles: dict[str, str] = dict(
+            self.verb_tenses.get("past_participles", {}).get("pairs", {})
+        )
+
     def _build_pronoun_tables(self) -> None:
         """Build pronoun case lookup tables."""
         case_forms = self.pronouns.get("case_forms", {}).get("pairs", [])
@@ -182,11 +187,119 @@ class GrammarErrorGenerator:
         words.pop(idx)
         return " ".join(words), "function_word"
 
+    def apply_preposition_substitution(self, text: str) -> tuple[str, str | None]:
+        """Replace a preposition with a wrong one (e.g., "interested on" instead of "interested in").
+
+        First tries collocation-based substitution, then falls back to confusion matrix.
+
+        Returns:
+            Tuple of (modified_text, error_type or None)
+        """
+        # Try collocation-based substitution first
+        collocations = self.function_words.get("preposition_substitution", {}).get("collocations", [])
+        text_lower = text.lower()
+        matching = [c for c in collocations if c["correct"] in text_lower]
+
+        if matching:
+            coll = random.choice(matching)
+            error_phrase = random.choice(coll["errors"])
+            # Case-preserving replacement
+            idx = text_lower.find(coll["correct"])
+            if idx >= 0:
+                end = idx + len(coll["correct"])
+                modified = text[:idx] + error_phrase + text[end:]
+                return modified, "function_word"
+
+        # Fall back to confusion matrix substitution
+        confusion = self.function_words.get("preposition_substitution", {}).get("confusion_matrix", {})
+        if not confusion:
+            return text, None
+
+        words = text.split()
+        candidates: list[tuple[int, str, list[str]]] = []
+
+        for i, w in enumerate(words):
+            w_lower = w.lower().rstrip(".,!?;:")
+            if w_lower in confusion:
+                candidates.append((i, w_lower, confusion[w_lower]))
+
+        if not candidates:
+            return text, None
+
+        idx, orig_prep, alternatives = random.choice(candidates)
+        replacement = random.choice(alternatives)
+        word = words[idx]
+        w_lower = word.lower().rstrip(".,!?;:")
+        punct = word[len(w_lower):]
+        words[idx] = replacement + punct
+        return " ".join(words), "function_word"
+
+    def apply_preposition_insertion(self, text: str) -> tuple[str, str | None]:
+        """Insert an unnecessary preposition after a transitive verb.
+
+        Example: "discussed the plan" -> "discussed about the plan"
+
+        Returns:
+            Tuple of (modified_text, error_type or None)
+        """
+        insertions = self.function_words.get("preposition_insertion", {}).get("patterns", [])
+        if not insertions:
+            return text, None
+
+        words = text.split()
+        candidates: list[tuple[int, str]] = []
+
+        for i, w in enumerate(words):
+            w_lower = w.lower().rstrip(".,!?;:")
+            for pattern in insertions:
+                verb = pattern["correct_verb"]
+                # Match base form, past tense (-ed, -d), or -ing form
+                if (w_lower == verb
+                    or w_lower == verb + "ed"
+                    or w_lower == verb + "d"
+                    or (verb.endswith("e") and w_lower == verb[:-1] + "ing")
+                    or w_lower == verb + "ing"
+                    or w_lower == verb + verb[-1] + "ed"  # e.g. "discussed"
+                    or w_lower == verb + "s"
+                    or w_lower == verb + "es"):
+                    # Make sure next word is NOT already the wrong preposition
+                    if i < len(words) - 1:
+                        nxt = words[i + 1].lower().rstrip(".,!?;:")
+                        if nxt != pattern["wrong_insertion"]:
+                            candidates.append((i, pattern["wrong_insertion"]))
+
+        if not candidates:
+            return text, None
+
+        idx, prep = random.choice(candidates)
+        words.insert(idx + 1, prep)
+        return " ".join(words), "function_word"
+
+    def _detect_sentence_tense(self, text: str) -> str | None:
+        """Use tense markers to detect the dominant tense of a sentence.
+
+        Returns "past", "present", or None if indeterminate.
+        """
+        text_lower = text.lower()
+        past_markers = self.verb_tenses.get("past_tense_markers", [])
+        present_markers = self.verb_tenses.get("present_tense_markers", [])
+
+        past_score = sum(1 for m in past_markers if m in text_lower)
+        present_score = sum(1 for m in present_markers if m in text_lower)
+
+        if past_score > present_score:
+            return "past"
+        elif present_score > past_score:
+            return "present"
+        return None
+
     def apply_tense_inconsistency(self, text: str) -> tuple[str, str | None]:
         """Mix tenses within a sentence.
 
         Example: "I walked to the store and talk to my friend"
                  (should be "talked" to match past tense)
+
+        Uses tense markers to detect sentence tense and swap verbs against it.
 
         Returns:
             Tuple of (modified_text, error_type or None)
@@ -194,6 +307,9 @@ class GrammarErrorGenerator:
         words = text.split()
         if len(words) < 5:
             return text, None
+
+        # Detect dominant sentence tense from markers
+        dominant_tense = self._detect_sentence_tense(text)
 
         # Find verbs that could be swapped
         past_indices: list[int] = []
@@ -207,8 +323,31 @@ class GrammarErrorGenerator:
                 present_indices.append(i)
             elif w_lower.endswith("ed") and len(w_lower) > 3:
                 past_indices.append(i)
+            elif w_lower in self.regular_verbs:
+                present_indices.append(i)
 
-        # If we have past-tense verbs, swap one to present
+        # Use dominant tense to guide the swap direction
+        if dominant_tense == "past" and past_indices:
+            # Sentence is past tense — swap a past verb to present (creating inconsistency)
+            idx = random.choice(past_indices)
+            w_lower = words[idx].lower().rstrip(".,!?;:")
+            punct = words[idx][len(w_lower):]
+            if w_lower in self.past_to_present:
+                words[idx] = self.past_to_present[w_lower] + punct
+                return " ".join(words), "verb_tense"
+        elif dominant_tense == "present" and present_indices:
+            # Sentence is present tense — swap a present verb to past
+            idx = random.choice(present_indices)
+            w_lower = words[idx].lower().rstrip(".,!?;:")
+            punct = words[idx][len(w_lower):]
+            if w_lower in self.present_to_past:
+                words[idx] = self.present_to_past[w_lower] + punct
+                return " ".join(words), "verb_tense"
+            elif w_lower in self.regular_verbs:
+                words[idx] = self._regularize_past(w_lower) + punct
+                return " ".join(words), "verb_tense"
+
+        # No marker-based detection: fall back to original heuristic
         if past_indices and random.random() < 0.6:
             idx = random.choice(past_indices)
             w_lower = words[idx].lower().rstrip(".,!?;:")
@@ -217,7 +356,6 @@ class GrammarErrorGenerator:
                 words[idx] = self.past_to_present[w_lower] + punct
                 return " ".join(words), "verb_tense"
 
-        # If we have present-tense verbs, swap one to past
         if present_indices:
             idx = random.choice(present_indices)
             w_lower = words[idx].lower().rstrip(".,!?;:")
@@ -228,6 +366,66 @@ class GrammarErrorGenerator:
             elif w_lower in self.regular_verbs:
                 words[idx] = self._regularize_past(w_lower) + punct
                 return " ".join(words), "verb_tense"
+
+        return text, None
+
+    def apply_auxiliary_verb_error(self, text: str) -> tuple[str, str | None]:
+        """Create auxiliary verb errors (e.g., "have went" instead of "have gone").
+
+        Returns:
+            Tuple of (modified_text, error_type or None)
+        """
+        aux_patterns = self.verb_tenses.get("auxiliary_verb_errors", {}).get("patterns", [])
+        if not aux_patterns:
+            return text, None
+
+        text_lower = text.lower()
+        matching = [p for p in aux_patterns if p["correct"] in text_lower]
+
+        if not matching:
+            return text, None
+
+        pattern = random.choice(matching)
+        error_phrase = random.choice(pattern["errors"])
+        idx = text_lower.find(pattern["correct"])
+        if idx >= 0:
+            end = idx + len(pattern["correct"])
+            modified = text[:idx] + error_phrase + text[end:]
+            return modified, "verb_tense"
+
+        return text, None
+
+    def apply_past_participle_confusion(self, text: str) -> tuple[str, str | None]:
+        """Replace a past participle with the simple past form.
+
+        Example: "I have broken" -> "I have broke"
+
+        Returns:
+            Tuple of (modified_text, error_type or None)
+        """
+        participles = self.verb_tenses.get("past_participles", {}).get("pairs", {})
+        if not participles:
+            return text, None
+
+        # Build participle -> simple past lookup
+        irr = self.verb_tenses.get("irregular_verbs", {}).get("pairs", {})
+        words = text.split()
+
+        for i, w in enumerate(words):
+            w_lower = w.lower().rstrip(".,!?;:")
+            # Look for "have/has/had <participle>"
+            if i > 0:
+                prev_lower = words[i - 1].lower().rstrip(".,!?;:")
+                if prev_lower in ("have", "has", "had"):
+                    # Check if current word is a known participle
+                    for base, participle in participles.items():
+                        if w_lower == participle and base in irr:
+                            # Replace participle with simple past
+                            simple_past = irr[base]
+                            if simple_past != participle:  # Only if they differ
+                                punct = w[len(w_lower):]
+                                words[i] = simple_past + punct
+                                return " ".join(words), "verb_tense"
 
         return text, None
 
@@ -299,12 +497,17 @@ class GrammarErrorGenerator:
         """
         # Weight the error types by frequency
         error_funcs = [
-            (0.25, "subject_verb"),
-            (0.25, "article"),
-            (0.20, "function_word"),
-            (0.10, "verb_tense"),
+            (0.18, "subject_verb"),
+            (0.18, "article"),
+            (0.09, "function_word_omission"),
+            (0.09, "preposition_substitution"),
+            (0.04, "preposition_insertion"),
+            (0.08, "verb_tense"),
+            (0.05, "auxiliary_verb_error"),
+            (0.04, "past_participle_confusion"),
             (0.10, "run_on"),
-            (0.10, "pronoun_case"),
+            (0.08, "pronoun_case"),
+            (0.07, "no_op"),  # absorb rounding; fallback will pick a real type
         ]
 
         # Shuffle weighted
@@ -317,41 +520,37 @@ class GrammarErrorGenerator:
                 chosen_type = etype
                 break
 
-        if chosen_type == "subject_verb":
-            result, etype = self.apply_subject_verb_error(sentence)
-        elif chosen_type == "article":
-            result, etype = self.apply_article_omission(sentence)
-        elif chosen_type == "function_word":
-            result, etype = self.apply_function_word_omission(sentence)
-        elif chosen_type == "verb_tense":
-            result, etype = self.apply_tense_inconsistency(sentence)
-        elif chosen_type == "pronoun_case":
-            result, etype = self.apply_pronoun_case_error(sentence)
-        elif chosen_type == "run_on":
+        dispatch = {
+            "subject_verb": self.apply_subject_verb_error,
+            "article": self.apply_article_omission,
+            "function_word_omission": self.apply_function_word_omission,
+            "preposition_substitution": self.apply_preposition_substitution,
+            "preposition_insertion": self.apply_preposition_insertion,
+            "verb_tense": self.apply_tense_inconsistency,
+            "auxiliary_verb_error": self.apply_auxiliary_verb_error,
+            "past_participle_confusion": self.apply_past_participle_confusion,
+            "pronoun_case": self.apply_pronoun_case_error,
+        }
+
+        if chosen_type == "run_on":
             other = random.choice(corpus) if corpus else None
             result, etype = self.apply_run_on(sentence, other)
             if etype:
-                # The clean_text for a run-on is both sentences properly punctuated
                 clean = sentence.rstrip() + " " + (other or "").strip()
                 return result, clean, etype
+        elif chosen_type in dispatch:
+            result, etype = dispatch[chosen_type](sentence)
         else:
-            return sentence, sentence, None
+            # "no_op" or unknown — will fall through to fallback
+            result, etype = sentence, None
 
         if etype is None:
             # Failed to apply chosen error, try another
             for _, fallback_type in error_funcs:
-                if fallback_type == chosen_type or fallback_type == "run_on":
+                if fallback_type == chosen_type or fallback_type in ("run_on", "no_op"):
                     continue
-                if fallback_type == "subject_verb":
-                    result, etype = self.apply_subject_verb_error(sentence)
-                elif fallback_type == "article":
-                    result, etype = self.apply_article_omission(sentence)
-                elif fallback_type == "function_word":
-                    result, etype = self.apply_function_word_omission(sentence)
-                elif fallback_type == "verb_tense":
-                    result, etype = self.apply_tense_inconsistency(sentence)
-                elif fallback_type == "pronoun_case":
-                    result, etype = self.apply_pronoun_case_error(sentence)
+                if fallback_type in dispatch:
+                    result, etype = dispatch[fallback_type](sentence)
                 if etype is not None:
                     break
 

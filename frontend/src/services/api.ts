@@ -512,6 +512,12 @@ export const api = {
   deleteUserData: (userId: string) =>
     request<void>(`/api/v1/users/${userId}`, { method: 'DELETE' }),
 
+  testLlmConnection: (userId: string) =>
+    request<{ status: string; data: { status: string; provider: string; model: string; base_url: string } }>(
+      `/api/v1/users/${userId}/settings/test-llm`,
+      { method: 'POST' },
+    ),
+
   // Deprecated - use getSettings/updateSettings instead
   updateUserSettings: (userId: string, settings: Record<string, any>) =>
     request<any>(`/api/v1/users/${userId}/settings`, {

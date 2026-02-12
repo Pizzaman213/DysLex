@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useMicPermission } from '@/hooks/useMicPermission';
-import type { Language } from '@/types';
+import type { Language, LLMProvider } from '@/types';
 
 export function GeneralTab() {
   const {
@@ -28,8 +29,53 @@ export function GeneralTab() {
     setAutoCorrect,
     focusMode,
     setFocusMode,
+    llmProvider,
+    setLlmProvider,
+    llmBaseUrl,
+    setLlmBaseUrl,
+    llmModel,
+    setLlmModel,
+    llmApiKeyConfigured,
+    saveLlmApiKey,
+    testLlmConnection,
   } = useSettingsStore();
   const { isDenied: micDenied } = useMicPermission();
+
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'connected' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
+
+  const needsApiKey = llmProvider === 'nvidia_nim' || llmProvider === 'vllm';
+
+  const handleSaveApiKey = async () => {
+    setApiKeySaving(true);
+    try {
+      await saveLlmApiKey(apiKeyInput);
+      setApiKeyInput('');
+      setApiKeySaved(true);
+      setTimeout(() => setApiKeySaved(false), 3000);
+    } catch {
+      // error handled in store
+    } finally {
+      setApiKeySaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setTestStatus('testing');
+    setTestMessage('');
+    const result = await testLlmConnection();
+    if (result.status === 'connected') {
+      setTestStatus('connected');
+      setTestMessage(`Connected to ${result.model}`);
+    } else {
+      setTestStatus('error');
+      setTestMessage(result.error || 'Connection failed');
+    }
+    setTimeout(() => setTestStatus('idle'), 5000);
+  };
 
   const languages: { value: Language; label: string }[] = [
     { value: 'en', label: 'English' },
@@ -194,6 +240,116 @@ export function GeneralTab() {
             <span className="toggle-slider"></span>
           </button>
         </div>
+      </div>
+
+      {/* AI Provider */}
+      <div className="setting-section">
+        <div className="setting-section-header">
+          <h3>AI Provider</h3>
+          <p className="setting-section-desc">Choose which LLM powers deep corrections and coaching</p>
+        </div>
+
+        <div className="setting-row">
+          <label htmlFor="llm-provider-select">
+            <span className="setting-label">Provider</span>
+            <span className="setting-help">System Default uses the server&apos;s configured provider</span>
+          </label>
+          <select
+            id="llm-provider-select"
+            value={llmProvider || ''}
+            onChange={(e) => setLlmProvider((e.target.value || null) as LLMProvider | null)}
+            className="setting-select"
+          >
+            <option value="">System Default</option>
+            <option value="nvidia_nim">NVIDIA NIM</option>
+            <option value="ollama">Ollama</option>
+            <option value="vllm">vLLM</option>
+          </select>
+        </div>
+
+        {llmProvider && (
+          <>
+            <div className="setting-row">
+              <label htmlFor="llm-base-url-input">
+                <span className="setting-label">Base URL</span>
+                <span className="setting-help">The API endpoint for your provider</span>
+              </label>
+              <input
+                id="llm-base-url-input"
+                type="text"
+                value={llmBaseUrl || ''}
+                onChange={(e) => setLlmBaseUrl(e.target.value || null)}
+                className="setting-text-input"
+                placeholder="http://localhost:11434/v1"
+              />
+            </div>
+
+            <div className="setting-row">
+              <label htmlFor="llm-model-input">
+                <span className="setting-label">Model Name</span>
+                <span className="setting-help">The model identifier to use</span>
+              </label>
+              <input
+                id="llm-model-input"
+                type="text"
+                value={llmModel || ''}
+                onChange={(e) => setLlmModel(e.target.value || null)}
+                className="setting-text-input"
+                placeholder="llama3.2"
+              />
+            </div>
+
+            {needsApiKey && (
+              <div className="setting-row" style={{ flexWrap: 'wrap' }}>
+                <label htmlFor="llm-api-key-input" style={{ flex: '0 0 100%' }}>
+                  <span className="setting-label">API Key</span>
+                  <span className="setting-help">
+                    {llmApiKeyConfigured
+                      ? 'Key configured — enter a new key to replace it'
+                      : 'Required for this provider'}
+                  </span>
+                </label>
+                <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
+                  <input
+                    id="llm-api-key-input"
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    className="setting-text-input"
+                    placeholder={llmApiKeyConfigured ? '••••••••' : 'Enter API key'}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    className="action-button primary"
+                    onClick={handleSaveApiKey}
+                    disabled={!apiKeyInput || apiKeySaving}
+                  >
+                    {apiKeySaving ? 'Saving...' : apiKeySaved ? 'Saved' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="setting-row">
+              <label>
+                <span className="setting-label">Test Connection</span>
+                <span className="setting-help">
+                  {testStatus === 'connected' && <span style={{ color: '#28a745' }}>{testMessage}</span>}
+                  {testStatus === 'error' && <span style={{ color: 'var(--accent)' }}>{testMessage}</span>}
+                  {testStatus === 'idle' && 'Verify your provider is reachable'}
+                  {testStatus === 'testing' && 'Testing...'}
+                </span>
+              </label>
+              <button
+                className="action-button"
+                onClick={handleTestConnection}
+                disabled={testStatus === 'testing'}
+              >
+                {testStatus === 'testing' ? 'Testing...' : 'Test'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Tools */}

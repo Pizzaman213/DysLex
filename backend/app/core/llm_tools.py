@@ -6,6 +6,7 @@ check confusion pairs, and query user history.
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -143,48 +144,54 @@ async def check_personal_dictionary(
 
 
 # ---------------------------------------------------------------------------
+# Pre-resolution of static lookups (Phase 2.2 optimization)
+# ---------------------------------------------------------------------------
+
+
+def pre_resolve_static_lookups(text: str) -> dict:
+    """Run dictionary and confusion-pair lookups locally for all words in text.
+
+    Returns a dict with:
+      - unknown_words: list of words not found in the frequency dictionary
+      - relevant_confusion_pairs: list of confusion pair dicts where at least
+        one word appears in the text
+
+    These results are injected directly into the system prompt so the LLM
+    does not need to call lookup_word or check_confusion_pair as tools.
+    """
+    words = set(re.findall(r"[a-zA-Z']+", text.lower()))
+
+    # Dictionary check — find words NOT in the dictionary
+    freq_dict = _load_frequency_dict()
+    # Skip very short words (1-2 chars) to reduce noise
+    unknown_words = sorted(w for w in words if len(w) > 2 and w not in freq_dict)
+
+    # Confusion pair check — find pairs where any word appears in the text
+    pairs = _load_confusion_pairs()
+    relevant_pairs: list[dict] = []
+    for entry in pairs:
+        pair_words = [w.lower() for w in entry.get("words", [])]
+        if any(pw in words for pw in pair_words):
+            relevant_pairs.append({
+                "word_a": entry.get("words", ["?", "?"])[0],
+                "word_b": entry.get("words", ["?", "?"])[1] if len(entry.get("words", [])) > 1 else "?",
+                "category": entry.get("category", "unknown"),
+            })
+
+    return {
+        "unknown_words": unknown_words,
+        "relevant_confusion_pairs": relevant_pairs,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Tool definitions (OpenAI-compatible format)
 # ---------------------------------------------------------------------------
 
 TOOL_DEFINITIONS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "lookup_word",
-            "description": "Check if a word is valid English. Use when unsure if a word is a real word or a misspelling.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "word": {
-                        "type": "string",
-                        "description": "The word to look up",
-                    },
-                },
-                "required": ["word"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_confusion_pair",
-            "description": "Check if two words are a known confusion pair (e.g. their/there, affect/effect). Use when you suspect two words may be commonly confused.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "word_a": {
-                        "type": "string",
-                        "description": "First word",
-                    },
-                    "word_b": {
-                        "type": "string",
-                        "description": "Second word",
-                    },
-                },
-                "required": ["word_a", "word_b"],
-            },
-        },
-    },
+    # NOTE: lookup_word and check_confusion_pair have been removed from tool
+    # definitions — they are now pre-resolved locally before the LLM call
+    # and injected directly into the system prompt (Phase 2.2 optimization).
     {
         "type": "function",
         "function": {

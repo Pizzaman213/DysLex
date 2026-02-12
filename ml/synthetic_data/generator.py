@@ -351,6 +351,122 @@ class SyntheticDataGenerator:
         return samples
 
 
+    def generate_multi_error_training_pairs(
+        self,
+        corpus: list[str] | None = None,
+        num_samples: int = 50000,
+        output_file: Path | None = None,
+    ) -> list[dict[str, str]]:
+        """Generate samples with 2-4 errors (spelling and/or grammar) per sentence.
+
+        Also includes single-error-in-long-sentence samples to teach the model
+        to leave most text unchanged.
+
+        Args:
+            corpus: List of clean sentences
+            num_samples: Number of samples to generate
+            output_file: Optional path to save JSONL output
+
+        Returns:
+            List of training samples in seq2seq format
+        """
+        from ml.synthetic_data.grammar_generator import GrammarErrorGenerator
+
+        grammar_gen = GrammarErrorGenerator(self.patterns_dir)
+
+        if corpus is None:
+            corpus_file = Path(__file__).parent.parent / "datasets" / "corpus" / "sentences.txt"
+            if corpus_file.exists():
+                with open(corpus_file) as f:
+                    corpus = [line.strip() for line in f if line.strip()]
+            else:
+                corpus = SAMPLE_SENTENCES
+
+        samples: list[dict[str, str]] = []
+
+        # 70% multi-error samples, 30% single-error-in-long-sentence
+        multi_count = int(num_samples * 0.7)
+        single_long_count = num_samples - multi_count
+
+        # Generate multi-error samples (2-4 errors per sentence)
+        for i in range(multi_count):
+            sentence = random.choice(corpus)
+            num_errors = random.randint(2, 4)
+            error_text = sentence
+            error_types: list[str] = []
+
+            for _ in range(num_errors):
+                # Alternate between spelling and grammar errors
+                if random.random() < 0.5:
+                    # Spelling error
+                    modified, corrections = self.apply_error_patterns(error_text)
+                    if corrections:
+                        error_text = modified
+                        error_types.append("spelling")
+                else:
+                    # Grammar error
+                    modified, _, etype = grammar_gen.generate_grammar_error(
+                        error_text, corpus
+                    )
+                    if etype is not None and modified != error_text:
+                        error_text = modified
+                        error_types.append(etype)
+
+            if error_types and error_text != sentence:
+                samples.append({
+                    "input_text": f"correct: {error_text}",
+                    "target_text": sentence,
+                    "error_type": f"mixed_multi_{len(error_types)}",
+                    "source": "synthetic_mixed",
+                })
+
+            if (i + 1) % 5000 == 0:
+                print(f"Generated {i + 1}/{multi_count} multi-error samples...")
+
+        # Generate single-error-in-long-sentence samples
+        # Concatenate 2-3 sentences, apply only one error
+        for i in range(single_long_count):
+            n_sentences = random.randint(2, 3)
+            chosen = random.sample(corpus, min(n_sentences, len(corpus)))
+            long_sentence = " ".join(chosen)
+
+            # Apply a single error (spelling or grammar)
+            if random.random() < 0.5:
+                modified, corrections = self.apply_error_patterns(long_sentence)
+                if corrections:
+                    samples.append({
+                        "input_text": f"correct: {modified}",
+                        "target_text": long_sentence,
+                        "error_type": "mixed_single_long",
+                        "source": "synthetic_mixed",
+                    })
+            else:
+                modified, _, etype = grammar_gen.generate_grammar_error(
+                    long_sentence, corpus
+                )
+                if etype is not None and modified != long_sentence:
+                    samples.append({
+                        "input_text": f"correct: {modified}",
+                        "target_text": long_sentence,
+                        "error_type": "mixed_single_long",
+                        "source": "synthetic_mixed",
+                    })
+
+            if (i + 1) % 5000 == 0:
+                print(f"Generated {i + 1}/{single_long_count} single-error-long samples...")
+
+        random.shuffle(samples)
+
+        if output_file:
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_file, "w") as f:
+                for sample in samples:
+                    f.write(json.dumps(sample) + "\n")
+            print(f"Saved {len(samples)} multi-error mixed samples to {output_file}")
+
+        return samples
+
+
 def main():
     """Generate training data for Quick Correction Model."""
     generator = SyntheticDataGenerator()

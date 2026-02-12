@@ -92,6 +92,26 @@
       "frequency": "very_high"
     },
     {
+      "words": ["are", "our"],
+      "category": "near_homophone",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["of", "off"],
+      "category": "similar",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["dose", "does"],
+      "category": "similar",
+      "frequency": "very_high"
+    },
+    {
+      "words": ["thought", "through", "though"],
+      "category": "similar",
+      "frequency": "very_high"
+    },
+    {
       "words": ["to", "too", "two"],
       "category": "homophone",
       "frequency": "high"
@@ -207,6 +227,126 @@
       "frequency": "high"
     },
     {
+      "words": ["been", "being"],
+      "category": "similar",
+      "frequency": "high"
+    },
+    {
+      "words": ["there's", "theirs"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["flower", "flour"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["meat", "meet"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["week", "weak"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["dear", "deer"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["blew", "blue"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["not", "knot"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["shown", "shone"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["board", "bored"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["mail", "male"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["sail", "sale"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["sent", "cent", "scent"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["seam", "seem"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["bean", "been"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["feat", "feet"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["heal", "heel"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["role", "roll"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["poll", "pole"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["sole", "soul"],
+      "category": "homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["warn", "worn"],
+      "category": "near_homophone",
+      "frequency": "high"
+    },
+    {
+      "words": ["form", "from"],
+      "category": "similar",
+      "frequency": "high"
+    },
+    {
+      "words": ["angel", "angle"],
+      "category": "similar",
+      "frequency": "high"
+    },
+    {
+      "words": ["dairy", "diary"],
+      "category": "similar",
+      "frequency": "high"
+    },
+    {
       "words": ["accept", "except"],
       "category": "similar",
       "frequency": "medium"
@@ -275,6 +415,386 @@
       "words": ["cereal", "serial"],
       "category": "homophone",
       "frequency": "medium"
+    },
+    {
+      "words": ["born", "borne"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["course", "coarse"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["die", "dye"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["fair", "fare"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["grate", "great"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["hare", "hair"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["isle", "aisle"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["lessen", "lesson"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["medal", "meddle"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["moan", "mown"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["morning", "mourning"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["muscle", "mussel"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["naval", "navel"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["personal", "personnel"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["pray", "prey"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["profit", "prophet"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["sauce", "source"],
+      "category": "near_homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["scene", "seen"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["sew", "so", "sow"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["soar", "sore"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["stair", "stare"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["suite", "sweet"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["tide", "tied"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["vain", "vein", "vane"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["wail", "whale"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["altar", "alter"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["berry", "bury"],
+      "category": "near_homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["chord", "cord"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["dual", "duel"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["foul", "fowl"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["guise", "guys"],
+      "category": "near_homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["loan", "lone"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["miner", "minor"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["peak", "peek"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["root", "route"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["symbol", "cymbal"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["wander", "wonder"],
+      "category": "near_homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["advise", "advice"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["license", "licence"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["practice", "practise"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["cloth", "clothe"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["choose", "chose"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["quite", "quiet", "quit"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["trail", "trial"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["beside", "besides"],
+      "category": "similar",
+      "frequency": "medium"
+    },
+    {
+      "words": ["emigrate", "immigrate"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["elicit", "illicit"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["eminent", "imminent"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["ensure", "insure"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["allusion", "illusion"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["cue", "queue"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["discreet", "discrete"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["bazaar", "bizarre"],
+      "category": "near_homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["canvas", "canvass"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["climatic", "climactic"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["formerly", "formally"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["hangar", "hanger"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["lighting", "lightning"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["martial", "marshal"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["moral", "morale"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["precede", "proceed"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["thorough", "through", "though"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["wary", "weary"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["wrack", "rack"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["yoke", "yolk"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["gorilla", "guerrilla"],
+      "category": "similar",
+      "frequency": "low"
+    },
+    {
+      "words": ["patients", "patience"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["presence", "presents"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["wring", "ring"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["wrap", "rap"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["whether", "weather", "wether"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["tow", "toe"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["thrown", "throne"],
+      "category": "homophone",
+      "frequency": "medium"
+    },
+    {
+      "words": ["sign", "sine"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["manner", "manor"],
+      "category": "homophone",
+      "frequency": "low"
+    },
+    {
+      "words": ["idle", "idol"],
+      "category": "homophone",
+      "frequency": "low"
     }
   ]
 }

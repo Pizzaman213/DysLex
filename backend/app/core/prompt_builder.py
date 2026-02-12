@@ -1,6 +1,13 @@
 """Dynamic prompt construction for LLM calls."""
 
+import re
+
 from app.models.error_log import LLMContext
+
+
+def _tokenize_to_word_set(text: str) -> set[str]:
+    """Extract a lowercase word set from text for filtering profile entries."""
+    return set(re.findall(r"[a-zA-Z']+", text.lower()))
 
 
 def build_correction_prompt(
@@ -48,11 +55,27 @@ def build_correction_prompt_v2(
     text: str,
     llm_context: LLMContext,
     context: str | None = None,
+    *,
+    filter_text: str | None = None,
+    pre_resolved_data: dict | None = None,
 ) -> tuple[str, str]:
     """Build a personalised correction prompt using the full LLMContext object.
 
     Returns (system_message, user_message) tuple for proper chat formatting.
+
+    When *filter_text* is provided, profile entries (top_errors, confusion_pairs,
+    grammar_patterns) are filtered to only include entries relevant to that text.
+    The top 5 most frequent errors are always kept as a baseline.
+
+    When *pre_resolved_data* is provided, it contains pre-resolved static tool
+    lookups (unknown_words, relevant_confusion_pairs) to inject into the prompt
+    so the LLM doesn't need to call those tools itself.
     """
+    # Build word set for filtering if filter_text is given
+    word_set: set[str] | None = None
+    if filter_text:
+        word_set = _tokenize_to_word_set(filter_text)
+
     # --- System message: instructions + user profile ---
     system_parts: list[str] = [
         "You are a warm, supportive writing coach helping a talented thinker who has dyslexia.",
@@ -66,11 +89,25 @@ def build_correction_prompt_v2(
     system_parts.append("USER ERROR PROFILE:")
 
     if llm_context.top_errors:
-        system_parts.append("Most common errors:")
-        for err in llm_context.top_errors[:20]:
-            system_parts.append(
-                f'  - "{err["misspelling"]}" -> "{err["correction"]}" ({err["frequency"]}x)'
-            )
+        errors_to_include = llm_context.top_errors[:20]
+        if word_set is not None:
+            # Always keep top 5 most frequent as baseline
+            baseline = errors_to_include[:5]
+            rest = errors_to_include[5:]
+            # Filter the rest: include only if misspelling or correction appears in text
+            filtered = [
+                err for err in rest
+                if err["misspelling"].lower() in word_set
+                or err["correction"].lower() in word_set
+            ]
+            errors_to_include = baseline + filtered
+
+        if errors_to_include:
+            system_parts.append("Most common errors:")
+            for err in errors_to_include:
+                system_parts.append(
+                    f'  - "{err["misspelling"]}" -> "{err["correction"]}" ({err["frequency"]}x)'
+                )
 
     # Error type distribution
     non_zero_types = {k: v for k, v in llm_context.error_types.items() if v > 0}
@@ -80,14 +117,30 @@ def build_correction_prompt_v2(
             system_parts.append(f"  - {etype}: {pct}%")
 
     if llm_context.confusion_pairs:
-        system_parts.append("Frequently confused word pairs:")
-        for pair in llm_context.confusion_pairs[:10]:
-            system_parts.append(f'  - {pair["word_a"]} / {pair["word_b"]} ({pair["count"]}x)')
+        pairs_to_include = llm_context.confusion_pairs[:10]
+        if word_set is not None:
+            pairs_to_include = [
+                pair for pair in pairs_to_include
+                if pair["word_a"].lower() in word_set
+                or pair["word_b"].lower() in word_set
+            ]
+        if pairs_to_include:
+            system_parts.append("Frequently confused word pairs:")
+            for pair in pairs_to_include:
+                system_parts.append(f'  - {pair["word_a"]} / {pair["word_b"]} ({pair["count"]}x)')
 
     if llm_context.grammar_patterns:
-        system_parts.append("User's frequent grammar patterns:")
-        for gp in llm_context.grammar_patterns[:10]:
-            system_parts.append(f'  - [{gp["subtype"]}] "{gp["misspelling"]}" -> "{gp["correction"]}" ({gp["frequency"]}x)')
+        gp_to_include = llm_context.grammar_patterns[:10]
+        if word_set is not None:
+            gp_to_include = [
+                gp for gp in gp_to_include
+                if gp["misspelling"].lower() in word_set
+                or gp["correction"].lower() in word_set
+            ]
+        if gp_to_include:
+            system_parts.append("User's frequent grammar patterns:")
+            for gp in gp_to_include:
+                system_parts.append(f'  - [{gp["subtype"]}] "{gp["misspelling"]}" -> "{gp["correction"]}" ({gp["frequency"]}x)')
 
     system_parts.append(f"Writing level: {llm_context.writing_level}")
 
@@ -144,6 +197,25 @@ def build_correction_prompt_v2(
         system_parts.append("NOTES:")
         for note in llm_context.context_notes:
             system_parts.append(f"- {note}")
+
+    # Inject pre-resolved static lookup results (Phase 2.2 optimization)
+    if pre_resolved_data:
+        unknown_words = pre_resolved_data.get("unknown_words")
+        if unknown_words:
+            system_parts.append("")
+            system_parts.append(
+                "DICTIONARY CHECK (pre-resolved — these words are NOT in the English dictionary): "
+                + ", ".join(unknown_words)
+            )
+        relevant_pairs = pre_resolved_data.get("relevant_confusion_pairs")
+        if relevant_pairs:
+            system_parts.append(
+                "CONFUSION PAIR MATCHES (pre-resolved — these words from the text match known confusion pairs):"
+            )
+            for p in relevant_pairs:
+                system_parts.append(
+                    f'  - {p["word_a"]} / {p["word_b"]} (category: {p.get("category", "unknown")})'
+                )
 
     system_parts.extend([
         "",
@@ -224,6 +296,40 @@ def build_correction_prompt_v2(
     user_msg = "\n".join(user_parts)
 
     return system_msg, user_msg
+
+
+def build_system_prompt_v2(
+    llm_context: LLMContext,
+    context: str | None = None,
+    *,
+    filter_text: str | None = None,
+    pre_resolved_data: dict | None = None,
+) -> str:
+    """Build only the system message (profile + instructions).
+
+    Use this when processing multiple chunks to avoid rebuilding
+    the identical system message for each chunk.
+    """
+    system_msg, _ = build_correction_prompt_v2(
+        "", llm_context, context,
+        filter_text=filter_text,
+        pre_resolved_data=pre_resolved_data,
+    )
+    return system_msg
+
+
+def build_user_message(
+    text: str,
+    context: str | None = None,
+) -> str:
+    """Build only the user message containing the text to analyze."""
+    user_parts: list[str] = []
+    if context:
+        user_parts.append(f"Context: {context}")
+        user_parts.append("")
+    user_parts.append("Please analyze this text and return corrections as a JSON array:")
+    user_parts.append(f'"{text}"')
+    return "\n".join(user_parts)
 
 
 def build_explanation_prompt(

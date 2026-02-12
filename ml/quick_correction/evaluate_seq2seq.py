@@ -48,6 +48,15 @@ def load_test_data(test_file: Path) -> list[dict[str, Any]]:
     return samples
 
 
+def _get_best_device() -> torch.device:
+    """Detect the best available device: cuda > mps > cpu."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def generate_prediction(
     input_text: str,
     tokenizer: Any,
@@ -71,6 +80,7 @@ def generate_prediction(
         truncation=True,
         max_length=max_length,
     )
+    inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
     with torch.no_grad():
         outputs = model.generate(
@@ -80,6 +90,51 @@ def generate_prediction(
         )
 
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+
+def generate_predictions_batched(
+    input_texts: list[str],
+    tokenizer: Any,
+    model: Any,
+    max_length: int = MAX_LENGTH,
+    batch_size: int = 64,
+) -> list[str]:
+    """Run batched seq2seq inference and return generated texts.
+
+    Args:
+        input_texts: List of input texts (with "correct: " prefix)
+        tokenizer: Tokenizer instance
+        model: Model instance
+        max_length: Maximum generation length
+        batch_size: Number of samples per batch
+
+    Returns:
+        List of generated corrected texts
+    """
+    all_predictions: list[str] = []
+
+    for i in range(0, len(input_texts), batch_size):
+        batch_texts = input_texts[i : i + batch_size]
+        inputs = tokenizer(
+            batch_texts,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+            padding=True,
+        )
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_length=max_length,
+                num_beams=1,
+            )
+
+        decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        all_predictions.extend(decoded)
+
+    return all_predictions
 
 
 def _word_error_rate(hypothesis: list[str], reference: list[str]) -> float:
@@ -206,6 +261,7 @@ def evaluate_seq2seq_model(
     latency_samples: int = 100,
     spelling_test_file: Path | None = None,
     grammar_test_file: Path | None = None,
+    gate: bool = False,
 ) -> dict[str, Any]:
     """Evaluate the trained seq2seq model on test data.
 
@@ -242,6 +298,11 @@ def evaluate_seq2seq_model(
     model = AutoModelForSeq2SeqLM.from_pretrained(str(model_dir))
     model.eval()
 
+    # Move model to best available device for faster inference
+    device = _get_best_device()
+    model = model.to(device)
+    logger.info(f"Using device: {device}")
+
     # Load test data
     samples = load_test_data(test_file)
     if not samples:
@@ -262,17 +323,18 @@ def evaluate_seq2seq_model(
         "word_order", "run_on", "pronoun_case", "grammar",
     }
 
-    logger.info(f"Running inference on {len(samples)} test samples...")
+    logger.info(f"Running batched inference on {len(samples)} test samples...")
+    all_input_texts = [s["input_text"] for s in samples]
+    all_predictions = generate_predictions_batched(all_input_texts, tokenizer, model)
+    all_targets = [s["target_text"] for s in samples]
+
+    # Build metadata tracking from predictions
     for i, sample in enumerate(samples):
         input_text = sample["input_text"]
         target_text = sample["target_text"]
+        prediction = all_predictions[i]
         source = sample.get("source", "unknown")
         error_type = sample.get("error_type", "unknown")
-
-        prediction = generate_prediction(input_text, tokenizer, model)
-
-        all_predictions.append(prediction)
-        all_targets.append(target_text)
 
         # Track no-change (passthrough) accuracy
         raw_input = input_text.removeprefix("correct: ").strip()
@@ -291,9 +353,6 @@ def evaluate_seq2seq_model(
             per_error_type[error_type] = {"predictions": [], "targets": []}
         per_error_type[error_type]["predictions"].append(prediction)
         per_error_type[error_type]["targets"].append(target_text)
-
-        if (i + 1) % 500 == 0:
-            logger.info(f"  Processed {i + 1}/{len(samples)} samples...")
 
     # Overall metrics
     results: dict[str, Any] = {
@@ -366,12 +425,9 @@ def evaluate_seq2seq_model(
     if spelling_test_file and spelling_test_file.exists():
         logger.info(f"\n--- Spelling Regression Check ({spelling_test_file.name}) ---")
         spelling_samples = load_test_data(spelling_test_file)
-        sp_preds = []
-        sp_tgts = []
-        for sample in spelling_samples:
-            pred = generate_prediction(sample["input_text"], tokenizer, model)
-            sp_preds.append(pred)
-            sp_tgts.append(sample["target_text"])
+        sp_input_texts = [s["input_text"] for s in spelling_samples]
+        sp_preds = generate_predictions_batched(sp_input_texts, tokenizer, model)
+        sp_tgts = [s["target_text"] for s in spelling_samples]
         sp_metrics = _compute_metrics(sp_preds, sp_tgts)
         results["spelling_regression"] = sp_metrics
         _print_metrics(sp_metrics)
@@ -383,17 +439,15 @@ def evaluate_seq2seq_model(
     if grammar_test_file and grammar_test_file.exists():
         logger.info(f"\n--- Grammar-Only Evaluation ({grammar_test_file.name}) ---")
         grammar_samples = load_test_data(grammar_test_file)
-        gr_preds = []
-        gr_tgts = []
+        gr_input_texts = [s["input_text"] for s in grammar_samples]
+        gr_preds = generate_predictions_batched(gr_input_texts, tokenizer, model)
+        gr_tgts = [s["target_text"] for s in grammar_samples]
         gr_per_type: dict[str, dict[str, list[str]]] = {}
-        for sample in grammar_samples:
-            pred = generate_prediction(sample["input_text"], tokenizer, model)
-            gr_preds.append(pred)
-            gr_tgts.append(sample["target_text"])
+        for i, sample in enumerate(grammar_samples):
             etype = sample.get("error_type", "grammar")
             if etype not in gr_per_type:
                 gr_per_type[etype] = {"predictions": [], "targets": []}
-            gr_per_type[etype]["predictions"].append(pred)
+            gr_per_type[etype]["predictions"].append(gr_preds[i])
             gr_per_type[etype]["targets"].append(sample["target_text"])
 
         gr_metrics = _compute_metrics(gr_preds, gr_tgts)
@@ -409,7 +463,8 @@ def evaluate_seq2seq_model(
             results["grammar_per_type"][etype] = metrics
             logger.info(f"    {etype} ({metrics['num_samples']}): EM={metrics['exact_match']:.4f}")
 
-    # Latency benchmark
+    # Latency benchmark — must run on CPU for deployment-realistic numbers
+    model = model.to(torch.device("cpu"))
     logger.info(f"\n--- Latency Benchmark ({latency_samples} samples, CPU, greedy decode) ---")
     latency_results = _benchmark_latency(
         samples[:latency_samples], tokenizer, model
@@ -422,6 +477,59 @@ def evaluate_seq2seq_model(
 
     target_met = latency_results["p95_ms"] < 200
     logger.info(f"  Target (<200ms P95): {'MET' if target_met else 'NOT MET'}")
+
+    # Move back to best device for remaining evaluations
+    model = model.to(device)
+
+    # Evaluate additional stratified test sets if available
+    stratified_types = ["function_word", "verb_tense", "mixed", "hard"]
+    results["stratified"] = {}
+    for stype in stratified_types:
+        sfile = data_dir / f"test_seq2seq_{stype}.jsonl"
+        if sfile.exists():
+            logger.info(f"\n--- Stratified: {stype} ({sfile.name}) ---")
+            s_samples = load_test_data(sfile)
+            s_input_texts = [s["input_text"] for s in s_samples]
+            s_preds = generate_predictions_batched(s_input_texts, tokenizer, model)
+            s_tgts = [s["target_text"] for s in s_samples]
+            s_metrics = _compute_metrics(s_preds, s_tgts)
+            results["stratified"][stype] = s_metrics
+            _print_metrics(s_metrics)
+
+    # Regression gate check
+    results["gate_passed"] = True
+    if gate:
+        logger.info("\n--- REGRESSION GATE CHECK ---")
+        gate_failures = []
+
+        # Spelling must stay >= 95%
+        sp_em = results.get("spelling_regression", {}).get("exact_match", 0.0)
+        if sp_em > 0 and sp_em < 0.95:
+            gate_failures.append(f"Spelling regression: {sp_em:.4f} < 0.95")
+
+        # Grammar must be >= 85%
+        gr_em = results.get("grammar_only", {}).get("exact_match", 0.0)
+        if gr_em > 0 and gr_em < 0.85:
+            gate_failures.append(f"Grammar accuracy: {gr_em:.4f} < 0.85")
+
+        # Latency P95 must be < 200ms
+        p95 = results.get("latency", {}).get("p95_ms", 0.0)
+        if p95 > 200:
+            gate_failures.append(f"Latency P95: {p95:.2f}ms > 200ms")
+
+        # Overall exact match should not drop below 85%
+        overall_em = results.get("overall", {}).get("exact_match", 0.0)
+        if overall_em < 0.85:
+            gate_failures.append(f"Overall exact match: {overall_em:.4f} < 0.85")
+
+        if gate_failures:
+            results["gate_passed"] = False
+            results["gate_failures"] = gate_failures
+            logger.error("GATE FAILED:")
+            for failure in gate_failures:
+                logger.error(f"  - {failure}")
+        else:
+            logger.info("GATE PASSED: All quality thresholds met.")
 
     # Save JSON report
     if output_file:
@@ -521,6 +629,11 @@ def main():
         default=None,
         help="Path to grammar-only test JSONL",
     )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="Enable regression gate: fail if spelling < 95%%, grammar < 85%%, or P95 > 200ms",
+    )
     args = parser.parse_args()
 
     model_dir = Path(args.model) if args.model else MODEL_DIR
@@ -541,14 +654,20 @@ def main():
         logger.info("  python ml/quick_correction/train_pipeline.py --download --process --combine --model-type seq2seq")
         return
 
-    evaluate_seq2seq_model(
+    results = evaluate_seq2seq_model(
         model_dir=model_dir,
         test_file=test_file,
         output_file=output_file,
         latency_samples=args.latency_samples,
         spelling_test_file=spelling_test,
         grammar_test_file=grammar_test,
+        gate=args.gate,
     )
+
+    # Exit with non-zero code if gate fails
+    if args.gate and not results.get("gate_passed", True):
+        import sys
+        sys.exit(1)
 
 
 if __name__ == "__main__":

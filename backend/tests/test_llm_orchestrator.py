@@ -21,26 +21,47 @@ from app.models.correction import Correction, Position
 
 
 class TestNeedsDeepAnalysis:
-    """Tests for the _needs_deep_analysis heuristic."""
+    """Tests for the _needs_deep_analysis heuristic.
+
+    Rules (updated):
+    - Text < 5 words: never trigger Tier 2
+    - Text >= threshold (100 words): always trigger Tier 2
+    - Text 15-99 words with no Tier 1 results: trigger Tier 2 as fallback
+    - Text 5-99 words with Tier 1 results: skip Tier 2
+    """
+
+    def test_very_short_text_never_triggers_deep(self):
+        """Text under 5 words should never trigger Tier 2, even with no results."""
+        assert _needs_deep_analysis("hi there", []) is False
 
     def test_short_text_with_results_no_deep(self):
         corrections = [Correction(original="teh", correction="the")]
-        assert _needs_deep_analysis("short text", corrections) is False
+        assert _needs_deep_analysis("short text here now five", corrections) is False
 
     def test_long_text_triggers_deep(self):
-        long_text = " ".join(["word"] * 25)
+        """Text at or above threshold (100 words) always triggers Tier 2."""
+        long_text = " ".join(["word"] * 100)
         assert _needs_deep_analysis(long_text, []) is True
 
-    def test_empty_corrections_triggers_deep(self):
-        assert _needs_deep_analysis("some text here", []) is True
-
-    def test_exactly_20_words_no_deep(self):
+    def test_empty_corrections_medium_text_triggers_deep(self):
+        """15+ words with no Tier 1 results triggers Tier 2 as fallback."""
         text = " ".join(["word"] * 20)
+        assert _needs_deep_analysis(text, []) is True
+
+    def test_empty_corrections_short_text_no_deep(self):
+        """Under 15 words with no results does NOT trigger Tier 2."""
+        text = " ".join(["word"] * 10)
+        assert _needs_deep_analysis(text, []) is False
+
+    def test_medium_text_with_results_no_deep(self):
+        """Under threshold with Tier 1 results skips Tier 2."""
+        text = " ".join(["word"] * 50)
         corrections = [Correction(original="a", correction="b")]
         assert _needs_deep_analysis(text, corrections) is False
 
-    def test_21_words_triggers_deep(self):
-        text = " ".join(["word"] * 21)
+    def test_threshold_text_triggers_deep(self):
+        """Text at exactly the threshold triggers Tier 2."""
+        text = " ".join(["word"] * 100)
         corrections = [Correction(original="a", correction="b")]
         assert _needs_deep_analysis(text, corrections) is True
 
@@ -191,7 +212,7 @@ class TestAutoRoute:
     @patch("app.core.llm_orchestrator.get_user_profile", new_callable=AsyncMock)
     async def test_long_text_always_triggers_deep(self, mock_profile, mock_quick, mock_deep, db):
         mock_profile.return_value = None
-        long_text = " ".join(["word"] * 25)
+        long_text = " ".join(["word"] * 100)
         mock_quick.return_value = [
             Correction(original="word", correction="word", confidence=0.99),
         ]

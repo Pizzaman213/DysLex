@@ -12,10 +12,12 @@ import argparse
 import json
 import logging
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
 from datasets import Dataset
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -24,18 +26,19 @@ from transformers import (
     EarlyStoppingCallback,
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
+    TrainerCallback,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration defaults
-MODEL_NAME = "t5-small"
+MODEL_NAME = "google/flan-t5-small"
 MAX_INPUT_LENGTH = 128
 MAX_TARGET_LENGTH = 128
 BATCH_SIZE = 32
-LEARNING_RATE = 2e-4  # Lower LR for combined spelling+grammar training
-EPOCHS = 8  # More epochs for grammar-augmented data variety
+LEARNING_RATE = 1e-4  # Lower LR for larger dataset and better convergence
+EPOCHS = 12  # More epochs with early stopping for grammar-augmented data
 OUTPUT_DIR = Path(__file__).parent / "models" / "quick_correction_seq2seq_v1"
 
 
@@ -115,6 +118,7 @@ def prepare_seq2seq_dataset(
         tokenize_fn,
         batched=True,
         remove_columns=dataset.column_names,
+        num_proc=os.cpu_count(),
     )
 
     return dataset
@@ -198,6 +202,92 @@ def _word_error_rate(hypothesis: list[str], reference: list[str]) -> float:
     return d[len(hypothesis)][len(reference)] / len(reference)
 
 
+class CurriculumCallback(TrainerCallback):
+    """Swaps the training dataset at epoch boundaries for curriculum learning.
+
+    Training phases of increasing difficulty:
+    - Phase 1 (epochs 1-3): Spelling-only errors
+    - Phase 2 (epochs 4-6): Spelling + grammar errors
+    - Phase 3 (epochs 7-9): Spelling + grammar + mixed errors
+    - Phase 4 (epochs 10+): Full dataset (all types including hard examples)
+    """
+
+    def __init__(
+        self,
+        phase_datasets: dict[int, Dataset],
+        phase_boundaries: list[int] | None = None,
+    ):
+        """Initialize curriculum callback.
+
+        Args:
+            phase_datasets: Mapping of phase number (1-4) to prepared Dataset
+            phase_boundaries: Epoch boundaries for phase transitions [phase1_end, phase2_end, phase3_end]
+        """
+        self.phase_datasets = phase_datasets
+        self.boundaries = phase_boundaries or [3, 6, 9]
+        self.current_phase = 1
+
+    def _get_phase(self, epoch: int) -> int:
+        """Determine which phase to use for a given epoch."""
+        for i, boundary in enumerate(self.boundaries):
+            if epoch < boundary:
+                return i + 1
+        return len(self.boundaries) + 1
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        """Swap dataset at epoch boundaries."""
+        new_phase = self._get_phase(int(state.epoch))
+        if new_phase != self.current_phase and new_phase in self.phase_datasets:
+            self.current_phase = new_phase
+            trainer = kwargs.get("model", None)
+            # The trainer is passed implicitly; we access it through the callback args
+            logger.info(
+                f"Curriculum: switching to phase {new_phase} "
+                f"({len(self.phase_datasets[new_phase])} samples)"
+            )
+
+
+def _load_curriculum_datasets(
+    data_dir: Path,
+    tokenizer: Any,
+    full_train_dataset: Dataset,
+) -> dict[int, Dataset] | None:
+    """Load curriculum phase datasets if they exist.
+
+    Args:
+        data_dir: Directory containing phase files
+        tokenizer: Tokenizer for preparing datasets
+        full_train_dataset: The full training dataset (used as phase 4)
+
+    Returns:
+        Dict mapping phase number to Dataset, or None if no phase files exist
+    """
+    phase_files = {
+        1: data_dir / "train_seq2seq_phase1.jsonl",
+        2: data_dir / "train_seq2seq_phase2.jsonl",
+        3: data_dir / "train_seq2seq_phase3.jsonl",
+    }
+
+    # Check if any phase files exist
+    if not any(f.exists() for f in phase_files.values()):
+        return None
+
+    phase_datasets: dict[int, Dataset] = {}
+    for phase, filepath in phase_files.items():
+        if filepath.exists():
+            samples = load_seq2seq_data(filepath)
+            if samples:
+                dataset = prepare_seq2seq_dataset(samples, tokenizer)
+                phase_datasets[phase] = dataset
+                logger.info(f"Curriculum phase {phase}: {len(dataset)} samples from {filepath.name}")
+
+    # Phase 4 is always the full dataset
+    phase_datasets[4] = full_train_dataset
+    logger.info(f"Curriculum phase 4 (full): {len(full_train_dataset)} samples")
+
+    return phase_datasets if len(phase_datasets) > 1 else None
+
+
 def train_seq2seq_model(
     data_dir: Path,
     output_dir: Path = OUTPUT_DIR,
@@ -205,7 +295,8 @@ def train_seq2seq_model(
     epochs: int = EPOCHS,
     batch_size: int = BATCH_SIZE,
     learning_rate: float = LEARNING_RATE,
-    patience: int = 3,
+    patience: int = 15,
+    max_eval_samples: int = 2000,
 ) -> None:
     """Train the Seq2Seq Quick Correction Model.
 
@@ -216,7 +307,8 @@ def train_seq2seq_model(
         epochs: Number of training epochs
         batch_size: Training batch size
         learning_rate: Learning rate
-        patience: Early stopping patience
+        patience: Early stopping patience (in eval steps)
+        max_eval_samples: Max eval samples during training (0 = no cap)
     """
     logger.info("Starting Seq2Seq Quick Correction Model training...")
     logger.info(f"  Model: {model_name}")
@@ -253,32 +345,45 @@ def train_seq2seq_model(
     train_dataset = prepare_seq2seq_dataset(train_samples, tokenizer)
     eval_dataset = prepare_seq2seq_dataset(eval_samples, tokenizer)
 
+    # Cap eval dataset to speed up training-time validation
+    if max_eval_samples > 0 and len(eval_dataset) > max_eval_samples:
+        logger.info(f"Capping eval dataset from {len(eval_dataset)} to {max_eval_samples} samples")
+        eval_dataset = eval_dataset.shuffle(seed=42).select(range(max_eval_samples))
+
     # Calculate warmup steps (10% of total)
     steps_per_epoch = math.ceil(len(train_dataset) / batch_size)
     total_steps = steps_per_epoch * epochs
     warmup_steps = int(total_steps * 0.1)
 
-    # Detect fp16 support
-    import torch
-    use_fp16 = torch.cuda.is_available()
-    if use_fp16:
-        logger.info("CUDA detected, enabling fp16 mixed precision")
+    # Detect accelerator and fp16 support
+    use_fp16 = False
+    use_cuda = torch.cuda.is_available()
+    use_torch_compile = False
+    if use_cuda:
+        use_fp16 = True
+        use_torch_compile = True
+        logger.info("CUDA detected, enabling fp16 mixed precision and torch.compile")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        logger.info("Apple MPS detected, enabling GPU acceleration (torch.compile disabled)")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Training arguments
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(output_dir),
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy="steps",
+        eval_steps=500,
+        save_strategy="steps",
+        save_steps=500,
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         num_train_epochs=epochs,
-        weight_decay=0.01,
+        weight_decay=0.03,
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         fp16=use_fp16,
+        label_smoothing_factor=0.1,
         logging_dir=str(output_dir / "logs"),
         logging_steps=100,
         load_best_model_at_end=True,
@@ -287,7 +392,11 @@ def train_seq2seq_model(
         push_to_hub=False,
         save_total_limit=2,
         predict_with_generate=True,
-        generation_max_length=MAX_TARGET_LENGTH,
+        generation_max_length=96,
+        gradient_accumulation_steps=2,
+        dataloader_num_workers=4 if use_cuda else 0,
+        dataloader_pin_memory=use_cuda,
+        torch_compile=use_torch_compile,
     )
 
     # Data collator
@@ -304,6 +413,20 @@ def train_seq2seq_model(
         EarlyStoppingCallback(early_stopping_patience=patience),
     ]
 
+    # Check for curriculum learning phase datasets
+    curriculum_datasets = _load_curriculum_datasets(data_dir, tokenizer, train_dataset)
+    if curriculum_datasets:
+        logger.info("Curriculum learning ENABLED — training in phases of increasing difficulty")
+        curriculum_cb = CurriculumCallback(
+            phase_datasets=curriculum_datasets,
+            phase_boundaries=[3, 6, 9],
+        )
+        callbacks.append(curriculum_cb)  # type: ignore[arg-type]
+        # Start with phase 1 dataset (spelling-only)
+        if 1 in curriculum_datasets:
+            train_dataset = curriculum_datasets[1]
+            logger.info(f"Starting with phase 1 ({len(train_dataset)} samples)")
+
     # Build compute_metrics with tokenizer closure
     def metrics_fn(eval_pred: tuple) -> dict[str, float]:
         return compute_metrics(eval_pred, tokenizer)
@@ -319,6 +442,26 @@ def train_seq2seq_model(
         compute_metrics=metrics_fn,  # type: ignore[arg-type]
         callbacks=callbacks,  # type: ignore[arg-type]
     )
+
+    # Wire up curriculum dataset swapping through trainer
+    if curriculum_datasets:
+        original_train_loop = None  # Trainer handles via callback
+
+        def _on_epoch_begin_swap(callback, args, state, control, **kwargs):
+            """Swap trainer's train_dataset when curriculum phase changes."""
+            new_phase = callback._get_phase(int(state.epoch))
+            if new_phase != callback.current_phase and new_phase in callback.phase_datasets:
+                callback.current_phase = new_phase
+                trainer.train_dataset = callback.phase_datasets[new_phase]
+                logger.info(
+                    f"Curriculum: switched to phase {new_phase} "
+                    f"({len(callback.phase_datasets[new_phase])} samples)"
+                )
+
+        # Monkey-patch the callback's on_epoch_begin to swap the dataset
+        for cb in callbacks:
+            if isinstance(cb, CurriculumCallback):
+                cb.on_epoch_begin = lambda args, state, control, _cb=cb, **kw: _on_epoch_begin_swap(_cb, args, state, control, **kw)
 
     # Train
     logger.info(f"Starting training ({total_steps} total steps, {warmup_steps} warmup)...")
@@ -352,7 +495,7 @@ def train_seq2seq_model(
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Train Seq2Seq Quick Correction Model (T5-small)"
+        description="Train Seq2Seq Quick Correction Model (FLAN-T5-small)"
     )
     parser.add_argument(
         "--data-dir",
@@ -393,8 +536,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--patience",
         type=int,
-        default=3,
-        help="Early stopping patience in epochs (default: 3)",
+        default=15,
+        help="Early stopping patience in eval steps (default: 15)",
+    )
+    parser.add_argument(
+        "--max-eval-samples",
+        type=int,
+        default=2000,
+        help="Max eval samples during training, 0 = no cap (default: 2000)",
     )
     return parser.parse_args()
 
@@ -428,6 +577,7 @@ def main():
         batch_size=args.batch_size,
         learning_rate=args.lr,
         patience=args.patience,
+        max_eval_samples=args.max_eval_samples,
     )
 
 

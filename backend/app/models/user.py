@@ -1,6 +1,8 @@
 """User models."""
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 
 def _to_camel(name: str) -> str:
@@ -81,6 +83,17 @@ class UserSettings(BaseModel):
     # Advanced
     developer_mode: bool = False
 
+    # LLM Provider
+    llm_provider: str | None = None
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    llm_api_key_encrypted: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def llm_api_key_configured(self) -> bool:
+        return bool(self.llm_api_key_encrypted)
+
 
 class UserSettingsUpdate(BaseModel):
     """Partial update for user settings."""
@@ -132,6 +145,12 @@ class UserSettingsUpdate(BaseModel):
 
     # Advanced
     developer_mode: bool | None = None
+
+    # LLM Provider
+    llm_provider: str | None = None
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    llm_api_key: str | None = None  # write-only plaintext, encrypted before storage
 
 
 class User(UserBase):

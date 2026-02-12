@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Theme, FontFamily, PageType, ViewMode, Language, MicPermission, UserSettings } from '@/types';
+import type { Theme, FontFamily, PageType, ViewMode, Language, MicPermission, LLMProvider, UserSettings } from '@/types';
 import { api } from '@/services/api';
 import { useUserStore } from '@/stores/userStore';
 import { createUserScopedStorage, registerScopedStore } from '@/services/userScopedStorage'; // -- connor s, feb 2026
@@ -58,6 +58,13 @@ interface SettingsState extends UserSettings {
   // Advanced setters
   setDeveloperMode: (enabled: boolean) => void;
 
+  // LLM Provider setters
+  setLlmProvider: (provider: LLMProvider | null) => void;
+  setLlmBaseUrl: (url: string | null) => void;
+  setLlmModel: (model: string | null) => void;
+  saveLlmApiKey: (key: string) => Promise<void>;
+  testLlmConnection: () => Promise<{ status: string; provider?: string; model?: string; error?: string }>;
+
   // Reset
   resetSettings: () => void;
 
@@ -95,6 +102,16 @@ const DEFAULT_SETTINGS: UserSettings = {
   anonymizedDataCollection: false,
   cloudSync: false,
   developerMode: false,
+  llmProvider: null,
+  llmBaseUrl: null,
+  llmModel: null,
+  llmApiKeyConfigured: false,
+};
+
+const LLM_PROVIDER_DEFAULTS: Record<LLMProvider, { baseUrl: string; model: string }> = {
+  nvidia_nim: { baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-nano-30b-a3b' },
+  ollama: { baseUrl: 'http://localhost:11434/v1', model: 'llama3.2' },
+  vllm: { baseUrl: 'http://localhost:8080/v1', model: 'meta-llama/Llama-3.1-8B-Instruct' },
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -243,6 +260,49 @@ export const useSettingsStore = create<SettingsState>()(
         if (get().cloudSync) get().syncToBackend();
       },
 
+      // LLM Provider
+      setLlmProvider: (llmProvider) => {
+        if (llmProvider) {
+          const defaults = LLM_PROVIDER_DEFAULTS[llmProvider];
+          set({ llmProvider, llmBaseUrl: defaults.baseUrl, llmModel: defaults.model });
+        } else {
+          set({ llmProvider: null, llmBaseUrl: null, llmModel: null });
+        }
+        if (get().cloudSync) get().syncToBackend();
+      },
+      setLlmBaseUrl: (llmBaseUrl) => {
+        set({ llmBaseUrl });
+        if (get().cloudSync) get().syncToBackend();
+      },
+      setLlmModel: (llmModel) => {
+        set({ llmModel });
+        if (get().cloudSync) get().syncToBackend();
+      },
+      saveLlmApiKey: async (key: string) => {
+        const userId = useUserStore.getState().user?.id;
+        if (!userId) return;
+        try {
+          await api.updateSettings(userId, { llmApiKey: key } as any);
+          set({ llmApiKeyConfigured: !!key });
+        } catch (error) {
+          console.error('Failed to save LLM API key:', error);
+          throw error;
+        }
+      },
+      testLlmConnection: async () => {
+        const userId = useUserStore.getState().user?.id;
+        if (!userId) return { status: 'error', error: 'Not logged in' };
+        try {
+          // Sync current settings first so the test uses the latest config
+          await get().syncToBackend();
+          const result = await api.testLlmConnection(userId);
+          return result.data;
+        } catch (error: any) {
+          const detail = error?.data?.detail || error?.message || 'Connection failed';
+          return { status: 'error', error: detail };
+        }
+      },
+
       // Reset to defaults (used on logout)
       resetSettings: () => {
         set({ ...DEFAULT_SETTINGS, isLoading: false, isSyncing: false });
@@ -305,6 +365,9 @@ export const useSettingsStore = create<SettingsState>()(
             anonymizedDataCollection: state.anonymizedDataCollection,
             cloudSync: state.cloudSync,
             developerMode: state.developerMode,
+            llmProvider: state.llmProvider,
+            llmBaseUrl: state.llmBaseUrl,
+            llmModel: state.llmModel,
           };
           await api.updateSettings(userId, settings);
           set({ isSyncing: false });
@@ -318,7 +381,7 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'dyslex-settings',
       storage: createUserScopedStorage(),
       skipHydration: true,
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -326,6 +389,12 @@ export const useSettingsStore = create<SettingsState>()(
         }
         if (version < 2) {
           state.micPermission = 'unknown';
+        }
+        if (version < 3) {
+          state.llmProvider = null;
+          state.llmBaseUrl = null;
+          state.llmModel = null;
+          state.llmApiKeyConfigured = false;
         }
         return state as unknown as SettingsState;
       },

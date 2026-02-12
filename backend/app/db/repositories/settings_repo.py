@@ -90,6 +90,15 @@ async def update_settings(
         if not settings:
             return None
 
+        # Handle API key encryption before storage
+        if "llm_api_key" in updates:
+            raw_key = updates.pop("llm_api_key")
+            if raw_key:
+                from app.utils.encryption import encrypt_api_key
+                updates["llm_api_key_encrypted"] = encrypt_api_key(raw_key)
+            else:
+                updates["llm_api_key_encrypted"] = None
+
         # Update only the provided fields
         for key, value in updates.items():
             if hasattr(settings, key):

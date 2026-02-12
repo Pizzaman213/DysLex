@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     nvidia_nim_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b"
     nvidia_nim_vision_model: str = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
 
+    # LLM Provider selection: "nvidia_nim" (default), "ollama", "vllm"
+    llm_provider: str = "nvidia_nim"
+    ollama_base_url: str = "http://localhost:11434/v1"
+    ollama_model: str = "llama3.2"
+    vllm_base_url: str = "http://localhost:8080/v1"
+    vllm_model: str = "meta-llama/Llama-3.1-8B-Instruct"
+    vllm_api_key: str = ""
+
     # Speech-to-Text provider: "faster-whisper" (default) or "nvidia"
     stt_provider: str = "faster-whisper"
 
@@ -72,6 +80,8 @@ class Settings(BaseSettings):
 
     # Correction Routing
     confidence_threshold: float = 0.85
+    deep_analysis_word_threshold: int = 100  # Tier 2 only fires for text >= this word count (unless Tier 1 has no results)
+    deep_analysis_cache_ttl: int = 300  # Redis cache TTL for deep analysis results (seconds)
 
     # LLM Generation (Nemotron supports 32k context)
     llm_max_tokens: int = 16384
@@ -83,7 +93,7 @@ class Settings(BaseSettings):
 
     # LLM Tool Calling
     llm_tool_calling_enabled: bool = True
-    llm_tool_calling_max_rounds: int = 3
+    llm_tool_calling_max_rounds: int = 2  # Reduced from 3: static lookups are now pre-resolved
 
     # TTS Audio Storage
     tts_audio_dir: str = "storage/audio"

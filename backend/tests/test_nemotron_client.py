@@ -202,19 +202,33 @@ class TestParseNemotronResponse:
 class TestDeepAnalysis:
     """Tests for the deep_analysis function."""
 
-    @patch("app.services.nemotron_client.settings")
-    async def test_no_api_key_returns_empty(self, mock_settings):
+    @patch("app.services.nemotron_client.cache_get", new_callable=AsyncMock, return_value=None)
+    @patch("app.services.nemotron_client.get_system_default_config")
+    async def test_no_api_key_returns_empty(self, mock_config, mock_cache):
+        from app.services.llm_client import LLMProvider, LLMProviderConfig
         from app.services.nemotron_client import deep_analysis
 
-        mock_settings.nvidia_nim_api_key = ""
+        mock_config.return_value = LLMProviderConfig(
+            provider=LLMProvider.nvidia_nim,
+            base_url="https://test.api",
+            model="test-model",
+            api_key="",
+        )
         result = await deep_analysis("text", "user-1")
         assert result == []
 
-    @patch("app.services.nemotron_client.settings")
-    async def test_no_api_key_raises_when_requested(self, mock_settings):
+    @patch("app.services.nemotron_client.cache_get", new_callable=AsyncMock, return_value=None)
+    @patch("app.services.nemotron_client.get_system_default_config")
+    async def test_no_api_key_raises_when_requested(self, mock_config, mock_cache):
+        from app.services.llm_client import LLMProvider, LLMProviderConfig
         from app.services.nemotron_client import deep_analysis
 
-        mock_settings.nvidia_nim_api_key = ""
+        mock_config.return_value = LLMProviderConfig(
+            provider=LLMProvider.nvidia_nim,
+            base_url="https://test.api",
+            model="test-model",
+            api_key="",
+        )
         with pytest.raises(DeepAnalysisError, match="not configured"):
             await deep_analysis("text", "user-1", raise_on_error=True)
 

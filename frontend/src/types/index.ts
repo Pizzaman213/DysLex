@@ -6,6 +6,7 @@ export type ViewMode = 'paper' | 'continuous';
 export type SettingsTab = 'general' | 'appearance' | 'accessibility' | 'privacy' | 'docs';
 export type Language = 'en' | 'es' | 'fr' | 'de';
 export type MicPermission = 'granted' | 'denied' | 'prompt' | 'unknown';
+export type LLMProvider = 'nvidia_nim' | 'ollama' | 'vllm';
 
 export interface UserSettings {
   // General
@@ -51,6 +52,12 @@ export interface UserSettings {
 
   // Advanced
   developerMode: boolean;
+
+  // LLM Provider
+  llmProvider: LLMProvider | null;
+  llmBaseUrl: string | null;
+  llmModel: string | null;
+  llmApiKeyConfigured: boolean;
 }
 
 export interface DocCategory {

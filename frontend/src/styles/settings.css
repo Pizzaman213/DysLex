@@ -170,6 +170,27 @@
   outline-offset: 2px;
 }
 
+.setting-text-input {
+  min-width: 160px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+}
+
+.setting-text-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.setting-text-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
 /* Range Sliders — restyled to full-width with centered thumb, connor s. 2/8 */
 .setting-row:has(.setting-slider) {
   flex-wrap: wrap;
@@ -529,7 +550,8 @@
   }
 
   .setting-slider,
-  .setting-select {
+  .setting-select,
+  .setting-text-input {
     width: 100%;
     min-width: 0;
   }

@@ -174,6 +174,10 @@ textarea::placeholder {
   0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 var(--accent-g); }
   50% { transform: scale(1.05); box-shadow: 0 0 0 16px transparent; }
 }
+@keyframes micBreathe {
+  0%, 100% { box-shadow: 0 0 0 6px var(--accent-g, rgba(224, 123, 76, 0.35)), 0 0 20px 2px var(--accent-g, rgba(224, 123, 76, 0.15)); }
+  50% { box-shadow: 0 0 0 8px var(--accent-g, rgba(224, 123, 76, 0.25)), 0 0 32px 6px var(--accent-g, rgba(224, 123, 76, 0.25)); }
+}
 @keyframes wav {
   0%, 100% { transform: scaleY(0.4); }
   50% { transform: scaleY(1); }
@@ -1456,6 +1460,8 @@ textarea::placeholder {
 
 /* Big mic (Capture hero) */
 .big-mic {
+  position: relative;
+  z-index: 1;
   width: 96px;
   height: 96px;
   border-radius: 50%;
@@ -1474,7 +1480,43 @@ textarea::placeholder {
   transform: scale(1.05);
 }
 .big-mic.recording {
-  animation: bigPulse 2s ease-in-out infinite;
+  animation: micBreathe 2.5s ease-in-out infinite;
+}
+
+/* Radial voice visualizer ring around mic */
+.mic-ring-wrapper {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.radial-wave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Radial bar: bottom anchored at wrapper center, rotated to angle, height grows outward */
+.radial-bar {
+  position: absolute;
+  left: calc(50% - 3px);
+  bottom: 50%;
+  width: 6px;
+  height: 54px; /* mic radius + gap = idle visible stub */
+  background: var(--accent);
+  border-radius: var(--r-full, 9999px);
+  transform-origin: 50% 100%; /* pivot at bottom = wrapper center */
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+
+.radial-wave.active .radial-bar {
+  opacity: 0.9;
+  filter: drop-shadow(0 0 4px var(--accent-g, rgba(224, 123, 76, 0.4)));
 }
 
 /* CSS Waveform bars */
@@ -1549,70 +1591,250 @@ textarea::placeholder {
   font-weight: var(--fw-medium);
 }
 
-/* Vision capture toggle in Capture Mode */
-.capture-vision-toggle {
+/* ============================================================
+   VISION CAPTURE — Morphing pill
+   One container: small pill → expands into card with content.
+   Both trigger + content are always mounted; CSS cross-fades.
+   ============================================================ */
+
+.capture-vision-pill {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  background: none;
+  padding: 0;
+  max-width: 128px;
+  margin-top: calc(-1 * var(--sp-16, 16px));
+  transition:
+    max-width    0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    padding      0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    background   0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow   0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* — Trigger (always in flow — no position:absolute to avoid layout pop) — */
+.capture-vision-pill-trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-6);
   background: none;
-  border: 1px solid var(--border2);
-  border-radius: var(--r-full, 999px);
+  border: none;
   padding: var(--sp-6) var(--sp-12);
+  max-height: 36px;
   font-size: var(--fs-12);
   color: var(--text2);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    opacity    0.25s ease,
+    max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    padding    0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    margin     0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    color      0.15s ease;
 }
 
-.capture-vision-toggle:hover {
-  background: var(--bg-hover);
+.capture-vision-pill:hover .capture-vision-pill-trigger {
   color: var(--text);
 }
 
-.capture-vision-toggle.active {
-  background: var(--accent-l, rgba(224, 123, 76, 0.12));
-  color: var(--accent);
-  border-color: var(--accent);
+/* Collapse trigger smoothly when open or closing */
+.capture-vision-pill.open .capture-vision-pill-trigger,
+.capture-vision-pill.closing .capture-vision-pill-trigger {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  pointer-events: none;
 }
 
-/* Vision capture panel wrapper inside Capture Mode */
-.capture-vision-wrapper {
-  width: 100%;
-  max-width: 600px;
-  margin: 0 auto;
-  animation: visionSlideIn 0.35s ease-out both;
-}
-
-@keyframes visionSlideIn {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.capture-vision-wrapper .vision-capture-panel {
-  padding: var(--sp-12);
+/* — Expanded state — */
+.capture-vision-pill.open {
+  border-radius: 16px;
+  max-width: 320px;
+  padding: var(--sp-16, 16px);
   background: var(--bg-card, var(--bg));
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-color: var(--border);
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.07);
+}
+
+/* — Closing: sides squeeze in, content fades first — */
+.capture-vision-pill.closing {
+  max-width: 128px;
+  border-radius: 999px;
+  padding: 0;
+  background: none;
+  border-color: var(--border2);
+  box-shadow: none;
+  /* Delay the shape shrink so content fades out first */
+  transition:
+    max-width     0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.12s,
+    border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.12s,
+    padding       0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.08s,
+    background    0.3s ease 0.05s,
+    border-color  0.3s ease 0.15s,
+    box-shadow    0.25s ease;
+}
+
+/* — Content (grid-row for smooth height) — */
+.capture-vision-pill-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  transition: grid-template-rows 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.capture-vision-pill.open .capture-vision-pill-content {
+  grid-template-rows: 1fr;
+}
+
+/* Closing: height collapses alongside the sides */
+.capture-vision-pill.closing .capture-vision-pill-content {
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.08s;
+}
+
+.capture-vision-pill-content > * {
+  overflow: hidden;
+}
+
+/* Panel inner: fade in on open */
+.capture-vision-pill-content .vision-capture-panel {
   display: flex;
   flex-direction: column;
   gap: var(--sp-12);
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.3s ease 0.2s, transform 0.3s ease 0.2s;
 }
 
-.capture-vision-wrapper .vision-choose {
+.capture-vision-pill.open .capture-vision-pill-content .vision-capture-panel {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Closing: content fades + shrinks quickly before the sides close */
+.capture-vision-pill.closing .capture-vision-pill-content .vision-capture-panel {
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.12s ease, transform 0.18s ease;
+}
+
+/* — Choose step layout — */
+.capture-vision-pill .vision-choose {
   display: flex;
-  gap: var(--sp-8);
-  flex-wrap: wrap;
-  animation: fadeUp 0.3s ease-out both;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-12);
 }
 
-.capture-vision-wrapper .vision-camera-view {
+.capture-vision-pill .vision-choose-options {
+  display: flex;
+  gap: var(--sp-10, 10px);
+  width: 100%;
+}
+
+.capture-vision-pill .vision-option-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-8);
+  flex: 1;
+  padding: var(--sp-16, 16px) var(--sp-8);
+  background: var(--bg-editor, var(--bg));
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md, 10px);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.capture-vision-pill.open .vision-option-btn {
+  animation: visionBtnIn 0.35s cubic-bezier(0.4, 0, 0.2, 1) 0.35s forwards;
+}
+
+.capture-vision-pill.open .vision-option-btn:nth-child(2) {
+  animation-delay: 0.42s;
+}
+
+@keyframes visionBtnIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.capture-vision-pill .vision-option-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-l);
+  color: var(--accent);
+}
+
+.capture-vision-pill .vision-option-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.capture-vision-pill .vision-option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg2, var(--bg));
+  color: var(--text3);
+  transition: background 0.15s, color 0.15s;
+}
+
+.capture-vision-pill .vision-option-btn:hover:not(:disabled) .vision-option-icon {
+  background: var(--accent);
+  color: white;
+}
+
+.capture-vision-pill .vision-option-label {
+  letter-spacing: 0.02em;
+}
+
+.capture-vision-pill .vision-cancel-btn {
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: var(--fs-12);
+  cursor: pointer;
+  padding: var(--sp-4) var(--sp-12);
+  border-radius: var(--r-sm);
+  transition: color 0.15s, background 0.15s;
+}
+
+.capture-vision-pill .vision-cancel-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg2, var(--bg));
+}
+
+.capture-vision-pill .vision-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* — Camera & preview steps — */
+.capture-vision-pill .vision-camera-view {
   display: flex;
   flex-direction: column;
   gap: var(--sp-8);
-  animation: fadeIn 0.25s ease-out both;
 }
 
-.capture-vision-wrapper .vision-video {
+.capture-vision-pill .vision-video {
   width: 100%;
   max-height: 300px;
   border-radius: var(--r-md);
@@ -1621,14 +1843,13 @@ textarea::placeholder {
   object-fit: cover;
 }
 
-.capture-vision-wrapper .vision-preview {
+.capture-vision-pill .vision-preview {
   display: flex;
   flex-direction: column;
   gap: var(--sp-8);
-  animation: fadeIn 0.25s ease-out both;
 }
 
-.capture-vision-wrapper .vision-preview-img {
+.capture-vision-pill .vision-preview-img {
   width: 100%;
   max-height: 300px;
   border-radius: var(--r-md);
@@ -1637,16 +1858,15 @@ textarea::placeholder {
   background: var(--bg-editor, var(--bg-card));
 }
 
-.capture-vision-wrapper .vision-error {
+.capture-vision-pill .vision-error {
   padding: var(--sp-8) var(--sp-12);
   background: var(--error-l, rgba(220, 80, 60, 0.1));
   color: var(--error);
   border-radius: var(--r-md);
   font-size: var(--fs-12);
-  animation: fadeUp 0.3s ease-out both;
 }
 
-.capture-vision-wrapper .extract-actions {
+.capture-vision-pill .extract-actions {
   display: flex;
   gap: var(--sp-8);
 }
@@ -3460,6 +3680,8 @@ textarea::placeholder {
 @media (max-width: 768px) {
   .capture-area { padding: var(--sp-24) var(--sp-16); }
   .big-mic { width: 72px; height: 72px; }
+  .mic-ring-wrapper { width: 160px; height: 160px; }
+  .radial-bar { width: 5px; left: calc(50% - 2.5px); }
   .capture-transcript { min-height: 80px; padding: var(--sp-12); }
   .capture-speak-btn { bottom: 64px; right: 16px; }
 }

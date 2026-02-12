@@ -29,6 +29,9 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
   const recognitionRef = useRef<any>(null);
   const finalizedRef = useRef('');
+  // Accumulates finalized text across auto-restarts so it isn't lost
+  // when the SpeechRecognition session resets on silence.
+  const accumulatedRef = useRef('');
   const stoppingRef = useRef(false);
   const activeRef = useRef(false);
 
@@ -61,10 +64,15 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
           .map((seg) => addPunctuation(seg))
           .join(' ');
 
-        // Update finalized text when new finals arrive
-        if (sessionFinal && sessionFinal !== finalizedRef.current) {
-          finalizedRef.current = sessionFinal;
-          onResult?.(sessionFinal);
+        // Update finalized text when new finals arrive.
+        // Combine with accumulated text from previous auto-restart sessions
+        // so earlier speech isn't lost when the API resets on silence.
+        if (sessionFinal) {
+          const full = accumulatedRef.current
+            ? accumulatedRef.current.trimEnd() + ' ' + sessionFinal.trimStart()
+            : sessionFinal;
+          finalizedRef.current = full;
+          onResult?.(full);
         }
 
         // Capitalize interim text so it looks right while speaking
@@ -91,8 +99,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
       };
 
       recognition.onend = () => {
-        // Auto-restart in continuous mode (Speech API stops on silence)
+        // Auto-restart in continuous mode (Speech API stops on silence).
+        // Save accumulated finals so the next session can build on them.
         if (!stoppingRef.current && continuous) {
+          accumulatedRef.current = finalizedRef.current;
           try {
             recognition.start();
           } catch {
@@ -121,6 +131,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
       stoppingRef.current = false;
       activeRef.current = true;
       finalizedRef.current = '';
+      accumulatedRef.current = '';
       setInterimText('');
       recognitionRef.current.start();
       setIsListening(true);
@@ -141,6 +152,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
   const resetTranscript = useCallback(() => {
     finalizedRef.current = '';
+    accumulatedRef.current = '';
     setTranscript('');
     setInterimText('');
   }, []);

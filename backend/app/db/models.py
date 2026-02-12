@@ -87,6 +87,12 @@ class UserSettings(Base):
     # Advanced
     developer_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # LLM Provider (nullable = use system default)
+    llm_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    llm_base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    llm_api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

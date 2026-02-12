@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -206,6 +207,7 @@ def prepare_dataset(samples: list[dict[str, Any]], tokenizer: Any) -> Dataset:
         tokenize_and_align,
         batched=True,
         remove_columns=dataset.column_names,
+        num_proc=os.cpu_count(),
     )
 
     return dataset
@@ -277,7 +279,7 @@ def train_model(
     epochs: int = EPOCHS,
     batch_size: int = BATCH_SIZE,
     learning_rate: float = LEARNING_RATE,
-    early_stopping_patience: int = 3,
+    early_stopping_patience: int = 10,
 ) -> None:
     """Train the Quick Correction Model.
 
@@ -289,7 +291,7 @@ def train_model(
         epochs: Number of training epochs
         batch_size: Training batch size
         learning_rate: Learning rate
-        early_stopping_patience: Stop after N epochs without improvement
+        early_stopping_patience: Stop after N eval steps without improvement
     """
     logger.info("Starting Quick Correction Model training...")
     logger.info(f"  Model: {model_name}")
@@ -329,16 +331,22 @@ def train_model(
     total_steps = steps_per_epoch * epochs
     warmup_steps = int(total_steps * 0.1)
 
-    # Detect fp16 support
-    use_fp16 = torch.cuda.is_available()
-    if use_fp16:
+    # Detect accelerator and fp16 support
+    use_fp16 = False
+    use_cuda = torch.cuda.is_available()
+    if use_cuda:
+        use_fp16 = True
         logger.info("CUDA detected, enabling fp16 mixed precision")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        logger.info("Apple MPS detected, enabling GPU acceleration")
 
     # Training arguments
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        eval_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy="steps",
+        eval_steps=500,
+        save_strategy="steps",
+        save_steps=500,
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
@@ -354,6 +362,10 @@ def train_model(
         greater_is_better=True,
         push_to_hub=False,
         save_total_limit=2,
+        gradient_accumulation_steps=2,
+        dataloader_num_workers=4 if use_cuda else 0,
+        dataloader_pin_memory=use_cuda,
+        torch_compile=True,
     )
 
     # Data collator
@@ -462,8 +474,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--patience",
         type=int,
-        default=3,
-        help="Early stopping patience in epochs (default: 3)",
+        default=10,
+        help="Early stopping patience in eval steps (default: 10)",
     )
     return parser.parse_args()
 

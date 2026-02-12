@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.dependencies import CurrentUserId, DbSession, hash_password
@@ -219,6 +220,66 @@ async def export_user_data(
     }
 
     return success_response(export_data)
+
+
+@router.post("/{user_id}/settings/test-llm")
+async def test_llm_connection(
+    user_id: str,
+    current_user: CurrentUserId,
+    db: DbSession,
+) -> dict:
+    """Test the user's configured LLM provider connection."""
+    _assert_own_user(user_id, current_user)
+
+    from app.services.llm_client import get_user_llm_config
+
+    config = await get_user_llm_config(user_id, db)
+
+    needs_key = config.provider.value != "ollama"
+    if needs_key and not config.api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No API key configured for {config.provider.value}",
+        )
+
+    url = f"{config.base_url}/chat/completions"
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if config.api_key:
+        headers["Authorization"] = f"Bearer {config.api_key}"
+
+    payload = {
+        "model": config.model,
+        "messages": [{"role": "user", "content": "Say hello in one word."}],
+        "max_tokens": 16,
+        "temperature": 0.0,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot connect to {config.base_url} — is the service running?",
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM returned HTTP {exc.response.status_code}: {exc.response.text[:200]}",
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Connection to {config.base_url} timed out",
+        )
+
+    return success_response({
+        "status": "connected",
+        "provider": config.provider.value,
+        "model": config.model,
+        "base_url": config.base_url,
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "platform_macos: tests that simulate macOS environment",
+    "platform_linux: tests that simulate Linux environment",
+    "platform_windows: tests that simulate Windows environment",
+    "slow: tests that take longer to run",
+]

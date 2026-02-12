@@ -1,5 +1,7 @@
 """Two-tier LLM processing orchestrator with confidence-based routing."""
 
+import asyncio
+import hashlib
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,10 @@ from app.services.nemotron_client import deep_analysis
 from app.services.nim_client import quick_correction
 
 logger = logging.getLogger(__name__)
+
+# In-flight request deduplication: reuse an existing deep_analysis call
+# when the same user submits the same text concurrently.
+_inflight: dict[str, asyncio.Task[list[Correction]]] = {}
 
 
 async def quick_only(
@@ -35,8 +41,8 @@ async def deep_only(
 ) -> list[Correction]:
     """Run Tier 2 (deep analysis) corrections only."""
     profile = await _safe_get_profile(user_id, db)
-    results = await deep_analysis(
-        text, user_id, context, profile, db=db, raise_on_error=raise_on_error,
+    results = await _deduped_deep_analysis(
+        text, user_id, context, profile, db, raise_on_error=raise_on_error,
     )
     for r in results:
         r.tier = "deep"
@@ -72,7 +78,7 @@ async def auto_route(
 
     # Tier 2 — deep analysis for flagged/uncertain tokens
     try:
-        deep_results = await deep_analysis(text, user_id, context, profile, db=db)
+        deep_results = await _deduped_deep_analysis(text, user_id, context, profile, db)
     except CircuitBreakerOpen:
         logger.warning("NIM circuit breaker OPEN — returning Tier 1 results only (degraded mode)")
         return confident
@@ -100,6 +106,41 @@ async def document_review(
 # ---------------------------------------------------------------------------
 
 
+async def _deduped_deep_analysis(
+    text: str,
+    user_id: str,
+    context: str | None,
+    profile: object | None,
+    db: AsyncSession | None,
+    *,
+    raise_on_error: bool = False,
+) -> list[Correction]:
+    """Run deep_analysis with in-flight deduplication.
+
+    If the same (user_id, text) is already being processed, await the
+    existing task instead of launching a duplicate API call.
+    """
+    raw = f"{user_id}:{text}"
+    key = hashlib.md5(raw.encode()).hexdigest()
+
+    existing = _inflight.get(key)
+    if existing is not None and not existing.done():
+        logger.info("In-flight dedup HIT for key %s — reusing existing task", key[:8])
+        return await existing
+
+    async def _do() -> list[Correction]:
+        try:
+            return await deep_analysis(
+                text, user_id, context, profile, db=db, raise_on_error=raise_on_error,
+            )
+        finally:
+            _inflight.pop(key, None)
+
+    task = asyncio.ensure_future(_do())
+    _inflight[key] = task
+    return await task
+
+
 async def _safe_get_profile(
     user_id: str, db: AsyncSession | None
 ) -> object | None:
@@ -114,9 +155,28 @@ async def _safe_get_profile(
 
 
 def _needs_deep_analysis(text: str, quick_results: list[Correction]) -> bool:
-    """Heuristic: should we also run Tier 2?"""
+    """Heuristic: should we also run Tier 2?
+
+    Rules:
+    - Text under 5 words: never trigger Tier 2 (too short to benefit)
+    - Text under threshold with confident Tier 1 results: skip Tier 2
+    - Text >= threshold: always trigger Tier 2 for thorough analysis
+    - No Tier 1 results for text >= 15 words: trigger Tier 2 as fallback
+    """
     word_count = len(text.split())
-    return word_count > 20 or len(quick_results) == 0
+    threshold = settings.deep_analysis_word_threshold
+
+    if word_count < 5:
+        return False
+
+    if word_count >= threshold:
+        return True
+
+    # Short-to-medium text with no Tier 1 results — need Tier 2 as fallback
+    if len(quick_results) == 0 and word_count >= 15:
+        return True
+
+    return False
 
 
 def _merge_corrections(
