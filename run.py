@@ -1822,15 +1822,74 @@ class PrerequisiteChecker:
                         os.environ['LDFLAGS'] = os.environ.get('LDFLAGS', '') + f' -L{lib_path}/lib'
                         os.environ['CPPFLAGS'] = os.environ.get('CPPFLAGS', '') + f' -I{lib_path}/include'
 
-            # Install dependencies
-            print(f"{self._colorize('  Installing dependencies (this may take a few minutes)...', Color.GRAY)}")
-            result = subprocess.run(
-                [str(venv_pip), 'install', '-r', 'requirements.txt'],
-                cwd=str(backend_dir),
-                capture_output=False,  # Show output
-                timeout=600  # 10 minutes
-            )
-            return result.returncode == 0
+            # Install dependencies in batches to avoid OOM on low-memory VMs.
+            # torch alone can use 2GB+ RAM during install/resolve. Installing
+            # everything at once crashes machines with ≤4GB RAM.
+            print(f"{self._colorize('  Installing dependencies in batches (this may take a while)...', Color.GRAY)}")
+
+            # Parse requirements.txt into ordered batches — heavy packages last
+            requirements_file = backend_dir / 'requirements.txt'
+            heavy_packages = {'torch', 'transformers', 'datasets', 'accelerate',
+                              'onnx', 'onnxruntime', 'optimum', 'peft'}
+            light_reqs = []
+            heavy_reqs = []
+            with open(requirements_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    # Extract package name (before any >=, [, etc.)
+                    pkg_name = line.split('>=')[0].split('<=')[0].split('==')[0].split('[')[0].strip()
+                    if pkg_name.lower() in heavy_packages:
+                        heavy_reqs.append(line)
+                    else:
+                        light_reqs.append(line)
+
+            pip_base = [str(venv_pip), 'install', '--no-cache-dir']
+
+            # Batch 1: lightweight packages (framework, db, auth, utils, dev)
+            if light_reqs:
+                print(f"{self._colorize(f'  [1/3] Installing core packages ({len(light_reqs)})...', Color.GRAY)}")
+                result = subprocess.run(
+                    pip_base + light_reqs,
+                    cwd=str(backend_dir),
+                    capture_output=False,
+                    timeout=600,
+                )
+                if result.returncode != 0:
+                    print(f"{self._colorize('  Core package install failed', Color.RED)}")
+                    return False
+
+            # Batch 2: ML packages one at a time (heaviest — torch can be 2GB+)
+            for i, req in enumerate(heavy_reqs, 1):
+                pkg_display = req.split('>=')[0].split('[')[0].strip()
+                print(f"{self._colorize(f'  [2/3] Installing ML package {i}/{len(heavy_reqs)}: {pkg_display}...', Color.GRAY)}")
+                result = subprocess.run(
+                    pip_base + [req],
+                    cwd=str(backend_dir),
+                    capture_output=False,
+                    timeout=900,  # torch can take a while
+                )
+                if result.returncode != 0:
+                    print(f"{self._colorize(f'  Warning: {pkg_display} failed to install (ML features may be limited)', Color.YELLOW)}")
+                    # Don't fail hard — core app works without ML packages
+
+            # Batch 3: verify critical imports work
+            print(f"{self._colorize('  [3/3] Verifying installation...', Color.GRAY)}")
+            venv_python = backend_dir / 'venv' / 'bin' / 'python'
+            if not venv_python.exists():
+                venv_python = backend_dir / 'venv' / 'Scripts' / 'python.exe'
+            if venv_python.exists():
+                check = subprocess.run(
+                    [str(venv_python), '-c', 'import fastapi; import sqlalchemy; print("OK")'],
+                    cwd=str(backend_dir),
+                    capture_output=True, text=True, timeout=30,
+                )
+                if check.returncode != 0:
+                    print(f"{self._colorize('  Warning: core imports failed — dependencies may be incomplete', Color.YELLOW)}")
+                    return False
+
+            return True
         except Exception as e:
             print(f"{self._colorize(f'Error creating venv: {e}', Color.YELLOW)}")
             import traceback
