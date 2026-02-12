@@ -350,20 +350,64 @@ class PackageInstaller:
     def install_system_prerequisites(self) -> bool:
         """Install system build tools and libraries needed by pip packages.
 
-        On a fresh Ubuntu/Debian or Fedora install, many packages are missing
-        that are required later (curl, git, build-essential, python3-venv,
-        libpq-dev for psycopg2, etc.).  Install them all upfront in one pass
-        so individual steps don't fail in surprising ways.
+        Runs on ALL platforms (Linux, macOS, Windows) to install everything
+        that could fail later: build tools, headers, Python venv, etc.
+        One upfront pass prevents surprises in individual install steps.
         """
         pkg = self._detect_package_manager()
-        if not pkg or pkg in ('brew', 'choco'):
-            # macOS/Homebrew and Windows/Chocolatey handle deps differently;
-            # individual install_* methods already cover them.
+        if not pkg:
             return True
 
         print(self._colorize('⚙️  Installing system prerequisites...', Color.YELLOW))
         try:
-            if pkg == 'apt':
+            if pkg == 'brew':
+                # Ensure Homebrew itself is available
+                if not self._ensure_homebrew():
+                    return False
+                # Xcode Command Line Tools (needed for compiling C extensions)
+                subprocess.run(
+                    ['xcode-select', '--install'],
+                    capture_output=True, timeout=10,
+                )
+                # Core build libraries that pip packages need
+                for formula in ['openssl', 'libffi', 'libpq', 'pkg-config']:
+                    subprocess.run(
+                        ['brew', 'install', formula],
+                        capture_output=True, timeout=120,
+                    )
+                # Ensure brew's openssl/libpq are findable by pip
+                for lib in ['openssl', 'libpq']:
+                    prefix = subprocess.run(
+                        ['brew', '--prefix', lib],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if prefix.returncode == 0 and prefix.stdout.strip():
+                        lib_path = prefix.stdout.strip()
+                        os.environ['LDFLAGS'] = os.environ.get('LDFLAGS', '') + f' -L{lib_path}/lib'
+                        os.environ['CPPFLAGS'] = os.environ.get('CPPFLAGS', '') + f' -I{lib_path}/include'
+                        os.environ['PKG_CONFIG_PATH'] = (
+                            os.environ.get('PKG_CONFIG_PATH', '') + f':{lib_path}/lib/pkgconfig'
+                        )
+
+            elif pkg == 'choco':
+                # Ensure Chocolatey itself is available
+                if not self._ensure_chocolatey():
+                    return False
+                # Visual C++ Build Tools (needed for compiling C extensions)
+                # Install silently — if already present, choco skips it
+                subprocess.run(
+                    ['choco', 'install', 'visualstudio2022-workload-vctools', '-y', '--no-progress'],
+                    capture_output=True, timeout=600,
+                )
+                # Git (many tools assume it's available)
+                if not self._is_command_available('git'):
+                    subprocess.run(
+                        ['choco', 'install', 'git', '-y', '--no-progress'],
+                        capture_output=True, timeout=300,
+                    )
+                    self._refresh_windows_path()
+
+            elif pkg == 'apt':
                 subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
                 py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
                 self._run_command([
@@ -380,6 +424,7 @@ class PackageInstaller:
                     'libffi-dev',       # cryptography / cffi
                     'libssl-dev',       # cryptography
                 ], timeout=300)
+
             elif pkg == 'dnf':
                 self._run_command([
                     'sudo', 'dnf', 'install', '-y', '-q',
@@ -390,6 +435,7 @@ class PackageInstaller:
                     'libffi-devel',
                     'openssl-devel',
                 ], timeout=300)
+
             elif pkg == 'pacman':
                 self._run_command([
                     'sudo', 'pacman', '-Sy', '--noconfirm', '--needed',
@@ -426,9 +472,26 @@ class PackageInstaller:
             if pkg == 'brew':
                 if not self._ensure_homebrew():
                     return False
-                self._run_command(['brew', 'install', 'node@20'], timeout=600)
-                subprocess.run(['brew', 'link', '--overwrite', 'node@20'],
-                               capture_output=True, timeout=30)
+                # Try node@20 first, fall back to node@22, then unversioned node
+                for formula in ['node@20', 'node@22', 'node']:
+                    result = subprocess.run(
+                        ['brew', 'install', formula],
+                        capture_output=True, timeout=600,
+                    )
+                    if result.returncode == 0:
+                        subprocess.run(['brew', 'link', '--overwrite', formula],
+                                       capture_output=True, timeout=30)
+                        break
+                # Ensure node is on PATH (brew link can silently fail)
+                if not self._is_command_available('node'):
+                    for node_dir in Path('/opt/homebrew/opt').glob('node@*/bin'):
+                        os.environ['PATH'] = str(node_dir) + ':' + os.environ.get('PATH', '')
+                        break
+                    else:
+                        for node_dir in Path('/usr/local/opt').glob('node@*/bin'):
+                            os.environ['PATH'] = str(node_dir) + ':' + os.environ.get('PATH', '')
+                            break
+
             elif pkg == 'apt':
                 # Ensure curl is available for NodeSource setup
                 if not self._is_command_available('curl'):
@@ -450,6 +513,7 @@ class PackageInstaller:
                     print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
                     subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
                     self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
+
             elif pkg == 'dnf':
                 # Ensure curl is available for NodeSource setup
                 if not self._is_command_available('curl'):
@@ -464,13 +528,34 @@ class PackageInstaller:
                 if result.returncode != 0:
                     print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
                 self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'nodejs'], timeout=300)
+
             elif pkg == 'pacman':
                 self._run_command(['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'nodejs', 'npm'], timeout=300)
+
             elif pkg == 'choco':
                 if not self._ensure_chocolatey():
                     return False
-                self._run_command(['choco', 'install', 'nodejs-lts', '-y', '--no-progress'], timeout=600)
+                # Try nodejs-lts first, fall back to nodejs
+                result = subprocess.run(
+                    ['choco', 'install', 'nodejs-lts', '-y', '--no-progress'],
+                    capture_output=True, timeout=600,
+                )
+                if result.returncode != 0:
+                    subprocess.run(
+                        ['choco', 'install', 'nodejs', '-y', '--no-progress'],
+                        capture_output=True, timeout=600,
+                    )
                 self._refresh_windows_path()
+                # Also check common install locations if not on PATH
+                if not self._is_command_available('node'):
+                    for node_path in [
+                        Path('C:/Program Files/nodejs'),
+                        Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'nodejs',
+                        Path(os.environ.get('APPDATA', '')) / 'nvm' / 'current',
+                    ]:
+                        if (node_path / 'node.exe').exists():
+                            os.environ['PATH'] += ';' + str(node_path)
+                            break
 
             # Verify node is actually available now
             if self._is_command_available('node'):
@@ -478,7 +563,12 @@ class PackageInstaller:
                 return True
             else:
                 print(self._colorize('  Node.js installation did not complete successfully.', Color.RED))
-                print(self._colorize('  Try manually: sudo apt-get update && sudo apt-get install -y nodejs npm', Color.YELLOW))
+                if pkg == 'brew':
+                    print(self._colorize('  Try manually: brew install node', Color.YELLOW))
+                elif pkg == 'choco':
+                    print(self._colorize('  Try manually: choco install nodejs-lts -y', Color.YELLOW))
+                else:
+                    print(self._colorize('  Try manually: sudo apt-get update && sudo apt-get install -y nodejs npm', Color.YELLOW))
                 return False
         except Exception as e:
             print(self._colorize(f'  Error installing Node.js: {e}', Color.RED))
@@ -522,14 +612,38 @@ class PackageInstaller:
             if pkg == 'brew':
                 if not self._ensure_homebrew():
                     return False
-                self._run_command(['brew', 'install', 'postgresql@15'], timeout=600)
+                # Try multiple versions — whichever is available in the tap
+                installed = False
+                for version in ['postgresql@17', 'postgresql@16', 'postgresql@15']:
+                    result = subprocess.run(
+                        ['brew', 'install', version],
+                        capture_output=True, timeout=600,
+                    )
+                    if result.returncode == 0:
+                        subprocess.run(['brew', 'link', '--overwrite', version],
+                                       capture_output=True, timeout=30)
+                        installed = True
+                        break
+                if not installed:
+                    # Last resort: unversioned formula
+                    self._run_command(['brew', 'install', 'postgresql'], timeout=600)
+                # Ensure pg binaries are on PATH
+                for pg_dir in Path('/opt/homebrew/opt').glob('postgresql@*/bin'):
+                    os.environ['PATH'] = str(pg_dir) + ':' + os.environ.get('PATH', '')
+                    break
+                else:
+                    for pg_dir in Path('/usr/local/opt').glob('postgresql@*/bin'):
+                        os.environ['PATH'] = str(pg_dir) + ':' + os.environ.get('PATH', '')
+                        break
+
             elif pkg == 'apt':
-                self._run_command(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
                 self._run_command(
                     ['sudo', 'apt-get', 'install', '-y', '-qq',
                      'postgresql', 'postgresql-contrib', 'libpq-dev'],
                     timeout=300,
                 )
+
             elif pkg == 'dnf':
                 self._run_command(
                     ['sudo', 'dnf', 'install', '-y', '-q',
@@ -540,6 +654,7 @@ class PackageInstaller:
                     ['sudo', 'postgresql-setup', '--initdb'],
                     capture_output=True, timeout=60,
                 )
+
             elif pkg == 'pacman':
                 self._run_command(
                     ['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'postgresql'],
@@ -550,15 +665,36 @@ class PackageInstaller:
                      '-D', '/var/lib/postgres/data'],
                     capture_output=True, timeout=60,
                 )
+
             elif pkg == 'choco':
                 if not self._ensure_chocolatey():
                     return False
-                self._run_command(
-                    ['choco', 'install', 'postgresql15', '--params', '/Password:postgres',
-                     '-y', '--no-progress'],
-                    timeout=600,
-                )
+                # Try multiple versions
+                installed = False
+                for pg_ver in ['postgresql17', 'postgresql16', 'postgresql15']:
+                    result = subprocess.run(
+                        ['choco', 'install', pg_ver, '--params', '/Password:postgres',
+                         '-y', '--no-progress'],
+                        capture_output=True, timeout=600,
+                    )
+                    if result.returncode == 0:
+                        installed = True
+                        break
+                if not installed:
+                    self._run_command(
+                        ['choco', 'install', 'postgresql', '--params', '/Password:postgres',
+                         '-y', '--no-progress'],
+                        timeout=600,
+                    )
                 self._refresh_windows_path()
+                # Ensure pg binaries are on PATH
+                if not self._is_command_available('psql'):
+                    pg_base = Path('C:/Program Files/PostgreSQL')
+                    if pg_base.exists():
+                        for pg_dir in sorted(pg_base.iterdir(), reverse=True):
+                            if (pg_dir / 'bin' / 'psql.exe').exists():
+                                os.environ['PATH'] += ';' + str(pg_dir / 'bin')
+                                break
 
             print(self._colorize('✓ PostgreSQL installed', Color.GREEN))
             return True
@@ -579,7 +715,9 @@ class PackageInstaller:
             )
             return result.returncode == 0
         elif self.platform_name == 'Windows':
-            return self._is_command_available('redis-server')
+            # Check both redis-server and memurai (common Windows alternative)
+            return (self._is_command_available('redis-server')
+                    or self._is_command_available('memurai'))
         else:
             return self._is_command_available('redis-server')
 
@@ -1232,11 +1370,11 @@ class PrerequisiteChecker:
     def _get_postgres_start_command(self) -> str:
         """Get the PostgreSQL start command for the current platform."""
         if self.platform_name == 'Darwin':  # macOS
-            return "Start PostgreSQL: brew services start postgresql@15"
+            return "Start PostgreSQL: brew services start postgresql@15  (or @16, @17)"
         elif self.platform_name == 'Linux':
             return "Start PostgreSQL: sudo systemctl start postgresql"
         else:  # Windows
-            return "Start PostgreSQL: Open Services panel and start postgresql service"
+            return "Start PostgreSQL: net start postgresql-x64-15  (or open Services panel)"
 
     def _get_redis_start_command(self) -> str:
         """Get the Redis start command for the current platform."""
@@ -1251,21 +1389,19 @@ class PrerequisiteChecker:
         """Attempt to start PostgreSQL service."""
         try:
             if self.platform_name == 'Darwin':  # macOS
-                result = subprocess.run(
-                    ['brew', 'services', 'start', 'postgresql@15'],
-                    capture_output=True,
-                    timeout=30
-                )
-                if result.returncode != 0:
-                    # Try generic postgresql
+                # Try all versioned formulae then unversioned
+                for svc_name in ['postgresql@17', 'postgresql@16', 'postgresql@15', 'postgresql']:
                     result = subprocess.run(
-                        ['brew', 'services', 'start', 'postgresql'],
+                        ['brew', 'services', 'start', svc_name],
                         capture_output=True,
                         timeout=30
                     )
+                    if result.returncode == 0:
+                        break
                 # Wait for service to start
                 time.sleep(3)
                 return self._is_port_open('localhost', POSTGRES_PORT)
+
             elif self.platform_name == 'Linux':
                 result = subprocess.run(
                     ['sudo', 'systemctl', 'start', 'postgresql'],
@@ -1274,6 +1410,31 @@ class PrerequisiteChecker:
                 )
                 time.sleep(3)
                 return result.returncode == 0 and self._is_port_open('localhost', POSTGRES_PORT)
+
+            elif self.platform_name == 'Windows':
+                # Try net start first (works if installed as service)
+                for svc_name in ['postgresql-x64-17', 'postgresql-x64-16', 'postgresql-x64-15', 'postgresql']:
+                    result = subprocess.run(
+                        ['net', 'start', svc_name],
+                        capture_output=True, timeout=30,
+                    )
+                    if result.returncode == 0:
+                        break
+                else:
+                    # Fallback: try pg_ctl directly
+                    pg_base = Path('C:/Program Files/PostgreSQL')
+                    if pg_base.exists():
+                        for pg_dir in sorted(pg_base.iterdir(), reverse=True):
+                            pg_ctl = pg_dir / 'bin' / 'pg_ctl.exe'
+                            data_dir = pg_dir / 'data'
+                            if pg_ctl.exists() and data_dir.exists():
+                                subprocess.run(
+                                    [str(pg_ctl), 'start', '-D', str(data_dir), '-w'],
+                                    capture_output=True, timeout=30,
+                                )
+                                break
+                time.sleep(3)
+                return self._is_port_open('localhost', POSTGRES_PORT)
             else:
                 return False
         except Exception as e:
@@ -1289,8 +1450,15 @@ class PrerequisiteChecker:
                     capture_output=True,
                     timeout=30
                 )
+                if result.returncode != 0:
+                    # Fallback: start redis-server directly in background
+                    subprocess.Popen(
+                        ['redis-server', '--daemonize', 'yes'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
                 time.sleep(2)
                 return self._is_port_open('localhost', REDIS_PORT)
+
             elif self.platform_name == 'Linux':
                 # Try both service names: Debian/Ubuntu uses 'redis-server',
                 # Fedora/Arch use 'redis'
@@ -1302,6 +1470,36 @@ class PrerequisiteChecker:
                     )
                     if result.returncode == 0:
                         break
+                else:
+                    # Fallback: start redis-server directly
+                    subprocess.Popen(
+                        ['redis-server', '--daemonize', 'yes'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                time.sleep(2)
+                return self._is_port_open('localhost', REDIS_PORT)
+
+            elif self.platform_name == 'Windows':
+                # Try net start for both Redis and Memurai
+                for svc_name in ['Redis', 'redis', 'Memurai']:
+                    result = subprocess.run(
+                        ['net', 'start', svc_name],
+                        capture_output=True, timeout=30,
+                    )
+                    if result.returncode == 0:
+                        break
+                else:
+                    # Fallback: start redis-server directly
+                    if self._is_command_available('redis-server'):
+                        subprocess.Popen(
+                            ['redis-server'],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
+                    elif self._is_command_available('memurai'):
+                        subprocess.Popen(
+                            ['memurai'],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
                 time.sleep(2)
                 return self._is_port_open('localhost', REDIS_PORT)
             else:
@@ -1315,29 +1513,45 @@ class PrerequisiteChecker:
         try:
             backend_dir = Path('backend').resolve()
 
-            # On Debian/Ubuntu, python3-venv is a separate package
+            # Ensure the venv module is available
             check = subprocess.run(
                 [sys.executable, '-m', 'venv', '--help'],
                 capture_output=True, timeout=10,
             )
             if check.returncode != 0:
-                if platform.system() == 'Linux' and self.installer:
+                plat = platform.system()
+                if plat == 'Linux' and self.installer:
                     pkg = self.installer._detect_package_manager()
                     if pkg == 'apt':
                         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
-                        print(f"{self._colorize(f'  Installing python3-venv (required on Ubuntu)...', Color.GRAY)}")
+                        print(f"{self._colorize('  Installing python3-venv (required on Ubuntu)...', Color.GRAY)}")
                         subprocess.run(
-                            ['sudo', 'apt-get', 'install', '-y', '-qq', f'python{py_ver}-venv', 'python3-venv'],
+                            ['sudo', 'apt-get', 'install', '-y', '-qq',
+                             f'python{py_ver}-venv', 'python3-venv'],
                             timeout=120,
                         )
                     elif pkg == 'dnf':
-                        print(f"{self._colorize(f'  Installing python3-venv...', Color.GRAY)}")
+                        print(f"{self._colorize('  Installing python3-venv...', Color.GRAY)}")
                         subprocess.run(
                             ['sudo', 'dnf', 'install', '-y', '-q', 'python3-libs'],
                             timeout=120,
                         )
+                elif plat == 'Darwin':
+                    # macOS: try reinstalling python via brew to get venv module
+                    print(f"{self._colorize('  Python venv module missing, reinstalling Python...', Color.GRAY)}")
+                    subprocess.run(
+                        ['brew', 'install', 'python3'],
+                        capture_output=True, timeout=300,
+                    )
+                elif plat == 'Windows':
+                    # Windows: python.org installer includes venv; try pip as fallback
+                    print(f"{self._colorize('  Python venv module missing, trying virtualenv fallback...', Color.GRAY)}")
+                    subprocess.run(
+                        [sys.executable, '-m', 'pip', 'install', 'virtualenv'],
+                        capture_output=True, timeout=120,
+                    )
 
-            # Create venv
+            # Create venv — try venv first, fall back to virtualenv on Windows
             print(f"{self._colorize('  Creating virtual environment...', Color.GRAY)}")
             result = subprocess.run(
                 [sys.executable, '-m', 'venv', 'venv'],
@@ -1346,19 +1560,54 @@ class PrerequisiteChecker:
                 timeout=60
             )
             if result.returncode != 0:
-                print(f"{self._colorize(f'  Error: {result.stderr.decode()}', Color.RED)}")
-                return False
+                if platform.system() == 'Windows':
+                    # Fallback: try virtualenv
+                    result = subprocess.run(
+                        [sys.executable, '-m', 'virtualenv', 'venv'],
+                        cwd=str(backend_dir),
+                        capture_output=True,
+                        timeout=60,
+                    )
+                if result.returncode != 0:
+                    print(f"{self._colorize(f'  Error: {result.stderr.decode()}', Color.RED)}")
+                    return False
 
             # Wait for venv to be fully created
             time.sleep(1)
 
-            # Find pip in the new venv
-            venv_pip = backend_dir / 'venv' / 'bin' / 'pip'
-            if not venv_pip.exists():
-                venv_pip = backend_dir / 'venv' / 'Scripts' / 'pip.exe'
+            # Find pip in the new venv — check multiple possible locations
+            venv_pip = None
+            pip_candidates = [
+                backend_dir / 'venv' / 'bin' / 'pip',
+                backend_dir / 'venv' / 'bin' / 'pip3',
+                backend_dir / 'venv' / 'Scripts' / 'pip.exe',
+                backend_dir / 'venv' / 'Scripts' / 'pip3.exe',
+            ]
+            for candidate in pip_candidates:
+                if candidate.exists():
+                    venv_pip = candidate
+                    break
 
-            if not venv_pip.exists():
-                print(f"{self._colorize(f'  Error: pip not found in venv', Color.RED)}")
+            if not venv_pip:
+                # Last resort: try to bootstrap pip via ensurepip
+                print(f"{self._colorize('  pip not found in venv, bootstrapping...', Color.GRAY)}")
+                venv_python = backend_dir / 'venv' / 'bin' / 'python'
+                if not venv_python.exists():
+                    venv_python = backend_dir / 'venv' / 'Scripts' / 'python.exe'
+                if venv_python.exists():
+                    subprocess.run(
+                        [str(venv_python), '-m', 'ensurepip', '--upgrade'],
+                        cwd=str(backend_dir),
+                        capture_output=True, timeout=60,
+                    )
+                    # Re-check for pip
+                    for candidate in pip_candidates:
+                        if candidate.exists():
+                            venv_pip = candidate
+                            break
+
+            if not venv_pip:
+                print(f"{self._colorize('  Error: pip not found in venv', Color.RED)}")
                 return False
 
             # Upgrade pip first to avoid build failures with older versions
@@ -1368,6 +1617,18 @@ class PrerequisiteChecker:
                 capture_output=True,
                 timeout=120,
             )
+
+            # On macOS, ensure brew library paths are available for C extension builds
+            if platform.system() == 'Darwin':
+                for lib in ['openssl', 'libpq', 'libffi']:
+                    prefix = subprocess.run(
+                        ['brew', '--prefix', lib],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if prefix.returncode == 0 and prefix.stdout.strip():
+                        lib_path = prefix.stdout.strip()
+                        os.environ['LDFLAGS'] = os.environ.get('LDFLAGS', '') + f' -L{lib_path}/lib'
+                        os.environ['CPPFLAGS'] = os.environ.get('CPPFLAGS', '') + f' -I{lib_path}/include'
 
             # Install dependencies
             print(f"{self._colorize('  Installing dependencies (this may take a few minutes)...', Color.GRAY)}")
