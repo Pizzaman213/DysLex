@@ -5568,6 +5568,24 @@ input:disabled, textarea:disabled, select:disabled { opacity: 0.5; cursor: not-a
 
   .topbar {
     left: 68px;
+    overflow-x: auto;
+    padding: 0 var(--sp-12);
+    gap: var(--sp-8);
+  }
+
+  .topbar-left,
+  .topbar-right {
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  .topbar-center {
+    min-width: 0;
+  }
+
+  .draft-toolbar, .editor-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
 
   /* Editor page padding */
@@ -5624,9 +5642,28 @@ input:disabled, textarea:disabled, select:disabled { opacity: 0.5; cursor: not-a
 
   .topbar {
     left: 68px;
+    overflow-x: auto;
+    padding: 0 var(--sp-12);
+    gap: var(--sp-8);
+  }
+
+  .topbar-left,
+  .topbar-right {
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  .topbar-center {
+    min-width: 0;
+  }
+
+  .draft-toolbar, .editor-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
 
   .draft-page, .editor-page {
     margin: 24px auto;
+    padding: 48px;
   }
 }
