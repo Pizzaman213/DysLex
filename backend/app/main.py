@@ -110,7 +110,7 @@ async def _validate_startup() -> None:
     # 4. Redis connectivity
     try:
         redis_client = await get_redis()
-        await redis_client.ping()
+        await redis_client.ping()  # type: ignore[misc]
         logger.info("Startup check: Redis connection OK")
     except Exception:
         logger.warning("Startup check: Redis is unreachable", exc_info=True)
@@ -334,7 +334,7 @@ async def readiness_check() -> JSONResponse:
     # Check Redis
     try:
         redis_client = await get_redis()
-        await redis_client.ping()
+        await redis_client.ping()  # type: ignore[misc]
         checks["redis"] = "ok"
     except Exception:
         checks["redis"] = "unavailable"

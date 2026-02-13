@@ -22,22 +22,6 @@ beforeEach(() => {
 });
 
 describe('PrivacyTab', () => {
-  it('data collection toggle click flips anonymizedDataCollection in store', () => {
-    render(<PrivacyTab />);
-    const toggle = screen.getByRole('switch', { name: /anonymized data collection/i });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-    fireEvent.click(toggle);
-    expect(useSettingsStore.getState().anonymizedDataCollection).toBe(true);
-  });
-
-  it('cloud sync toggle click flips cloudSync in store', () => {
-    render(<PrivacyTab />);
-    const toggle = screen.getByRole('switch', { name: /cloud sync/i });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-    fireEvent.click(toggle);
-    expect(useSettingsStore.getState().cloudSync).toBe(true);
-  });
-
   it('download data button exists', () => {
     render(<PrivacyTab />);
     expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument();

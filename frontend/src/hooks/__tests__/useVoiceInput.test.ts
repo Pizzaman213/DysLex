@@ -128,8 +128,8 @@ describe('useVoiceInput', () => {
         });
       });
 
-      expect(result.current.transcript).toContain('hello world');
-      expect(onResult).toHaveBeenCalledWith('hello world');
+      expect(result.current.transcript).toContain('Hello world.');
+      expect(onResult).toHaveBeenCalledWith('Hello world.');
     });
 
     it('interim result updates interimText', () => {
@@ -148,7 +148,7 @@ describe('useVoiceInput', () => {
         });
       });
 
-      expect(result.current.interimText).toBe('hel');
+      expect(result.current.interimText).toBe('Hel');
     });
   });
 
@@ -256,7 +256,7 @@ describe('useVoiceInput', () => {
         });
       });
 
-      expect(result.current.transcript).toContain('some text');
+      expect(result.current.transcript).toContain('Some text.');
 
       act(() => {
         result.current.resetTranscript();

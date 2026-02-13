@@ -142,7 +142,7 @@ async def delete_logs_before_date(
             )
         )
         await db.flush()
-        deleted: int = result.rowcount  # type: ignore[assignment]
+        deleted: int = result.rowcount  # type: ignore[attr-defined, assignment]
         logger.info(f"Deleted {deleted} logs for user {user_id} before {cutoff_date}")
         return deleted
     except OperationalError as e:

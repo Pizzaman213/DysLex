@@ -96,7 +96,7 @@ async def delete_folder(db: AsyncSession, folder_id: str, user_id: str) -> bool:
             delete(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
         )
         await db.flush()
-        return bool(result.rowcount > 0)  # type: ignore[union-attr]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]
     except OperationalError as e:
         logger.error(f"Database connection error in delete_folder: {e}")
         raise ConnectionError("Database connection failed") from e

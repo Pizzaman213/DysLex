@@ -108,7 +108,7 @@ async def delete_document(db: AsyncSession, doc_id: str, user_id: str) -> bool:
             delete(Document).where(Document.id == doc_id, Document.user_id == user_id)
         )
         await db.flush()
-        return bool(result.rowcount > 0)  # type: ignore[union-attr]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]
     except OperationalError as e:
         logger.error(f"Database connection error in delete_document: {e}")
         raise ConnectionError("Database connection failed") from e

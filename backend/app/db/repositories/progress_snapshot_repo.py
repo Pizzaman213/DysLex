@@ -113,7 +113,7 @@ async def delete_snapshots_before_date(
             )
         )
         await db.flush()
-        deleted: int = result.rowcount  # type: ignore[assignment]
+        deleted: int = result.rowcount  # type: ignore[attr-defined, assignment]
         logger.info(f"Deleted {deleted} snapshots for user {user_id} before {cutoff_date}")
         return deleted
     except OperationalError as e:

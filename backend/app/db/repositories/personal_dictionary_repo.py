@@ -111,7 +111,7 @@ async def remove_word(
             )
         )
         await db.flush()
-        return bool(result.rowcount > 0)  # type: ignore[union-attr]
+        return bool(result.rowcount > 0)  # type: ignore[attr-defined]
     except OperationalError as e:
         logger.error(f"Database connection error in remove_word for user {user_id}: {e}")
         raise ConnectionError("Database connection failed") from e

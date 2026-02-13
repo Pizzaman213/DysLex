@@ -76,6 +76,7 @@ function mapApiCorrection(c: any): Correction | null {
     end,
     confidence: c.confidence ?? 0.9,
     explanation: c.explanation,
+    source: 'api',
   };
 }
 
