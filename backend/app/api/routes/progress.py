@@ -6,7 +6,6 @@ from app.api.dependencies import CurrentUserId, DbSession
 from app.core.error_profile import error_profile_service
 from app.db.repositories import progress_repo
 from app.models.envelope import success_response
-from app.services.redis_client import cache_get, cache_set
 from app.models.progress import (
     ErrorFrequencyWeek,
     ErrorTypeBreakdown,
@@ -17,6 +16,7 @@ from app.models.progress import (
     TotalStats,
     WritingStreak,
 )
+from app.services.redis_client import cache_get, cache_set
 
 router = APIRouter()
 

@@ -43,6 +43,7 @@ export function useAICoach(editor: Editor | null) {
       editor.off('update', handleUpdate);
       clearInterval(intervalId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, sections]);
 
   const checkForNudges = () => {

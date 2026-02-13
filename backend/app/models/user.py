@@ -89,7 +89,7 @@ class UserSettings(BaseModel):
     llm_model: str | None = None
     llm_api_key_encrypted: str | None = Field(default=None, exclude=True)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def llm_api_key_configured(self) -> bool:
         return bool(self.llm_api_key_encrypted)

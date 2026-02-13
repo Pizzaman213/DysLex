@@ -1,6 +1,7 @@
 """Document repository."""
 
 import logging
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -80,7 +81,7 @@ async def create_document(
         raise DatabaseError(f"Failed to create document: {e}") from e
 
 
-async def update_document(db: AsyncSession, doc_id: str, user_id: str, updates: dict) -> Document | None:
+async def update_document(db: AsyncSession, doc_id: str, user_id: str, updates: dict[str, object]) -> Document | None:
     """Update a document. Returns None if not found."""
     try:
         doc = await get_document_by_id(db, doc_id, user_id)
@@ -107,7 +108,7 @@ async def delete_document(db: AsyncSession, doc_id: str, user_id: str) -> bool:
             delete(Document).where(Document.id == doc_id, Document.user_id == user_id)
         )
         await db.flush()
-        return result.rowcount > 0
+        return bool(result.rowcount > 0)  # type: ignore[union-attr]
     except OperationalError as e:
         logger.error(f"Database connection error in delete_document: {e}")
         raise ConnectionError("Database connection failed") from e
@@ -116,7 +117,7 @@ async def delete_document(db: AsyncSession, doc_id: str, user_id: str) -> bool:
         raise DatabaseError(f"Failed to delete document: {e}") from e
 
 
-async def bulk_upsert_documents(db: AsyncSession, user_id: str, documents: list[dict]) -> int:
+async def bulk_upsert_documents(db: AsyncSession, user_id: str, documents: list[dict[str, Any]]) -> int:
     """Upsert a list of documents for a user. Returns count of rows affected."""
     try:
         count = 0

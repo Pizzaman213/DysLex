@@ -34,6 +34,7 @@ export function useProgressDashboard(weeks: number = 12): UseProgressDashboardRe
 
   useEffect(() => {
     fetchDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weeks]);
 
   return {

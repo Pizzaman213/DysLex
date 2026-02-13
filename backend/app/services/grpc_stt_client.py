@@ -308,7 +308,7 @@ async def recognize_cloud(
             request_serializer=lambda x: x,
             response_deserializer=lambda x: x,
         )(request_bytes, metadata=metadata, timeout=30.0)
-        return response_bytes
+        return bytes(response_bytes)
 
     try:
         raw_response = await asyncio.get_event_loop().run_in_executor(None, _call)

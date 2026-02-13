@@ -162,7 +162,7 @@ async def stream_transcription(ws: WebSocket) -> None:
         try:
             msg = str(e) if settings.dev_mode else "Streaming error"
             await ws.send_json({"type": "error", "message": msg})
-        except:
+        except Exception:
             pass
 
 

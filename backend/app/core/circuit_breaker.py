@@ -11,8 +11,9 @@ Thread-safe via asyncio.Lock.
 import asyncio
 import logging
 import time
+from collections.abc import Coroutine
 from enum import Enum
-from typing import Any, Coroutine
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class CircuitState(str, Enum):
     HALF_OPEN = "half_open"
 
 
-class CircuitBreakerOpen(Exception):
+class CircuitBreakerOpen(Exception):  # noqa: N818
     """Raised when the circuit is open and calls are being rejected."""
 
     def __init__(self, name: str):

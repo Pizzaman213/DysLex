@@ -1,7 +1,7 @@
 """Folder repository."""
 
 import logging
-from datetime import datetime
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -69,7 +69,7 @@ async def create_folder(db: AsyncSession, user_id: str, folder_id: str, name: st
         raise DatabaseError(f"Failed to create folder: {e}") from e
 
 
-async def update_folder(db: AsyncSession, folder_id: str, user_id: str, updates: dict) -> Folder | None:
+async def update_folder(db: AsyncSession, folder_id: str, user_id: str, updates: dict[str, object]) -> Folder | None:
     """Update a folder. Returns None if not found."""
     try:
         folder = await get_folder_by_id(db, folder_id, user_id)
@@ -96,7 +96,7 @@ async def delete_folder(db: AsyncSession, folder_id: str, user_id: str) -> bool:
             delete(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
         )
         await db.flush()
-        return result.rowcount > 0
+        return bool(result.rowcount > 0)  # type: ignore[union-attr]
     except OperationalError as e:
         logger.error(f"Database connection error in delete_folder: {e}")
         raise ConnectionError("Database connection failed") from e
@@ -105,7 +105,7 @@ async def delete_folder(db: AsyncSession, folder_id: str, user_id: str) -> bool:
         raise DatabaseError(f"Failed to delete folder: {e}") from e
 
 
-async def bulk_upsert_folders(db: AsyncSession, user_id: str, folders: list[dict]) -> int:
+async def bulk_upsert_folders(db: AsyncSession, user_id: str, folders: list[dict[str, Any]]) -> int:
     """Upsert a list of folders for a user. Returns count of rows affected."""
     try:
         count = 0

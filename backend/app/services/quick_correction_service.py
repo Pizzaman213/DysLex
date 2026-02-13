@@ -8,7 +8,6 @@ import hashlib
 import logging
 import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import onnxruntime as ort

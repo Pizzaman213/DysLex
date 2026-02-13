@@ -3,17 +3,13 @@ API routes for Capture Mode.
 """
 
 import logging
-from fastapi import APIRouter, UploadFile, File, HTTPException
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.config import settings
-
-from app.models.capture import (
-    TranscriptionResponse,
-    ExtractIdeasRequest,
-    ExtractIdeasResponse
-)
-from app.services.transcription_service import transcription_service
+from app.models.capture import ExtractIdeasRequest, ExtractIdeasResponse, TranscriptionResponse
 from app.services.idea_extraction_service import idea_extraction_service
+from app.services.transcription_service import transcription_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +25,7 @@ async def transcribe_audio_endpoint(
 
     Accepts common audio formats: webm, opus, ogg, mp3, mp4, m4a, wav, flac.
     """
-    _ALLOWED_AUDIO_TYPES = {
+    allowed_audio_types = {
         "audio/webm", "audio/opus", "audio/ogg", "audio/mpeg",
         "audio/mp4", "audio/wav", "audio/flac", "audio/x-wav",
     }
@@ -40,7 +36,7 @@ async def transcribe_audio_endpoint(
     if audio.content_type:
         # Strip codec parameters (e.g. "audio/webm;codecs=opus" -> "audio/webm")
         base_type = audio.content_type.split(";")[0].strip()
-        if base_type not in _ALLOWED_AUDIO_TYPES:
+        if base_type not in allowed_audio_types:
             raise HTTPException(status_code=400, detail=f"Unsupported audio type: {audio.content_type}")
 
     try:

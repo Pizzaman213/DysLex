@@ -50,7 +50,7 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
 
   // Delayed-unmount for smooth pill close animation
   const [visionMounted, setVisionMounted] = useState(false);
-  const visionCloseTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const visionCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (showVisionCapture) {
@@ -61,6 +61,7 @@ export function CaptureMode({ onNavigateToMindMap }: CaptureModeProps) {
       visionCloseTimer.current = setTimeout(() => setVisionMounted(false), 600);
     }
     return () => { if (visionCloseTimer.current) clearTimeout(visionCloseTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showVisionCapture]);
 
   const handleVisionClose = useCallback(() => {

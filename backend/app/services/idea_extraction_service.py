@@ -4,18 +4,18 @@ Service for extracting idea cards from transcripts via LLM.
 
 import json
 import logging
-from typing import List, Tuple
+
 import httpx
 
 from app.config import settings
-from app.models.capture import ThoughtCard, SubIdea
 from app.core.capture_prompts import EXTRACT_IDEAS_SYSTEM_PROMPT, build_extract_ideas_prompt
+from app.models.capture import ThoughtCard
 from app.utils.json_parser import parse_json_from_llm_response
 
 logger = logging.getLogger(__name__)
 
 
-def _validate_and_fix_cards(cards: List[ThoughtCard], original_text: str = "") -> List[ThoughtCard]:
+def _validate_and_fix_cards(cards: list[ThoughtCard], original_text: str = "") -> list[ThoughtCard]:
     """Validate and fix parsed cards to ensure consistent structure."""
     fixed = []
     seen_titles: set[str] = set()
@@ -82,7 +82,7 @@ class IdeaExtractionService:
         self,
         transcript: str,
         existing_titles: list[str] | None = None,
-    ) -> Tuple[List[ThoughtCard], str]:
+    ) -> tuple[list[ThoughtCard], str]:
         """
         Extract thought cards with sub-ideas from a transcript.
 
@@ -139,7 +139,7 @@ class IdeaExtractionService:
 
                 # Try parsing as {topic, cards} object first
                 topic = ""
-                cards: List[ThoughtCard] = []
+                cards: list[ThoughtCard] = []
 
                 try:
                     parsed = json.loads(content)

@@ -44,8 +44,8 @@ class BuildScaffoldRequest(BaseModel):
 class ScaffoldSection(BaseModel):
     heading: str
     hint: str
-    nodeIds: list[str]
-    suggestedContent: str | None = None
+    nodeIds: list[str]  # noqa: N815
+    suggestedContent: str | None = None  # noqa: N815
 
 
 class BuildScaffoldResponse(BaseModel):

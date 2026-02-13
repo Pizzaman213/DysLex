@@ -286,7 +286,8 @@ class TestInstallRedis:
         inst._pkg_manager = "brew"
         with patch.object(inst, "_ensure_homebrew", return_value=True), \
              patch.object(inst, "_run_command", return_value=_make_result(0)), \
-             patch.object(inst, "_is_command_available", return_value=True):
+             patch.object(inst, "_is_command_available", return_value=True), \
+             patch.object(inst, "_is_redis_installed", return_value=True):
             assert inst.install_redis() is True
 
     @pytest.mark.platform_linux
@@ -337,7 +338,8 @@ class TestInstallRedis:
         inst._pkg_manager = "brew"
         with patch.object(inst, "_ensure_homebrew", return_value=True), \
              patch.object(inst, "_run_command", return_value=_make_result(0)), \
-             patch.object(inst, "_is_command_available", return_value=False):
+             patch.object(inst, "_is_command_available", return_value=False), \
+             patch.object(inst, "_is_redis_installed", return_value=False):
             assert inst.install_redis() is False
 
 

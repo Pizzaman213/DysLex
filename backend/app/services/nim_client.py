@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _quick_service = None
 
 
-def _get_quick_service():
+def _get_quick_service() -> object | None:
     """Get or initialize Quick Correction Service."""
     global _quick_service
     if _quick_service is None:
@@ -47,7 +47,7 @@ async def quick_correction(
 
     if service is not None:
         try:
-            corrections = await service.correct(text, user_id)
+            corrections: list[Correction] = await service.correct(text, user_id)  # type: ignore[attr-defined]
             logger.debug(f"Quick correction found {len(corrections)} errors")
             return corrections
         except Exception as e:

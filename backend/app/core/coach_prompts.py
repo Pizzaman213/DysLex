@@ -122,7 +122,7 @@ def build_coach_system_prompt(
         central = mind_map_context.get("central_idea")
         ideas: list[dict] = mind_map_context.get("ideas", [])
         connections: list[dict] = mind_map_context.get("connections", [])
-        themes: list[str] = mind_map_context.get("themes", [])
+        _themes: list[str] = mind_map_context.get("themes", [])
 
         if central or ideas:
             parts.append("MIND MAP (writer's brainstormed ideas):")

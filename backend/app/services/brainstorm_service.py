@@ -13,11 +13,11 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import settings
-from app.models.brainstorm import BrainstormTurnResponse
 from app.core.brainstorm_prompts import (
     BRAINSTORM_SYSTEM_PROMPT,
     build_brainstorm_context,
 )
+from app.models.brainstorm import BrainstormTurnResponse
 from app.services.tts_service import text_to_speech
 
 logger = logging.getLogger(__name__)

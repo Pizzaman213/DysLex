@@ -2,7 +2,8 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -19,7 +20,7 @@ async def get_profile_data(
     user_id: str,
     top_limit: int = 20,
     mastered_days: int = 14,
-) -> dict:
+) -> dict[str, Any]:
     """Fetch all patterns in one query, split into top/mastered/total in Python.
 
     Returns dict with keys: top_patterns, mastered_patterns, total_count, type_counts
@@ -32,7 +33,7 @@ async def get_profile_data(
         )
         all_patterns = list(result.scalars().all())
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=mastered_days)
+        cutoff = datetime.now(UTC) - timedelta(days=mastered_days)
 
         top_patterns = all_patterns[:top_limit]
         mastered_patterns = [p for p in all_patterns if p.last_seen < cutoff]
@@ -101,7 +102,7 @@ async def upsert_pattern(
 
         if pattern is not None:
             pattern.frequency += 1
-            pattern.last_seen = datetime.now(timezone.utc)
+            pattern.last_seen = datetime.now(UTC)
             if error_type:
                 pattern.error_type = error_type
             await db.flush()
@@ -115,8 +116,8 @@ async def upsert_pattern(
             error_type=error_type,
             frequency=1,
             language_code=language_code,
-            first_seen=datetime.now(timezone.utc),
-            last_seen=datetime.now(timezone.utc),
+            first_seen=datetime.now(UTC),
+            last_seen=datetime.now(UTC),
         )
         db.add(pattern)
         await db.flush()
@@ -162,7 +163,7 @@ async def get_mastered_patterns(
 ) -> list[UserErrorPattern]:
     """Get patterns not seen in the last N days (considered mastered)."""
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days_threshold)
+        cutoff = datetime.now(UTC) - timedelta(days=days_threshold)
         result = await db.execute(
             select(UserErrorPattern).where(
                 UserErrorPattern.user_id == user_id,

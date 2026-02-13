@@ -24,7 +24,6 @@ function readDimensions(container: HTMLElement) {
  * our DOM writes, we prevent PM from reverting our page-break margins.
  */
 function withSuppressedPMObserver(view: EditorView, fn: () => void) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const domObs = (view as any).domObserver;
   if (domObs) {
     domObs.stop();

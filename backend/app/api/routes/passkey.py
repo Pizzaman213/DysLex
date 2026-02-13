@@ -13,7 +13,7 @@ from webauthn import (
     verify_authentication_response,
     verify_registration_response,
 )
-from webauthn.helpers import bytes_to_base64url, base64url_to_bytes
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
     AttestationConveyancePreference,
     AuthenticatorSelectionCriteria,
@@ -24,7 +24,8 @@ from webauthn.helpers.structs import (
 
 from app.api.dependencies import DbSession, create_access_token
 from app.config import settings
-from app.db.models import PasskeyCredential, User as UserORM
+from app.db.models import PasskeyCredential
+from app.db.models import User as UserORM
 from app.db.repositories.passkey_repo import (
     create_passkey_credential,
     get_credential_by_credential_id,

@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -54,14 +55,14 @@ else:
     )
 
 
-async def periodic_cleanup():
+async def periodic_cleanup() -> None:
     """Run TTS cleanup task every hour."""
     while True:
         await asyncio.to_thread(cleanup_old_audio_files)
         await asyncio.sleep(3600)
 
 
-_cleanup_task: asyncio.Task | None = None
+_cleanup_task: asyncio.Task[None] | None = None
 
 
 async def _validate_startup() -> None:
@@ -138,7 +139,7 @@ async def _ensure_demo_user() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan manager - handles startup and shutdown."""
     global _cleanup_task
     # Startup

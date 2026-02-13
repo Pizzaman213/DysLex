@@ -2,7 +2,7 @@
 Pydantic models for Capture Mode endpoints.
 """
 
-from typing import List
+
 from pydantic import BaseModel, Field
 
 
@@ -25,16 +25,16 @@ class ThoughtCard(BaseModel):
     id: str = Field(..., description="Unique identifier for the card")
     title: str = Field(..., description="Short title summarizing the idea")
     body: str = Field(..., description="Full text of the idea")
-    sub_ideas: List[SubIdea] = Field(default_factory=list, description="Sub-ideas under this topic")
+    sub_ideas: list[SubIdea] = Field(default_factory=list, description="Sub-ideas under this topic")
 
 
 class ExtractIdeasRequest(BaseModel):
     """Request to extract idea cards from a transcript."""
     transcript: str = Field(..., description="The transcript text to analyze")
-    existing_titles: List[str] = Field(default_factory=list, description="Titles already extracted (for dedup in incremental extraction)")
+    existing_titles: list[str] = Field(default_factory=list, description="Titles already extracted (for dedup in incremental extraction)")
 
 
 class ExtractIdeasResponse(BaseModel):
     """Response containing extracted thought cards."""
-    cards: List[ThoughtCard] = Field(default_factory=list, description="List of extracted idea cards")
+    cards: list[ThoughtCard] = Field(default_factory=list, description="List of extracted idea cards")
     topic: str = Field(default="", description="Central theme or topic of the extracted ideas")

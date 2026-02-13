@@ -32,7 +32,7 @@ def _load_frequency_dict() -> set[str]:
 
     words: set[str] = set()
     try:
-        with open(_FREQ_DICT_PATH, "r", encoding="utf-8") as f:
+        with open(_FREQ_DICT_PATH, encoding="utf-8") as f:
             for line in f:
                 parts = line.strip().split()
                 if parts:
@@ -55,7 +55,7 @@ def _load_confusion_pairs() -> list[dict]:
 
     pairs: list[dict] = []
     try:
-        with open(_CONFUSION_PAIRS_PATH, "r", encoding="utf-8") as f:
+        with open(_CONFUSION_PAIRS_PATH, encoding="utf-8") as f:
             data = json.load(f)
             pairs = data.get("pairs", [])
         logger.info("Loaded confusion pairs: %d entries", len(pairs))

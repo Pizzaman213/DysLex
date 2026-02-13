@@ -13,13 +13,16 @@ from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
 from app.core.prompt_builder import (
     build_correction_prompt,
-    build_correction_prompt_v2,
     build_system_prompt_v2,
     build_user_message,
 )
 from app.models.correction import Correction, Position
 from app.models.error_log import LLMContext
-from app.services.llm_client import LLMProviderConfig, get_system_default_config, get_user_llm_config
+from app.services.llm_client import (
+    LLMProviderConfig,
+    get_system_default_config,
+    get_user_llm_config,
+)
 from app.services.redis_client import cache_get, cache_set
 from app.utils.json_parser import parse_json_from_llm_response
 

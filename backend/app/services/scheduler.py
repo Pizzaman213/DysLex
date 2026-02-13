@@ -8,7 +8,7 @@ Runs periodic jobs for:
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -134,7 +134,7 @@ async def trigger_model_retraining_job() -> None:
     try:
         user_ids = await _get_all_user_ids()
         flagged_count = 0
-        since = datetime.now(timezone.utc) - timedelta(days=7)
+        since = datetime.now(UTC) - timedelta(days=7)
 
         for user_id in user_ids:
             try:
@@ -283,7 +283,7 @@ async def cleanup_old_error_logs_job() -> None:
 
     try:
         user_ids = await _get_all_user_ids()
-        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.error_log_retention_days)
+        cutoff = datetime.now(UTC) - timedelta(days=settings.error_log_retention_days)
         total_deleted = 0
 
         for user_id in user_ids:

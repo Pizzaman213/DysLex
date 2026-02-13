@@ -261,7 +261,7 @@ def _is_phonetically_similar(a: str, b: str) -> bool:
     Applies basic phonetic normalization (ph→f, ck→k, ght→t, etc.)
     before comparing consonant skeletons.
     """
-    _PHONETIC_SUBS = [
+    phonetic_subs = [
         ("ph", "f"),
         ("ght", "t"),
         ("ck", "k"),
@@ -272,7 +272,7 @@ def _is_phonetically_similar(a: str, b: str) -> bool:
     ]
 
     def normalize(word: str) -> str:
-        for old, new in _PHONETIC_SUBS:
+        for old, new in phonetic_subs:
             word = word.replace(old, new)
         return word
 

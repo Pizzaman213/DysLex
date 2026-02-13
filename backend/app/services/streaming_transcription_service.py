@@ -13,7 +13,7 @@ class StreamingTranscriptionService:
 
     MAX_BUFFER_BYTES = 10 * 1024 * 1024  # 10 MB
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.chunk_buffer: bytes = b''
         self.buffer_threshold = 2.0  # seconds of audio before transcribing
         self.sample_rate = 48000

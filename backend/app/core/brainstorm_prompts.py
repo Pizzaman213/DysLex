@@ -39,7 +39,7 @@ _MAX_TRANSCRIPT_CHARS = 64_000
 
 
 def build_brainstorm_context(
-    existing_cards: list[dict],
+    existing_cards: list[dict[str, str]],
     transcript_so_far: str,
 ) -> str:
     """

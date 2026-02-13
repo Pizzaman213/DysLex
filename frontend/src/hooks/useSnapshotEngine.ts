@@ -42,9 +42,6 @@ export function useSnapshotEngine(editor: Editor | null) {
   useEffect(() => {
     if (!editor) return;
 
-    let regularIntervalId: NodeJS.Timeout;
-    let pauseCheckIntervalId: NodeJS.Timeout;
-
     // Track editor activity
     const handleUpdate = () => {
       isActiveRef.current = true;
@@ -54,7 +51,7 @@ export function useSnapshotEngine(editor: Editor | null) {
     editor.on('update', handleUpdate);
 
     // Regular snapshot interval (every 5s while typing)
-    regularIntervalId = setInterval(() => {
+    const regularIntervalId = setInterval(() => {
       if (isActiveRef.current) {
         const text = editor.getText();
         snapshotManager.addSnapshot(text);
@@ -63,7 +60,7 @@ export function useSnapshotEngine(editor: Editor | null) {
     }, REGULAR_INTERVAL);
 
     // Pause detection interval (every 500ms)
-    pauseCheckIntervalId = setInterval(() => {
+    const pauseCheckIntervalId = setInterval(() => {
       if (snapshotManager.shouldSnapshotOnPause(PAUSE_THRESHOLD)) {
         const text = editor.getText();
         const snapshot = snapshotManager.addSnapshot(text);
@@ -94,6 +91,7 @@ export function useSnapshotEngine(editor: Editor | null) {
         flushBatch();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, flushBatch]);
 
   const processPauseDiff = useCallback(async () => {

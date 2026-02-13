@@ -1,8 +1,19 @@
 """SQLAlchemy ORM models."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -134,8 +145,8 @@ class UserErrorPattern(Base):
     frequency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     improving: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     language_code: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
-    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
     user: Mapped["User"] = relationship(back_populates="error_patterns")
 
@@ -189,8 +200,8 @@ class ProgressSnapshot(Base):
     total_words_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_corrections: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     accuracy_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    error_type_breakdown: Mapped[dict] = mapped_column(JSONB, default=dict)
-    top_errors: Mapped[list] = mapped_column(JSONB, default=list)
+    error_type_breakdown: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    top_errors: Mapped[list[object]] = mapped_column(JSONB, default=list)
     patterns_mastered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     new_patterns_detected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -219,7 +230,7 @@ class ErrorPattern(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
-    examples: Mapped[list] = mapped_column(JSONB, default=list)
+    examples: Mapped[list[object]] = mapped_column(JSONB, default=list)
 
 
 class Folder(Base):

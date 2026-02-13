@@ -43,8 +43,8 @@ async def upsert_snapshot(
     total_words_written: int = 0,
     total_corrections: int = 0,
     accuracy_score: float = 0.0,
-    error_type_breakdown: dict | None = None,
-    top_errors: list | None = None,
+    error_type_breakdown: dict[str, object] | None = None,
+    top_errors: list[object] | None = None,
     patterns_mastered: int = 0,
     new_patterns_detected: int = 0,
 ) -> ProgressSnapshot:
@@ -113,8 +113,9 @@ async def delete_snapshots_before_date(
             )
         )
         await db.flush()
-        logger.info(f"Deleted {result.rowcount} snapshots for user {user_id} before {cutoff_date}")
-        return result.rowcount
+        deleted: int = result.rowcount  # type: ignore[assignment]
+        logger.info(f"Deleted {deleted} snapshots for user {user_id} before {cutoff_date}")
+        return deleted
     except OperationalError as e:
         logger.error(f"Database connection error in delete_snapshots_before_date for user {user_id}: {e}")
         raise ConnectionError("Database connection failed") from e

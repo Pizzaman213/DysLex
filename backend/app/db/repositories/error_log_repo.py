@@ -142,8 +142,9 @@ async def delete_logs_before_date(
             )
         )
         await db.flush()
-        logger.info(f"Deleted {result.rowcount} logs for user {user_id} before {cutoff_date}")
-        return result.rowcount
+        deleted: int = result.rowcount  # type: ignore[assignment]
+        logger.info(f"Deleted {deleted} logs for user {user_id} before {cutoff_date}")
+        return deleted
     except OperationalError as e:
         logger.error(f"Database connection error in delete_logs_before_date for user {user_id}: {e}")
         raise ConnectionError("Database connection failed") from e

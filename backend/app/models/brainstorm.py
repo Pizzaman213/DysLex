@@ -5,6 +5,7 @@ Pydantic models for AI Brainstorm conversation endpoints.
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
 from app.models.capture import SubIdea, ThoughtCard
 
 

@@ -12,7 +12,7 @@ import os
 import time
 from pathlib import Path
 
-import aiofiles
+import aiofiles  # type: ignore[import-untyped]
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -246,7 +246,7 @@ class TtsUnavailableError(Exception):
     """Raised when the TTS endpoint is not available (e.g. 404)."""
 
 
-def cleanup_old_audio_files():
+def cleanup_old_audio_files() -> None:
     """Remove TTS audio files older than cache TTL."""
     if not settings.tts_cleanup_enabled:
         return
@@ -262,7 +262,7 @@ def cleanup_old_audio_files():
         metadata_file = audio_dir / f"{file.name}.meta"
 
         if metadata_file.exists():
-            with open(metadata_file, 'r') as f:
+            with open(metadata_file) as f:
                 created_time = float(f.read())
 
             if current_time - created_time > ttl:

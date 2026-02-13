@@ -11,16 +11,16 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repositories import (
+    document_repo,
     error_log_repo,
     personal_dictionary_repo,
+    progress_repo,
     progress_snapshot_repo,
+    settings_repo,
     user_confusion_pair_repo,
     user_error_pattern_repo,
 )
-from app.db.repositories import progress_repo, settings_repo, document_repo
-from app.services.redis_client import cache_delete, cache_get, cache_set
 from app.models.error_log import (
-    ErrorProfile,
     ErrorProfileUpdate,
     ErrorTypeBreakdown,
     FullErrorProfile,
@@ -30,6 +30,7 @@ from app.models.error_log import (
     UserErrorPatternResponse,
 )
 from app.models.progress import ProgressSnapshotResponse
+from app.services.redis_client import cache_delete, cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class ErrorProfileService:
 
         mastered_words: list[str] = []
         if not isinstance(mastered_result, BaseException):
-            mastered_words = [m["word"] for m in mastered_result]  # type: ignore[union-attr]
+            mastered_words = [m["word"] for m in mastered_result]  # type: ignore[union-attr, index]
 
         total_stats: dict | None = None
         if not isinstance(stats_result, BaseException):
@@ -190,7 +191,7 @@ class ErrorProfileService:
         recent_document_topics: list[str] = []
         if not isinstance(docs_result, BaseException):
             recent_document_topics = [
-                d.title for d in docs_result[:10]  # type: ignore[union-attr]
+                d.title for d in docs_result[:10]  # type: ignore[union-attr, index]
                 if d.title and d.title != "Untitled Document"  # type: ignore[union-attr]
             ]
 

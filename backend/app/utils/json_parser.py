@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from typing import Type, TypeVar
+from typing import TypeVar
 
 T = TypeVar('T')
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def parse_json_from_llm_response(
     content: str,
-    model_class: Type[T],
+    model_class: type[T],
     is_array: bool = True
 ) -> list[T]:
     """Parse JSON from LLM response, handling multiple formats.

@@ -20,7 +20,7 @@ def _to_isoformat(value: Any) -> str:
         return ""
     if isinstance(value, str):
         return value
-    return value.isoformat()
+    return str(value.isoformat())
 
 
 def _to_date(value: Any) -> date | None:
@@ -32,7 +32,7 @@ def _to_date(value: Any) -> date | None:
         return _date.fromisoformat(value)
     if isinstance(value, datetime):
         return value.date()
-    return value
+    return value  # type: ignore[return-value]
 
 
 async def get_error_frequency_by_week(

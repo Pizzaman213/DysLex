@@ -115,7 +115,7 @@ async def log_correction_batch(
             )
             success_count += 1
         except Exception:
-            logger.warning(f"Failed to log correction in batch", exc_info=True)
+            logger.warning("Failed to log correction in batch", exc_info=True)
             continue
 
     return LogCorrectionBatchResponse(

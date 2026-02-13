@@ -5,7 +5,6 @@ Service for extracting idea cards from images via NVIDIA NIM vision model.
 import json
 import logging
 import re
-from typing import List, Tuple
 
 import httpx
 
@@ -58,7 +57,7 @@ class VisionExtractionService:
         image_base64: str,
         mime_type: str = "image/jpeg",
         user_hint: str | None = None,
-    ) -> Tuple[List[ThoughtCard], str]:
+    ) -> tuple[list[ThoughtCard], str]:
         """
         Extract thought cards from an image.
 
@@ -125,7 +124,7 @@ class VisionExtractionService:
                 topic = parsed.get("topic", "") if isinstance(parsed, dict) else ""
                 raw_cards = parsed.get("cards", []) if isinstance(parsed, dict) else []
 
-                cards: List[ThoughtCard] = []
+                cards: list[ThoughtCard] = []
                 if raw_cards:
                     cards = [
                         ThoughtCard(**c) if isinstance(c, dict) else c

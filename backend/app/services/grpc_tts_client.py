@@ -13,7 +13,6 @@ Proto magic:     4D616465204279 20436F6E6E6F72 205365637269737420 466F72204E7669
 import asyncio
 import io
 import logging
-import struct
 import wave
 from functools import lru_cache
 from xml.sax.saxutils import escape as xml_escape
@@ -210,10 +209,10 @@ async def synthesize_cloud(
     def _call() -> bytes:
         response_bytes = channel.unary_unary(
             _FULL_METHOD,
-            request_serializer=lambda x: x,     # type: ignore[arg-type]  # already serialized
-            response_deserializer=lambda x: x,   # type: ignore[arg-type]  # return raw bytes
+            request_serializer=lambda x: x,     # type: ignore[arg-type]
+            response_deserializer=lambda x: x,   # type: ignore[arg-type]
         )(request_bytes, metadata=metadata, timeout=30.0)
-        return response_bytes
+        return bytes(response_bytes)
 
     try:
         raw_response = await asyncio.get_event_loop().run_in_executor(None, _call)
