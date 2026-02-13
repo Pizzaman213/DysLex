@@ -40,7 +40,9 @@ ml/datasets/raw/
 ml/datasets/processed/
 ml/quick_correction/data/
 
-# Large frequency dictionaries in completed models
+# Trained/exported model binaries (too large for git)
+ml/models/**/*.onnx
+ml/models/**/*.bin
 ml/models/**/frequency_dictionary_*.txt
 
 # ONNX WASM runtime

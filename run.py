@@ -31,6 +31,14 @@ Environment Variables:
 Platform Support:
     - macOS, Linux, Windows
 
+Why sudo? (Linux only):
+    When using --auto-setup on Linux, this script may prompt for your sudo password.
+    It is used for two things:
+      1. Installing system packages via your package manager (apt-get, dnf, pacman, or snap)
+      2. Starting system services (PostgreSQL and Redis via systemctl)
+    On macOS, Homebrew handles packages without sudo. On Windows, Chocolatey is used instead.
+    Without --auto-setup, sudo is never invoked.
+
 License:
     Apache 2.0 - See LICENSE file
 """

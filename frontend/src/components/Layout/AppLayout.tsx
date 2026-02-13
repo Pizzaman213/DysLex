@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Topbar } from '@/components/Layout/Topbar';
 import { Sidebar } from '@/components/Layout/Sidebar';
 import { AnimatedOutlet } from '@/components/Layout/AnimatedOutlet';
@@ -6,6 +7,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useDocumentStore } from '@/stores/documentStore';
 import { useUserStore } from '@/stores/userStore';
+import { useMediaQuery, MOBILE_QUERY } from '@/hooks/useMediaQuery';
 import { flushPendingSync } from '@/services/documentSync';
 import {
   setStorageUserId,
@@ -15,10 +17,19 @@ import {
 
 export function AppLayout() {
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const mobileSidebarOpen = useSettingsStore((s) => s.mobileSidebarOpen);
+  const setMobileSidebarOpen = useSettingsStore((s) => s.setMobileSidebarOpen);
   const initializeFromServer = useDocumentStore((s) => s.initializeFromServer);
   const loadFromBackend = useSettingsStore((s) => s.loadFromBackend);
   const userId = useUserStore((s) => s.user?.id ?? null);
   const lastInitUserId = useRef<string | null>(null);
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  const location = useLocation();
+
+  // Auto-close sidebar on route change when mobile
+  useEffect(() => {
+    if (isMobile) setMobileSidebarOpen(false);
+  }, [location.pathname, isMobile, setMobileSidebarOpen]);
 
   useEffect(() => {
     // Use a sentinel for anonymous/dev-mode so sync still initializes
@@ -58,10 +69,23 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  const classNames = [
+    'app',
+    sidebarCollapsed ? 'sidebar-collapsed' : '',
+    isMobile ? 'mobile' : '',
+    isMobile && mobileSidebarOpen ? 'sidebar-open' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={classNames}>
       <Topbar />
       <Sidebar />
+      {isMobile && mobileSidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
       <div className="app-content">
         <main>
           <ErrorBoundary>

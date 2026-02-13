@@ -9,9 +9,11 @@ interface SettingsState extends UserSettings {
   isLoading: boolean;
   isSyncing: boolean;
   sidebarCollapsed: boolean;
+  mobileSidebarOpen: boolean;
 
   // UI actions
   toggleSidebar: () => void;
+  setMobileSidebarOpen: (open: boolean) => void;
 
   // General setters
   setLanguage: (language: Language) => void;
@@ -121,9 +123,11 @@ export const useSettingsStore = create<SettingsState>()(
       isLoading: false,
       isSyncing: false,
       sidebarCollapsed: false,
+      mobileSidebarOpen: false,
 
       // UI actions
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      setMobileSidebarOpen: (mobileSidebarOpen) => set({ mobileSidebarOpen }),
 
       // General
       setLanguage: (language) => {

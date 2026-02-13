@@ -1082,3 +1082,47 @@
     animation: none;
   }
 }
+
+/* ============================================================
+   MOBILE — phones (max-width: 767px)
+   ============================================================ */
+@media (max-width: 767px) {
+  .mindmap-node {
+    white-space: normal;
+    max-width: 200px;
+    word-break: break-word;
+  }
+
+  .mindmap-node.editing {
+    min-width: 180px;
+  }
+
+  /* Hover actions always visible on touch */
+  .mindmap-node-hover-actions {
+    opacity: 1;
+  }
+
+  /* Touch-friendly action buttons */
+  .btn-add, .btn-delete {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+  }
+
+  /* AI suggestions panel — full width on mobile */
+  .ai-suggestions-panel {
+    width: 100%;
+    max-height: 250px;
+    border-left: none;
+    border-top: 1px solid var(--border, var(--color-border));
+  }
+
+  /* Toolbar wraps on mobile */
+  .mindmap-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-btn {
+    min-height: 44px;
+  }
+}

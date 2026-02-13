@@ -3358,12 +3358,19 @@ textarea::placeholder {
 /* Draft responsive */
 @media (max-width: 1280px) {
   .draft-mode-layout { grid-template-columns: 1fr; }
-  .scaffold-panel, .corrections-panel, .right-panel { display: none; }
+  .scaffold-panel, .corrections-panel, .right-panel {
+    opacity: 0;
+    overflow: hidden;
+    padding: 0;
+    border-color: transparent;
+    width: 0;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 768px) {
   .draft-page, .editor-page { padding: var(--sp-24); }
-  .draft-toolbar, .editor-toolbar { flex-wrap: wrap; }
+  .draft-toolbar, .editor-toolbar { flex-wrap: nowrap; overflow-x: auto; }
 }
 
 /* ================================================================
@@ -3917,25 +3924,6 @@ input:disabled, textarea:disabled, select:disabled { opacity: 0.5; cursor: not-a
 .toast-error { border-left: 3px solid var(--red); }
 .toast-warning { border-left: 3px solid var(--yellow); }
 .toast-info { border-left: 3px solid var(--blue); }
-
-/* ================================================================
-   RESPONSIVE — GLOBAL
-   ================================================================ */
-
-@media (max-width: 1280px) {
-  .app, .app.sidebar-collapsed { margin-left: 0; }
-  .sidebar { display: none; }
-  .topbar, .app.sidebar-collapsed .topbar { left: 0; }
-}
-
-@media (max-width: 768px) {
-  .app { margin-left: 0; }
-  .sidebar {
-    transform: translateX(-100%);
-    transition: transform var(--ease);
-  }
-  .sidebar.open { transform: translateX(0); }
-}
 
 /* ================================================================
    TOPBAR TITLE INPUT
@@ -5321,5 +5309,324 @@ input:disabled, textarea:disabled, select:disabled { opacity: 0.5; cursor: not-a
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* ================================================================
+   MOBILE — phones (max-width: 767px)
+   ================================================================ */
+@media (max-width: 767px) {
+  /* --- Navigation layout --- */
+  .app {
+    margin-left: 0 !important;
+    padding-top: 52px;
+  }
+
+  .app .topbar {
+    left: 0 !important;
+  }
+
+  .topbar-hamburger {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    border-radius: var(--r-sm);
+    transition: background var(--t-fast);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .topbar-hamburger:hover {
+    background: var(--bg-hover);
+  }
+
+  /* --- Sidebar as off-canvas drawer --- */
+  .sidebar {
+    transform: translateX(-100%);
+    width: 280px;
+    z-index: calc(var(--z-modal, 100) + 10);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+  }
+
+  .sidebar.mobile-drawer.open {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Override collapsed-state hiding — drawer always shows full content */
+  .sidebar .sidebar-brand,
+  .sidebar .sb-title,
+  .sidebar .mode-card-label,
+  .sidebar .theme-row-label,
+  .sidebar .sidebar-docs-wrap {
+    opacity: 1 !important;
+    max-height: none !important;
+    margin: revert;
+    padding: revert;
+  }
+
+  .sidebar .mode-card {
+    padding: var(--sp-8) var(--sp-12) !important;
+    gap: var(--sp-8) !important;
+  }
+
+  /* Backdrop overlay */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: calc(var(--z-modal, 100) + 5);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* --- Draft mode panels as slide-over --- */
+  .draft-mode-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .draft-mode-layout .scaffold-panel {
+    display: none;
+  }
+
+  .draft-mode-layout .corrections-panel,
+  .draft-mode-layout .right-panel {
+    position: fixed;
+    top: 52px;
+    right: 0;
+    bottom: 0;
+    width: min(320px, 85vw);
+    z-index: var(--z-modal, 100);
+    background: var(--bg-editor);
+    border-left: 1px solid var(--border);
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 1;
+    overflow-y: auto;
+    padding: var(--sp-16);
+  }
+
+  .draft-mode-layout:not(.panels-hidden) .corrections-panel,
+  .draft-mode-layout:not(.panels-hidden) .right-panel {
+    transform: translateX(0);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+  }
+
+  /* --- Editor page padding --- */
+  .draft-page, .editor-page {
+    padding: 16px !important;
+    margin: 16px auto;
+    box-shadow: none;
+    border-radius: 0;
+    min-height: auto;
+    max-width: 100%;
+  }
+
+  /* --- Polish mode stacked --- */
+  .polish-layout {
+    grid-template-columns: 1fr !important;
+    overflow-y: auto;
+  }
+
+  .polish-coach-panel {
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .polish-panel {
+    max-height: 300px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .polish-layout.panel-hidden .polish-panel,
+  .polish-layout.panel-hidden .polish-coach-panel {
+    max-height: 0;
+  }
+
+  /* --- Dialogs and tooltips --- */
+  .correction-tooltip {
+    max-width: calc(100vw - 32px);
+  }
+
+  .auth-card {
+    padding: 1.5rem 1rem;
+  }
+
+  .toast {
+    width: calc(100% - 32px);
+    left: 16px;
+    right: 16px;
+    transform: none;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* --- Touch targets (44px minimum) --- */
+  .dt-btn, .editor-toolbar__btn, .editor-toolbar-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .mode-card {
+    min-height: 44px;
+  }
+
+  .doc-item {
+    min-height: 44px;
+  }
+
+  .correction-card__actions button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* --- Toolbar horizontal scroll --- */
+  .draft-toolbar, .editor-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .draft-toolbar::-webkit-scrollbar,
+  .editor-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide zoom controls on mobile (pinch-to-zoom is native) */
+  .editor-toolbar__zoom {
+    display: none;
+  }
+
+  /* --- Typography --- */
+  h1 { font-size: 24px; }
+  h2 { font-size: 20px; }
+  h3 { font-size: 18px; }
+}
+
+/* ================================================================
+   TABLET — iPads / medium screens (768px – 1024px)
+   ================================================================ */
+@media (min-width: 768px) and (max-width: 1024px) {
+  /* Auto-collapse sidebar to icon-only */
+  .sidebar {
+    width: 68px;
+    padding: var(--sp-12) var(--sp-8);
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .sidebar .sidebar-brand,
+  .sidebar .sb-title,
+  .sidebar .mode-card-label,
+  .sidebar .theme-row-label {
+    opacity: 0;
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .sidebar .mode-selector {
+    grid-template-columns: 1fr;
+    gap: var(--sp-4);
+  }
+
+  .sidebar .mode-card {
+    padding: var(--sp-8);
+    gap: 0;
+  }
+
+  .sidebar .sidebar-docs-wrap {
+    opacity: 0;
+    max-height: 0;
+  }
+
+  .sidebar .theme-row {
+    flex-direction: column;
+    gap: var(--sp-8);
+  }
+
+  .app {
+    margin-left: 68px;
+  }
+
+  .topbar {
+    left: 68px;
+  }
+
+  /* Editor page padding */
+  .draft-page, .editor-page {
+    padding: 32px;
+  }
+}
+
+/* ================================================================
+   COMPACT DESKTOP — small laptops (1025px – 1280px)
+   ================================================================ */
+@media (min-width: 1025px) and (max-width: 1280px) {
+  /* Auto-collapse sidebar to icon-only */
+  .sidebar {
+    width: 68px;
+    padding: var(--sp-12) var(--sp-8);
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .sidebar .sidebar-brand,
+  .sidebar .sb-title,
+  .sidebar .mode-card-label,
+  .sidebar .theme-row-label {
+    opacity: 0;
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .sidebar .mode-selector {
+    grid-template-columns: 1fr;
+    gap: var(--sp-4);
+  }
+
+  .sidebar .mode-card {
+    padding: var(--sp-8);
+    gap: 0;
+  }
+
+  .sidebar .sidebar-docs-wrap {
+    opacity: 0;
+    max-height: 0;
+  }
+
+  .sidebar .theme-row {
+    flex-direction: column;
+    gap: var(--sp-8);
+  }
+
+  .app {
+    margin-left: 68px;
+  }
+
+  .topbar {
+    left: 68px;
+  }
+
+  .draft-page, .editor-page {
+    margin: 24px auto;
   }
 }

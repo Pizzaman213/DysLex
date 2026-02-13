@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { NavIcon } from '@/components/Shared/NavIcon';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useMediaQuery, MOBILE_QUERY } from '@/hooks/useMediaQuery';
 import { DocumentList } from './DocumentList';
 
 const THEMES = [
@@ -12,8 +13,9 @@ const THEMES = [
 export function Sidebar() {
   const {
     theme, setTheme, mindMapEnabled, draftModeEnabled, polishModeEnabled,
-    sidebarCollapsed, toggleSidebar,
+    sidebarCollapsed, toggleSidebar, mobileSidebarOpen,
   } = useSettingsStore();
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   const modeItems = [
     { to: '/capture', label: 'Capture', icon: 'mic' as const, enabled: true },
@@ -26,7 +28,12 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+      className={[
+        'sidebar',
+        !isMobile && sidebarCollapsed ? 'collapsed' : '',
+        isMobile ? 'mobile-drawer' : '',
+        isMobile && mobileSidebarOpen ? 'open' : '',
+      ].filter(Boolean).join(' ')}
       role="navigation"
       aria-label="Main navigation"
     >

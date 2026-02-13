@@ -578,3 +578,27 @@
     align-self: flex-end;
   }
 }
+
+@media (max-width: 767px) {
+  .settings-panel {
+    padding: var(--space-3) var(--space-3);
+  }
+
+  .panel-title {
+    font-size: var(--font-size-xl);
+  }
+
+  .tab-button {
+    padding: var(--space-2);
+    font-size: 11px;
+    min-height: 44px;
+  }
+
+  .setting-row {
+    padding: var(--space-3);
+  }
+
+  .dialog-content {
+    width: calc(100% - 32px);
+  }
+}
