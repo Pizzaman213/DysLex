@@ -384,7 +384,7 @@ def get_quick_correction_service() -> QuickCorrectionService | None:
         return _service_instance
 
     # Try to load model
-    model_path = Path("ml/models/quick_correction_base_v1")
+    model_path = Path(__file__).resolve().parent.parent.parent.parent / "ml" / "models" / "quick_correction_base_v1"
 
     if not model_path.exists():
         logger.warning(f"Quick Correction model not found at {model_path}")

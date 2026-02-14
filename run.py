@@ -140,14 +140,24 @@ class ProcessLock:
         self._fd: Optional[int] = None
 
     def acquire(self) -> bool:
-        """Try to acquire the lock (non-blocking). Returns True on success."""
+        """Try to acquire the lock (non-blocking). Returns True on success.
+
+        If the lock is held by a dead process (stale lock), automatically
+        cleans up and retries once.
+        """
+        return self._try_acquire(allow_stale_recovery=True)
+
+    def _try_acquire(self, allow_stale_recovery: bool = False) -> bool:
+        """Internal lock acquisition with optional stale lock recovery."""
         try:
             self._fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR)
             if platform.system() == 'Windows':
                 import msvcrt
                 try:
-                    msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
+                    msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
                 except OSError:
+                    if allow_stale_recovery and self._recover_stale_lock():
+                        return self._try_acquire(allow_stale_recovery=False)
                     self._read_owner_pid()
                     os.close(self._fd)
                     self._fd = None
@@ -157,6 +167,8 @@ class ProcessLock:
                 try:
                     fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
+                    if allow_stale_recovery and self._recover_stale_lock():
+                        return self._try_acquire(allow_stale_recovery=False)
                     self._read_owner_pid()
                     os.close(self._fd)
                     self._fd = None
@@ -171,6 +183,45 @@ class ProcessLock:
             if self._fd is not None:
                 os.close(self._fd)
                 self._fd = None
+            return False
+
+    def _recover_stale_lock(self) -> bool:
+        """Check if the lock holder is dead. If so, remove the stale lock and return True."""
+        try:
+            if self._fd is None:
+                return False
+            os.lseek(self._fd, 0, os.SEEK_SET)
+            data = os.read(self._fd, 32)
+            pid_str = data.decode().strip()
+            if not pid_str:
+                return False
+            pid = int(pid_str)
+            # Check if process is alive
+            os.kill(pid, 0)
+            # Process is alive — lock is valid, not stale
+            return False
+        except PermissionError:
+            # PID exists but owned by another user — lock is valid
+            return False
+        except ProcessLookupError:
+            # PID doesn't exist — stale lock, proceed to cleanup
+            pass
+        except (ValueError, OSError):
+            # Can't parse PID or read file — try recovery anyway
+            pass
+
+        # Close the fd and remove the stale lock file
+        try:
+            if self._fd is not None:
+                os.close(self._fd)
+                self._fd = None
+        except Exception:
+            pass
+        try:
+            self.lock_path.unlink(missing_ok=True)
+            print(f"{Color.YELLOW}Removed stale lock file (previous process is no longer running).{Color.RESET}")
+            return True
+        except Exception:
             return False
 
     def _read_owner_pid(self):
@@ -196,7 +247,7 @@ class ProcessLock:
                 if platform.system() == 'Windows':
                     import msvcrt
                     try:
-                        msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+                        msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
                     except OSError:
                         pass
                 else:
@@ -276,6 +327,17 @@ class SetupState:
     def has_any_progress(self) -> bool:
         """True if any steps were previously completed."""
         return len(self._state.get("completed_steps", [])) > 0
+
+    def increment_attempt(self, step: str) -> int:
+        """Increment and return the attempt count for a step."""
+        counts = self._state.setdefault("attempt_counts", {})
+        counts[step] = counts.get(step, 0) + 1
+        self._save()
+        return counts[step]
+
+    def get_attempts(self, step: str) -> int:
+        """Return the current attempt count for a step."""
+        return self._state.get("attempt_counts", {}).get(step, 0)
 
 
 # ============================================================================
@@ -434,9 +496,16 @@ class PackageInstaller:
     # ------------------------------------------------------------------
 
     def _confirm(self, prompt: str) -> bool:
-        """Ask user for confirmation. Returns True if --yes or user accepts."""
+        """Ask user for confirmation. Returns True if --yes or user accepts.
+
+        In non-interactive environments (no TTY on stdin), auto-confirms
+        to prevent hanging in CI/Docker/piped input scenarios.
+        """
         if self.yes:
             print(f"{self._colorize(prompt + ' (auto-confirmed with --yes)', Color.GRAY)}")
+            return True
+        if not sys.stdin.isatty():
+            print(f"{self._colorize(prompt + ' (auto-confirmed: non-interactive mode)', Color.GRAY)}")
             return True
         try:
             answer = input(f"{prompt} [Y/n] ").strip().lower()
@@ -464,7 +533,7 @@ class PackageInstaller:
                 'fedora': 'dnf',
                 'arch': 'pacman',
             }
-            self._pkg_manager = manager_map.get(distro)
+            self._pkg_manager = manager_map.get(distro) if distro else None
         return self._pkg_manager
 
     def _detect_linux_distro(self) -> Optional[str]:
@@ -1592,7 +1661,7 @@ class PrerequisiteChecker:
         10. Environment variables (NVIDIA key prompt)
         11. NVIDIA NIM API ping
         """
-        # Pre-flight checks (disk space, network connectivity, sudo)
+        # Pre-flight checks — fatal: bail immediately if disk/network is gone
         if self.auto_setup and self.mode != 'docker':
             self.preflight_checks()
 
@@ -1640,7 +1709,25 @@ class PrerequisiteChecker:
         checks.append(("NVIDIA NIM API", self.check_nvidia_api))
 
         # Run all checks
+        # Maximum attempts before showing diagnostic help instead of retrying
+        MAX_STEP_ATTEMPTS = 3
+
         for name, check_func in checks:
+            # Track attempt counts for auto-setup steps
+            if self.auto_setup and self.setup_state:
+                step_key = name.lower().replace(' ', '_')
+                if not self.setup_state.is_step_done(step_key):
+                    attempts = self.setup_state.increment_attempt(step_key)
+                    if attempts > MAX_STEP_ATTEMPTS:
+                        self.errors.append((name,
+                            f'"{name}" has failed {attempts - 1} times across runs.\n'
+                            f'    This step may need manual intervention:\n'
+                            f'    1. Check the error messages from previous runs above\n'
+                            f'    2. Try running the step manually (see docs)\n'
+                            f'    3. Delete .dyslex-setup-state.json to reset all counters'
+                        ))
+                        continue
+
             try:
                 check_func()
             except CheckError as e:
@@ -1671,7 +1758,12 @@ class PrerequisiteChecker:
         try:
             usage = shutil.disk_usage(Path('.').resolve())
             free_gb = usage.free / (1024 ** 3)
-            if free_gb < 2:
+            if free_gb < 1:
+                raise CheckError(
+                    f"Only {free_gb:.1f}GB disk space free — auto-setup requires at least 1GB\n"
+                    f"    PyTorch CPU-only alone needs ~800MB-2GB. Free up disk space and retry."
+                )
+            elif free_gb < 2:
                 print(self._colorize(
                     f'  Warning: Only {free_gb:.1f}GB disk space free. '
                     f'Auto-setup needs at least 2GB (5GB recommended).',
@@ -1683,10 +1775,13 @@ class PrerequisiteChecker:
                     f'5GB recommended for full backend + ML packages.',
                     Color.YELLOW,
                 ))
+        except CheckError:
+            raise
         except Exception:
             pass
 
         # --- Network connectivity ---
+        unreachable_registries = []
         for host, port, label in [
             ('pypi.org', 443, 'PyPI (Python packages)'),
             ('registry.npmjs.org', 443, 'npm (Node packages)'),
@@ -1696,11 +1791,19 @@ class PrerequisiteChecker:
                     s.settimeout(5)
                     s.connect((host, port))
             except (socket.timeout, ConnectionRefusedError, OSError):
+                unreachable_registries.append(label)
                 print(self._colorize(
                     f'  Warning: Cannot reach {label} ({host}:{port}). '
                     f'Package installs may fail.',
                     Color.YELLOW,
                 ))
+
+        if len(unreachable_registries) >= 2:
+            raise CheckError(
+                "Cannot reach any package registries (PyPI and npm are both unreachable)\n"
+                "    Auto-setup requires network access to download packages.\n"
+                "    Check your internet connection and retry."
+            )
 
         # --- Sudo access (Linux only) ---
         if self.platform_name == 'Linux':
@@ -1863,10 +1966,14 @@ class PrerequisiteChecker:
         if not os.getenv('NVIDIA_NIM_API_KEY'):
             print(f"\n{self._colorize('🔑 NVIDIA_NIM_API_KEY is not set.', Color.YELLOW)}")
             print(f"   Some features (LLM corrections, TTS) require this key.")
-            try:
-                key = input(f"   Enter your API key (or press Enter to skip): ").strip()
-            except (EOFError, KeyboardInterrupt):
+            if not sys.stdin.isatty():
+                print(f"   {self._colorize('Non-interactive mode: set NVIDIA_NIM_API_KEY env var before running.', Color.GRAY)}")
                 key = ""
+            else:
+                try:
+                    key = input(f"   Enter your API key (or press Enter to skip): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    key = ""
             if key:
                 os.environ['NVIDIA_NIM_API_KEY'] = key
                 # Save to .env so it persists across restarts
@@ -2080,26 +2187,38 @@ class PrerequisiteChecker:
         """Check if backend port is available."""
         port = self.config.get('backend_port', DEFAULT_BACKEND_PORT)
         if not self._is_port_available(port):
-            print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
-            if self._kill_port_process(port):
-                print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
+            if self.auto_setup or self.kill_ports:
+                print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
+                if self._kill_port_process(port):
+                    print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
+                else:
+                    raise CheckError(
+                        f"Port {port} is already in use and could not be freed\n"
+                        f"    Fix: Stop the existing process manually or use --port-backend <port>"
+                    )
             else:
                 raise CheckError(
-                    f"Port {port} is already in use and could not be freed\n"
-                    f"    Fix: Stop the existing process manually or use --port-backend <port>"
+                    f"Port {port} is already in use\n"
+                    f"    Fix: Stop the existing process, use --port-backend <port>, or use --kill-ports"
                 )
 
     def check_frontend_port(self):
         """Check if frontend port is available."""
         port = self.config.get('frontend_port', DEFAULT_FRONTEND_PORT)
         if not self._is_port_available(port):
-            print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
-            if self._kill_port_process(port):
-                print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
+            if self.auto_setup or self.kill_ports:
+                print(f"{self._colorize(f'⚙️  Killing process on port {port}...', Color.YELLOW)}")
+                if self._kill_port_process(port):
+                    print(f"{self._colorize(f'✓ Port {port} freed', Color.GREEN)}")
+                else:
+                    raise CheckError(
+                        f"Port {port} is already in use and could not be freed\n"
+                        f"    Fix: Stop the existing process manually or use --port-frontend <port>"
+                    )
             else:
                 raise CheckError(
-                    f"Port {port} is already in use and could not be freed\n"
-                    f"    Fix: Stop the existing process manually or use --port-frontend <port>"
+                    f"Port {port} is already in use\n"
+                    f"    Fix: Stop the existing process, use --port-frontend <port>, or use --kill-ports"
                 )
 
     def _is_port_available(self, port: int) -> bool:
@@ -2177,7 +2296,7 @@ class PrerequisiteChecker:
                         break
                 # Wait for service to start
                 time.sleep(3)
-                return self._is_port_open('localhost', POSTGRES_PORT)
+                return self._verify_postgres_connection()
 
             elif self.platform_name == 'Linux':
                 started = False
@@ -2260,7 +2379,7 @@ class PrerequisiteChecker:
                 for _ in range(10):
                     time.sleep(1)
                     if self._is_port_open('localhost', POSTGRES_PORT):
-                        return True
+                        return self._verify_postgres_connection()
                 return False
 
             elif self.platform_name == 'Windows':
@@ -2286,12 +2405,41 @@ class PrerequisiteChecker:
                                 )
                                 break
                 time.sleep(3)
-                return self._is_port_open('localhost', POSTGRES_PORT)
+                return self._verify_postgres_connection()
             else:
                 return False
         except Exception as e:
             print(f"{self._colorize(f'Warning: {e}', Color.YELLOW)}")
             return False
+
+    def _verify_postgres_connection(self) -> bool:
+        """Verify PostgreSQL accepts queries, not just that the port is open.
+
+        Falls back to the port-open check if psql is unavailable.
+        """
+        try:
+            result = subprocess.run(
+                ['psql', '-h', 'localhost', '-p', str(POSTGRES_PORT),
+                 '-U', 'postgres', '-c', 'SELECT 1', '--no-password'],
+                capture_output=True, text=True, timeout=5,
+                env={**os.environ, 'PGCONNECT_TIMEOUT': '3'},
+            )
+            if result.returncode == 0:
+                return True
+            # psql failed — fall through to port check with a warning
+            print(self._colorize(
+                '  Note: psql query check failed, falling back to port check.',
+                Color.GRAY,
+            ))
+        except FileNotFoundError:
+            # psql not on PATH — fall back silently
+            pass
+        except (subprocess.TimeoutExpired, Exception):
+            print(self._colorize(
+                '  Note: psql verification timed out, falling back to port check.',
+                Color.GRAY,
+            ))
+        return self._is_port_open('localhost', POSTGRES_PORT)
 
     def _start_redis(self) -> bool:
         """Attempt to start Redis service."""
@@ -2342,12 +2490,12 @@ class PrerequisiteChecker:
                         break
                 else:
                     # Fallback: start redis-server directly
-                    if self._is_command_available('redis-server'):
+                    if shutil.which('redis-server'):
                         subprocess.Popen(
                             ['redis-server'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                         )
-                    elif self._is_command_available('memurai'):
+                    elif shutil.which('memurai'):
                         subprocess.Popen(
                             ['memurai'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -2359,6 +2507,9 @@ class PrerequisiteChecker:
         except Exception as e:
             print(f"{self._colorize(f'Warning: {e}', Color.YELLOW)}")
             return False
+
+    # Swap file path used during low-memory pip installs (Linux only)
+    _SWAP_PATH = '/swapfile_dyslex'
 
     def _create_backend_venv(self) -> bool:
         """Create backend virtual environment and install dependencies."""
@@ -2431,6 +2582,43 @@ class PrerequisiteChecker:
             # Wait for venv to be fully created
             time.sleep(1)
 
+            # Verify the venv python binary works (catches broken symlinks)
+            venv_python_check = venv_path / 'bin' / 'python'
+            if not venv_python_check.exists():
+                venv_python_check = venv_path / 'Scripts' / 'python.exe'
+            if venv_python_check.exists():
+                try:
+                    check_result = subprocess.run(
+                        [str(venv_python_check), '-c', 'import sys; print(sys.executable)'],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if check_result.returncode != 0:
+                        print(f"{self._colorize('  Venv python is broken, recreating...', Color.YELLOW)}")
+                        shutil.rmtree(venv_path)
+                        result = subprocess.run(
+                            [sys.executable, '-m', 'venv', 'venv'],
+                            cwd=str(backend_dir),
+                            capture_output=True, timeout=60,
+                        )
+                        if result.returncode != 0:
+                            print(f"{self._colorize(f'  Error: {result.stderr.decode()}', Color.RED)}")
+                            return False
+                        time.sleep(1)
+                except Exception:
+                    pass  # Best-effort check; proceed if it can't run
+            else:
+                print(f"{self._colorize('  Venv python binary not found after creation, recreating...', Color.YELLOW)}")
+                shutil.rmtree(venv_path)
+                result = subprocess.run(
+                    [sys.executable, '-m', 'venv', 'venv'],
+                    cwd=str(backend_dir),
+                    capture_output=True, timeout=60,
+                )
+                if result.returncode != 0:
+                    print(f"{self._colorize(f'  Error: {result.stderr.decode()}', Color.RED)}")
+                    return False
+                time.sleep(1)
+
             # Find pip in the new venv — check multiple possible locations
             venv_pip = None
             pip_candidates = [
@@ -2492,6 +2680,37 @@ class PrerequisiteChecker:
             # --- Detect available memory and create swap if needed ---
             low_memory = False
             created_swap = False
+            swap_path = self._SWAP_PATH
+
+            # Failsafe: clean up stale swap files from a previous crashed run
+            if platform.system() == 'Linux' and os.path.exists(swap_path):
+                print(f"{self._colorize('  Cleaning up stale swap file from previous run...', Color.GRAY)}")
+                try:
+                    subprocess.run(['sudo', 'swapoff', swap_path],
+                                   capture_output=True, timeout=30)
+                except Exception:
+                    pass
+                try:
+                    subprocess.run(['sudo', 'rm', '-f', swap_path],
+                                   capture_output=True, timeout=10)
+                except Exception:
+                    pass
+
+            # Atexit handler for signal-safe swap cleanup
+            def _atexit_swap_cleanup():
+                """Emergency swap cleanup registered via atexit."""
+                if os.path.exists(swap_path):
+                    try:
+                        subprocess.run(['sudo', 'swapoff', swap_path],
+                                       capture_output=True, timeout=30)
+                    except Exception:
+                        pass
+                    try:
+                        subprocess.run(['sudo', 'rm', '-f', swap_path],
+                                       capture_output=True, timeout=10)
+                    except Exception:
+                        pass
+
             try:
                 if platform.system() == 'Linux':
                     with open('/proc/meminfo') as f:
@@ -2502,8 +2721,9 @@ class PrerequisiteChecker:
                                 if mem_gb < 4:
                                     low_memory = True
                                     print(f"{self._colorize(f'  Low memory detected ({mem_gb:.1f}GB). Creating swap file...', Color.YELLOW)}")
+                                    # Register atexit handler BEFORE creating swap
+                                    atexit.register(_atexit_swap_cleanup)
                                     # Create a 4GB swap file
-                                    swap_path = '/swapfile_dyslex'
                                     swap_cmds = [
                                         ['sudo', 'fallocate', '-l', '4G', swap_path],
                                         ['sudo', 'chmod', '600', swap_path],
@@ -2628,19 +2848,31 @@ class PrerequisiteChecker:
             # Clean up swap file if we created one
             if created_swap:
                 try:
-                    subprocess.run(['sudo', 'swapoff', '/swapfile_dyslex'],
+                    subprocess.run(['sudo', 'swapoff', swap_path],
                                    capture_output=True, timeout=30)
-                    subprocess.run(['sudo', 'rm', '-f', '/swapfile_dyslex'],
+                    subprocess.run(['sudo', 'rm', '-f', swap_path],
                                    capture_output=True, timeout=10)
                     print(f"{self._colorize('  ✓ Temporary swap file removed', Color.GREEN)}")
                 except Exception:
                     pass
+                # Unregister atexit handler — normal cleanup succeeded
+                atexit.unregister(_atexit_swap_cleanup)
 
             return True
         except Exception as e:
             print(f"{self._colorize(f'Error creating venv: {e}', Color.YELLOW)}")
             import traceback
             traceback.print_exc()
+            # Clean up swap file on exception
+            if os.path.exists(self._SWAP_PATH):
+                try:
+                    subprocess.run(['sudo', 'swapoff', self._SWAP_PATH],
+                                   capture_output=True, timeout=30)
+                    subprocess.run(['sudo', 'rm', '-f', self._SWAP_PATH],
+                                   capture_output=True, timeout=10)
+                    print(f"{self._colorize('  ✓ Temporary swap file removed after error', Color.GREEN)}")
+                except Exception:
+                    pass
             # Remove partial venv to prevent "already exists" false positives
             partial_venv = Path('backend').resolve() / 'venv'
             if partial_venv.exists():
@@ -2727,11 +2959,14 @@ class PrerequisiteChecker:
         """Stop PostgreSQL service."""
         try:
             if self.platform_name == 'Darwin':
-                subprocess.run(
-                    ['brew', 'services', 'stop', 'postgresql@15'],
-                    capture_output=True,
-                    timeout=10
-                )
+                for svc_name in ['postgresql@17', 'postgresql@16', 'postgresql@15', 'postgresql']:
+                    result = subprocess.run(
+                        ['brew', 'services', 'stop', svc_name],
+                        capture_output=True,
+                        timeout=10
+                    )
+                    if result.returncode == 0:
+                        break
                 print(f"{self._colorize('✓ PostgreSQL stopped', Color.GREEN)}")
             elif self.platform_name == 'Linux':
                 subprocess.run(
@@ -2754,11 +2989,14 @@ class PrerequisiteChecker:
                 )
                 print(f"{self._colorize('✓ Redis stopped', Color.GREEN)}")
             elif self.platform_name == 'Linux':
-                subprocess.run(
-                    ['sudo', 'systemctl', 'stop', 'redis'],
-                    capture_output=True,
-                    timeout=10
-                )
+                for svc_name in ['redis-server', 'redis']:
+                    result = subprocess.run(
+                        ['sudo', 'systemctl', 'stop', svc_name],
+                        capture_output=True,
+                        timeout=10
+                    )
+                    if result.returncode == 0:
+                        break
                 print(f"{self._colorize('✓ Redis stopped', Color.GREEN)}")
         except Exception as e:
             print(f"{self._colorize(f'Warning: Could not stop Redis: {e}', Color.YELLOW)}")
@@ -2868,10 +3106,9 @@ class HealthMonitor:
     async def check_http_endpoint(self, url: str) -> bool:
         """Check if an HTTP endpoint is responding."""
         try:
-            # Use urllib for simple sync HTTP check in async context
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._sync_http_check, url)
-            return True
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, self._sync_http_check, url)
+            return bool(result)
         except Exception:
             return False
 
@@ -3129,8 +3366,11 @@ class ServiceManager:
         try:
             # Kill the entire process group (catches all children)
             try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
+                if platform.system() != 'Windows':
+                    os.killpg(process.pid, signal.SIGTERM)
+                else:
+                    process.terminate()
+            except (ProcessLookupError, PermissionError, OSError):
                 process.terminate()
 
             # Wait for graceful shutdown
@@ -3141,8 +3381,11 @@ class ServiceManager:
                 # Force kill the entire process group
                 await self.logger.warning(service, "Force killing...")
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
+                    if platform.system() != 'Windows':
+                        os.killpg(process.pid, signal.SIGKILL)
+                    else:
+                        process.kill()
+                except (ProcessLookupError, PermissionError, OSError):
                     process.kill()
                 await process.wait()
                 await self.logger.success(service, "Killed")
