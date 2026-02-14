@@ -2181,6 +2181,7 @@ class PrerequisiteChecker:
 
             elif self.platform_name == 'Linux':
                 started = False
+                is_debian = False
 
                 # Step 1: Detect installed clusters via pg_lsclusters (Debian/Ubuntu)
                 detected_clusters = []
@@ -2190,56 +2191,66 @@ class PrerequisiteChecker:
                         capture_output=True, text=True, timeout=5,
                     )
                     if result.returncode == 0:
+                        is_debian = True
                         for line in result.stdout.strip().splitlines():
                             parts = line.split()
                             if len(parts) >= 3:
-                                ver, name = parts[0], parts[1]
-                                detected_clusters.append((ver, name))
+                                ver, name, status = parts[0], parts[1], parts[2]
+                                detected_clusters.append((ver, name, status))
                 except FileNotFoundError:
                     pass  # Not a Debian/Ubuntu system
 
-                # Step 2: Try starting detected clusters first, then fall back
+                # Step 2: Try starting detected clusters
                 if detected_clusters:
-                    for ver, name in detected_clusters:
-                        # Try systemctl with the exact cluster name
+                    for ver, name, status in detected_clusters:
+                        if status == 'online':
+                            started = True
+                            break
+                        # Try systemctl first
                         result = subprocess.run(
                             ['sudo', 'systemctl', 'start', f'postgresql@{ver}-{name}'],
-                            timeout=30,
+                            capture_output=True, text=True, timeout=30,
                         )
                         if result.returncode == 0:
                             started = True
                             break
+                        # Try pg_ctlcluster
+                        result = subprocess.run(
+                            ['sudo', 'pg_ctlcluster', ver, name, 'start'],
+                            capture_output=True, text=True, timeout=30,
+                        )
+                        if result.returncode == 0:
+                            started = True
+                            break
+
+                    # Step 2b: If starting failed, the cluster is likely broken.
+                    # Drop it and recreate — this fixes "service did not take the
+                    # steps required by its unit configuration" on Ubuntu.
                     if not started:
-                        for ver, name in detected_clusters:
-                            result = subprocess.run(
-                                ['sudo', 'pg_ctlcluster', ver, name, 'start'],
+                        for ver, name, status in detected_clusters:
+                            print(f"{self._colorize(f'  Cluster {ver}/{name} failed to start. Recreating...', Color.YELLOW)}")
+                            subprocess.run(
+                                ['sudo', 'pg_dropcluster', '--stop', ver, name],
                                 capture_output=True, timeout=30,
                             )
+                            result = subprocess.run(
+                                ['sudo', 'pg_createcluster', ver, name, '--start'],
+                                capture_output=True, text=True, timeout=60,
+                            )
                             if result.returncode == 0:
+                                print(f"{self._colorize(f'  ✓ Cluster {ver}/{name} recreated and started', Color.GREEN)}")
                                 started = True
                                 break
+                            else:
+                                print(f"{self._colorize(f'  pg_createcluster failed: {result.stderr.strip()}', Color.YELLOW)}")
 
-                # Step 3: Try common service names (Fedora/Arch use plain postgresql)
-                if not started:
-                    for svc_name in [
-                        'postgresql',
-                        'postgresql@17-main', 'postgresql@16-main',
-                        'postgresql@15-main', 'postgresql@14-main',
-                    ]:
+                # Step 3: No clusters detected or not Debian — try common service names
+                # (Fedora/Arch use plain 'postgresql')
+                if not started and not is_debian:
+                    for svc_name in ['postgresql']:
                         result = subprocess.run(
                             ['sudo', 'systemctl', 'start', svc_name],
                             timeout=30,
-                        )
-                        if result.returncode == 0:
-                            started = True
-                            break
-
-                # Step 4: Last resort — pg_ctlcluster with common versions
-                if not started:
-                    for ver in ['17', '16', '15', '14']:
-                        result = subprocess.run(
-                            ['sudo', 'pg_ctlcluster', ver, 'main', 'start'],
-                            capture_output=True, timeout=30,
                         )
                         if result.returncode == 0:
                             started = True
