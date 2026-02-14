@@ -2079,13 +2079,37 @@ class PrerequisiteChecker:
                 return self._is_port_open('localhost', POSTGRES_PORT)
 
             elif self.platform_name == 'Linux':
-                result = subprocess.run(
-                    ['sudo', 'systemctl', 'start', 'postgresql'],
-                    capture_output=True,
-                    timeout=30
-                )
-                time.sleep(3)
-                return result.returncode == 0 and self._is_port_open('localhost', POSTGRES_PORT)
+                # Try multiple service names — Ubuntu/Debian use versioned names
+                # like postgresql@15-main, Fedora/Arch use plain postgresql
+                started = False
+                for svc_name in [
+                    'postgresql',
+                    'postgresql@17-main', 'postgresql@16-main', 'postgresql@15-main',
+                    'postgresql@14-main',
+                ]:
+                    result = subprocess.run(
+                        ['sudo', 'systemctl', 'start', svc_name],
+                        timeout=30
+                    )
+                    if result.returncode == 0:
+                        started = True
+                        break
+                if not started:
+                    # Last resort: try pg_ctlcluster (Debian/Ubuntu)
+                    for ver in ['17', '16', '15', '14']:
+                        result = subprocess.run(
+                            ['sudo', 'pg_ctlcluster', ver, 'main', 'start'],
+                            capture_output=True, timeout=30,
+                        )
+                        if result.returncode == 0:
+                            started = True
+                            break
+                # Wait for service to be ready
+                for _ in range(10):
+                    time.sleep(1)
+                    if self._is_port_open('localhost', POSTGRES_PORT):
+                        return True
+                return False
 
             elif self.platform_name == 'Windows':
                 # Try net start first (works if installed as service)
