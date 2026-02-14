@@ -1058,6 +1058,17 @@ class PackageInstaller:
                      'postgresql', 'postgresql-contrib', 'libpq-dev'],
                     timeout=300,
                 )
+                # Ubuntu/Debian: ensure the cluster is created and started.
+                # apt usually does this automatically, but not always
+                # (e.g., when upgrading from an older version).
+                subprocess.run(
+                    ['sudo', 'systemctl', 'enable', 'postgresql'],
+                    capture_output=True, timeout=10,
+                )
+                subprocess.run(
+                    ['sudo', 'systemctl', 'start', 'postgresql'],
+                    capture_output=True, timeout=30,
+                )
 
             elif pkg == 'dnf':
                 self._run_command(
@@ -1332,6 +1343,12 @@ class PackageInstaller:
                      "GRANT ALL PRIVILEGES ON DATABASE dyslex TO dyslex;"],
                     capture_output=True, timeout=10,
                 )
+
+                # Ubuntu/Debian: pg_hba.conf defaults to 'peer' auth for local
+                # connections, which blocks password-based TCP connections that
+                # the backend needs (DATABASE_URL uses localhost:5432).
+                # Add a rule to allow md5/scram-sha-256 auth for the dyslex user.
+                self._configure_pg_hba_for_dyslex()
             elif self.platform_name == 'Windows':
                 # Find psql on Windows
                 psql_cmd = 'psql'
@@ -1406,6 +1423,90 @@ class PackageInstaller:
         except Exception as e:
             print(self._colorize(f'  Warning: Database setup issue: {e}', Color.YELLOW))
             return False
+
+    # ------------------------------------------------------------------
+    # pg_hba.conf configuration (Ubuntu/Debian)
+    # ------------------------------------------------------------------
+
+    def _configure_pg_hba_for_dyslex(self):
+        """Ensure pg_hba.conf allows password auth for the dyslex user over TCP.
+
+        Ubuntu/Debian default pg_hba.conf uses 'peer' auth for local Unix socket
+        connections and often has no rule for TCP connections to specific users.
+        The backend connects via TCP (localhost:5432) with a password, so we need
+        a 'host' line with md5 or scram-sha-256 auth.
+        """
+        try:
+            # Find pg_hba.conf — Debian/Ubuntu stores it under /etc/postgresql/<ver>/main/
+            pg_hba = None
+            for search_dir in [Path('/etc/postgresql')]:
+                if search_dir.exists():
+                    for hba in sorted(search_dir.rglob('pg_hba.conf'), reverse=True):
+                        pg_hba = hba
+                        break
+            if not pg_hba:
+                return
+
+            # Check if a rule for dyslex already exists
+            content = subprocess.run(
+                ['sudo', 'cat', str(pg_hba)],
+                capture_output=True, text=True, timeout=5,
+            )
+            if content.returncode != 0:
+                return
+
+            # Look for an existing rule that covers the dyslex user on localhost
+            for line in content.stdout.splitlines():
+                stripped = line.strip()
+                if stripped.startswith('#'):
+                    continue
+                if 'dyslex' in stripped and ('md5' in stripped or 'scram-sha-256' in stripped):
+                    return  # Already configured
+
+            # Add a rule BEFORE the first 'host' line so it takes priority
+            print(self._colorize('  Configuring pg_hba.conf for TCP password auth...', Color.GRAY))
+            rule = 'host    dyslex          dyslex          127.0.0.1/32            md5'
+            rule_v6 = 'host    dyslex          dyslex          ::1/128                 md5'
+
+            # Insert rules at the top of the host section using a sed command
+            subprocess.run(
+                ['sudo', 'bash', '-c',
+                 f'echo "# DysLex AI — allow password auth for dyslex user" >> {pg_hba}\n'
+                 f'echo "{rule}" >> {pg_hba}\n'
+                 f'echo "{rule_v6}" >> {pg_hba}'],
+                capture_output=True, timeout=10,
+            )
+
+            # Reload PostgreSQL to pick up the change
+            subprocess.run(
+                ['sudo', 'systemctl', 'reload', 'postgresql'],
+                capture_output=True, timeout=10,
+            )
+            # Also try versioned reload (Debian/Ubuntu)
+            try:
+                result = subprocess.run(
+                    ['pg_lsclusters', '--no-header'],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.strip().splitlines():
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            subprocess.run(
+                                ['sudo', 'systemctl', 'reload', f'postgresql@{parts[0]}-{parts[1]}'],
+                                capture_output=True, timeout=10,
+                            )
+            except FileNotFoundError:
+                pass
+
+            print(self._colorize('  ✓ pg_hba.conf updated for TCP password auth', Color.GREEN))
+        except Exception as e:
+            print(self._colorize(f'  Warning: Could not configure pg_hba.conf: {e}', Color.YELLOW))
+            print(self._colorize(
+                '  You may need to manually add this line to pg_hba.conf:\n'
+                '    host  dyslex  dyslex  127.0.0.1/32  md5',
+                Color.YELLOW,
+            ))
 
     # ------------------------------------------------------------------
     # .env file
@@ -2079,23 +2180,62 @@ class PrerequisiteChecker:
                 return self._is_port_open('localhost', POSTGRES_PORT)
 
             elif self.platform_name == 'Linux':
-                # Try multiple service names — Ubuntu/Debian use versioned names
-                # like postgresql@15-main, Fedora/Arch use plain postgresql
                 started = False
-                for svc_name in [
-                    'postgresql',
-                    'postgresql@17-main', 'postgresql@16-main', 'postgresql@15-main',
-                    'postgresql@14-main',
-                ]:
+
+                # Step 1: Detect installed clusters via pg_lsclusters (Debian/Ubuntu)
+                detected_clusters = []
+                try:
                     result = subprocess.run(
-                        ['sudo', 'systemctl', 'start', svc_name],
-                        timeout=30
+                        ['pg_lsclusters', '--no-header'],
+                        capture_output=True, text=True, timeout=5,
                     )
                     if result.returncode == 0:
-                        started = True
-                        break
+                        for line in result.stdout.strip().splitlines():
+                            parts = line.split()
+                            if len(parts) >= 3:
+                                ver, name = parts[0], parts[1]
+                                detected_clusters.append((ver, name))
+                except FileNotFoundError:
+                    pass  # Not a Debian/Ubuntu system
+
+                # Step 2: Try starting detected clusters first, then fall back
+                if detected_clusters:
+                    for ver, name in detected_clusters:
+                        # Try systemctl with the exact cluster name
+                        result = subprocess.run(
+                            ['sudo', 'systemctl', 'start', f'postgresql@{ver}-{name}'],
+                            timeout=30,
+                        )
+                        if result.returncode == 0:
+                            started = True
+                            break
+                    if not started:
+                        for ver, name in detected_clusters:
+                            result = subprocess.run(
+                                ['sudo', 'pg_ctlcluster', ver, name, 'start'],
+                                capture_output=True, timeout=30,
+                            )
+                            if result.returncode == 0:
+                                started = True
+                                break
+
+                # Step 3: Try common service names (Fedora/Arch use plain postgresql)
                 if not started:
-                    # Last resort: try pg_ctlcluster (Debian/Ubuntu)
+                    for svc_name in [
+                        'postgresql',
+                        'postgresql@17-main', 'postgresql@16-main',
+                        'postgresql@15-main', 'postgresql@14-main',
+                    ]:
+                        result = subprocess.run(
+                            ['sudo', 'systemctl', 'start', svc_name],
+                            timeout=30,
+                        )
+                        if result.returncode == 0:
+                            started = True
+                            break
+
+                # Step 4: Last resort — pg_ctlcluster with common versions
+                if not started:
                     for ver in ['17', '16', '15', '14']:
                         result = subprocess.run(
                             ['sudo', 'pg_ctlcluster', ver, 'main', 'start'],
@@ -2104,7 +2244,8 @@ class PrerequisiteChecker:
                         if result.returncode == 0:
                             started = True
                             break
-                # Wait for service to be ready
+
+                # Wait for service to be ready (up to 10s)
                 for _ in range(10):
                     time.sleep(1)
                     if self._is_port_open('localhost', POSTGRES_PORT):
