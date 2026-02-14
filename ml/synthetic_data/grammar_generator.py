@@ -497,17 +497,17 @@ class GrammarErrorGenerator:
         """
         # Weight the error types by frequency
         error_funcs = [
-            (0.18, "subject_verb"),
-            (0.18, "article"),
+            (0.15, "subject_verb"),
+            (0.15, "article"),
             (0.09, "function_word_omission"),
             (0.09, "preposition_substitution"),
             (0.04, "preposition_insertion"),
             (0.08, "verb_tense"),
             (0.05, "auxiliary_verb_error"),
             (0.04, "past_participle_confusion"),
-            (0.10, "run_on"),
+            (0.18, "run_on"),
             (0.08, "pronoun_case"),
-            (0.07, "no_op"),  # absorb rounding; fallback will pick a real type
+            (0.05, "no_op"),  # absorb rounding; fallback will pick a real type
         ]
 
         # Shuffle weighted
@@ -560,7 +560,7 @@ class GrammarErrorGenerator:
         self,
         corpus: list[str] | None = None,
         num_samples: int = 30000,
-        include_passthrough: float = 0.15,
+        include_passthrough: float = 0.20,
         output_file: Path | None = None,
     ) -> list[dict[str, str]]:
         """Produce JSONL training pairs in seq2seq format.

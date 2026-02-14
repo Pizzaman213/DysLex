@@ -354,26 +354,59 @@ def combine_and_split_seq2seq(
             f"(weight={weight:.2f}, target={target_for_source})"
         )
 
-    # If we're still under target, add more from the largest source
+    # If we're still under target, distribute deficit proportionally by weight
     if len(all_samples) < target_total:
         deficit = target_total - len(all_samples)
-        # Find sources with remaining samples
+        # Count how many we've already used per source
         used_counts: dict[str, int] = {}
         for sample in all_samples:
             src = sample.get("source", "unknown")
             used_counts[src] = used_counts.get(src, 0) + 1
 
-        for source_name in sorted(sources.keys(), key=lambda k: len(sources[k]), reverse=True):
-            if deficit <= 0:
-                break
+        # Calculate remaining capacity per source
+        remaining_by_source: dict[str, list[dict[str, Any]]] = {}
+        for source_name in sources:
             used = used_counts.get(source_name, 0)
             remaining = [s for i, s in enumerate(sources[source_name]) if i >= used]
             if remaining:
-                take = min(len(remaining), deficit)
-                random.shuffle(remaining)
-                all_samples.extend(remaining[:take])
-                deficit -= take
-                logger.info(f"  {source_name}: added {take} more to fill target")
+                remaining_by_source[source_name] = remaining
+
+        # Proportional fill: distribute deficit according to weights
+        if remaining_by_source:
+            total_weight = sum(
+                SOURCE_WEIGHTS.get(name, 0.05)
+                for name in remaining_by_source
+            )
+            for source_name, remaining in remaining_by_source.items():
+                if deficit <= 0:
+                    break
+                weight = SOURCE_WEIGHTS.get(source_name, 0.05)
+                proportional_share = int(deficit * (weight / total_weight))
+                take = min(len(remaining), proportional_share)
+                if take > 0:
+                    random.shuffle(remaining)
+                    all_samples.extend(remaining[:take])
+                    logger.info(f"  {source_name}: added {take} more (proportional fill)")
+
+        # Final fallback: fill any remaining deficit from largest sources
+        deficit = target_total - len(all_samples)
+        if deficit > 0:
+            used_counts_2: dict[str, int] = {}
+            for sample in all_samples:
+                src = sample.get("source", "unknown")
+                used_counts_2[src] = used_counts_2.get(src, 0) + 1
+
+            for source_name in sorted(sources.keys(), key=lambda k: len(sources[k]), reverse=True):
+                if deficit <= 0:
+                    break
+                used = used_counts_2.get(source_name, 0)
+                remaining = [s for i, s in enumerate(sources[source_name]) if i >= used]
+                if remaining:
+                    take = min(len(remaining), deficit)
+                    random.shuffle(remaining)
+                    all_samples.extend(remaining[:take])
+                    deficit -= take
+                    logger.info(f"  {source_name}: added {take} more (fallback fill)")
 
     # Oversample core dyslexic error types 2x (phonetic, reversal, vowel, homophone, visual)
     core_samples = [
@@ -440,40 +473,75 @@ def combine_and_split_seq2seq(
     logger.info(f"Seq2seq splits: train={len(train)}, val={len(val)}, test={len(test)}")
 
     # Create curriculum phase splits for curriculum learning
+    # New 3-phase approach with grammar interleaved from the start:
+    #   Phase 1 (epochs 1-3): 80% spelling + 10% grammar + 10% passthrough
+    #   Phase 2 (epochs 4-6): Balanced spelling + 30% grammar/mixed
+    #   Phase 3 (epochs 7+): Full dataset (all error types)
     if has_grammar:
         spelling_types = {
             "reversal", "transposition", "phonetic", "omission", "spelling",
             "vowel_confusion", "homophone", "visual_similarity",
         }
         grammar_types_set = grammar_types
-        mixed_types = {"mixed_multi_2", "mixed_multi_3", "mixed_multi_4", "mixed_single_long"}
 
-        # Phase datasets only for training set
-        phase1_spelling = [
+        # Separate training samples by category
+        spelling_samples = [
             s for s in train
             if s.get("error_type", "unknown") in spelling_types
             or s.get("source", "") in ("birkbeck_seq2seq", "wikipedia_seq2seq", "aspell_seq2seq", "synthetic_seq2seq")
         ]
-        phase2_grammar = phase1_spelling + [
+        grammar_samples = [
             s for s in train
             if s.get("error_type", "unknown") in grammar_types_set
             or s.get("source", "") == "grammar_synthetic"
         ]
-        phase3_mixed = phase2_grammar + [
+        passthrough_samples = [
+            s for s in train
+            if s.get("error_type", "unknown") == "none"
+        ]
+        mixed_samples = [
             s for s in train
             if s.get("error_type", "unknown").startswith("mixed_")
             or s.get("source", "") == "synthetic_mixed"
         ]
 
-        if phase1_spelling:
-            _write_jsonl(phase1_spelling, output_dir / "train_seq2seq_phase1.jsonl")
-            logger.info(f"  Curriculum phase 1 (spelling): {len(phase1_spelling)} samples")
-        if phase2_grammar:
-            _write_jsonl(phase2_grammar, output_dir / "train_seq2seq_phase2.jsonl")
-            logger.info(f"  Curriculum phase 2 (+grammar): {len(phase2_grammar)} samples")
-        if phase3_mixed:
-            _write_jsonl(phase3_mixed, output_dir / "train_seq2seq_phase3.jsonl")
-            logger.info(f"  Curriculum phase 3 (+mixed): {len(phase3_mixed)} samples")
+        # Phase 1: 80% spelling + 10% grammar + 10% passthrough (early grammar exposure)
+        n_phase1 = len(spelling_samples)
+        n_grammar_p1 = max(1, int(n_phase1 * 0.10 / 0.80)) if spelling_samples else 0
+        n_pass_p1 = max(1, int(n_phase1 * 0.10 / 0.80)) if spelling_samples else 0
+        phase1 = list(spelling_samples)
+        if grammar_samples:
+            random.shuffle(grammar_samples)
+            phase1.extend(grammar_samples[:n_grammar_p1])
+        if passthrough_samples:
+            random.shuffle(passthrough_samples)
+            phase1.extend(passthrough_samples[:n_pass_p1])
+        random.shuffle(phase1)
+
+        # Phase 2: Balanced spelling + 30% grammar/mixed
+        n_spelling_p2 = len(spelling_samples)
+        n_grammar_p2 = max(1, int(n_spelling_p2 * 0.30 / 0.70)) if spelling_samples else 0
+        phase2 = list(spelling_samples)
+        grammar_and_mixed = list(grammar_samples) + list(mixed_samples)
+        random.shuffle(grammar_and_mixed)
+        phase2.extend(grammar_and_mixed[:n_grammar_p2])
+        if passthrough_samples:
+            phase2.extend(passthrough_samples[:n_pass_p1])
+        random.shuffle(phase2)
+
+        # Phase 3: Full dataset (all error types) — just use the full train set
+        phase3 = list(train)
+        random.shuffle(phase3)
+
+        if phase1:
+            _write_jsonl(phase1, output_dir / "train_seq2seq_phase1.jsonl")
+            logger.info(f"  Curriculum phase 1 (spelling + 10% grammar): {len(phase1)} samples")
+        if phase2:
+            _write_jsonl(phase2, output_dir / "train_seq2seq_phase2.jsonl")
+            logger.info(f"  Curriculum phase 2 (spelling + 30% grammar/mixed): {len(phase2)} samples")
+        if phase3:
+            _write_jsonl(phase3, output_dir / "train_seq2seq_phase3.jsonl")
+            logger.info(f"  Curriculum phase 3 (full dataset): {len(phase3)} samples")
 
     # Create separate spelling/grammar test files for regression tracking
     if has_grammar:

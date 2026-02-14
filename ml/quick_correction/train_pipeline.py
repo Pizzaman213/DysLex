@@ -835,8 +835,8 @@ Examples:
     dataset.add_argument(
         "--max-eval-samples",
         type=int,
-        default=0,
-        help="Max eval samples during training, 0 = no cap (default: 0)",
+        default=2000,
+        help="Max eval samples during training, 0 = no cap (default: 2000)",
     )
 
     # Export parameters
@@ -953,11 +953,11 @@ def main():
         stage_results["expand_corpus"] = success
 
         # Generate synthetic grammar errors
-        success = stage_generate_grammar(target_samples=50000)
+        success = stage_generate_grammar(target_samples=80000)
         stage_results["generate_grammar"] = success
 
         # Generate mixed spelling+grammar errors (now 75K)
-        success = stage_generate_mixed(target_samples=75000)
+        success = stage_generate_mixed(target_samples=100000)
         stage_results["generate_mixed"] = success
 
         # Process real GEC datasets if available

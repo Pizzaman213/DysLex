@@ -210,10 +210,9 @@ class CurriculumCallback(TrainerCallback):
     """Swaps the training dataset at epoch boundaries for curriculum learning.
 
     Training phases of increasing difficulty:
-    - Phase 1 (epochs 1-3): Spelling-only errors
-    - Phase 2 (epochs 4-6): Spelling + grammar errors
-    - Phase 3 (epochs 7-9): Spelling + grammar + mixed errors
-    - Phase 4 (epochs 10+): Full dataset (all types including hard examples)
+    - Phase 1 (epochs 1-3): 80% spelling + 10% grammar + 10% passthrough
+    - Phase 2 (epochs 4-6): Balanced spelling + 30% grammar/mixed
+    - Phase 3 (epochs 7+): Full dataset (all error types)
     """
 
     def __init__(
@@ -224,11 +223,11 @@ class CurriculumCallback(TrainerCallback):
         """Initialize curriculum callback.
 
         Args:
-            phase_datasets: Mapping of phase number (1-4) to prepared Dataset
-            phase_boundaries: Epoch boundaries for phase transitions [phase1_end, phase2_end, phase3_end]
+            phase_datasets: Mapping of phase number (1-3) to prepared Dataset
+            phase_boundaries: Epoch boundaries for phase transitions [phase1_end, phase2_end]
         """
         self.phase_datasets = phase_datasets
-        self.boundaries = phase_boundaries or [3, 6, 9]
+        self.boundaries = phase_boundaries or [3, 6]
         self.current_phase = 1
 
     def _get_phase(self, epoch: int) -> int:
@@ -261,7 +260,7 @@ def _load_curriculum_datasets(
     Args:
         data_dir: Directory containing phase files
         tokenizer: Tokenizer for preparing datasets
-        full_train_dataset: The full training dataset (used as phase 4)
+        full_train_dataset: The full training dataset (used as phase 3 fallback)
 
     Returns:
         Dict mapping phase number to Dataset, or None if no phase files exist
@@ -285,9 +284,10 @@ def _load_curriculum_datasets(
                 phase_datasets[phase] = dataset
                 logger.info(f"Curriculum phase {phase}: {len(dataset)} samples from {filepath.name}")
 
-    # Phase 4 is always the full dataset
-    phase_datasets[4] = full_train_dataset
-    logger.info(f"Curriculum phase 4 (full): {len(full_train_dataset)} samples")
+    # If phase 3 wasn't loaded from file, use the full dataset as phase 3
+    if 3 not in phase_datasets:
+        phase_datasets[3] = full_train_dataset
+        logger.info(f"Curriculum phase 3 (full, fallback): {len(full_train_dataset)} samples")
 
     return phase_datasets if len(phase_datasets) > 1 else None
 
@@ -399,12 +399,12 @@ def train_seq2seq_model(
     training_args = Seq2SeqTrainingArguments(
         output_dir=str(output_dir),
         eval_strategy="steps",
-        eval_steps=500,
+        eval_steps=1000,
         save_strategy="steps",
-        save_steps=500,
+        save_steps=1000,
         learning_rate=learning_rate,
         per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size * 2,
         num_train_epochs=epochs,
         weight_decay=0.03,
         warmup_steps=warmup_steps,
@@ -448,7 +448,7 @@ def train_seq2seq_model(
         logger.info("Curriculum learning ENABLED — training in phases of increasing difficulty")
         curriculum_cb = CurriculumCallback(
             phase_datasets=curriculum_datasets,
-            phase_boundaries=[3, 6, 9],
+            phase_boundaries=[3, 6],
         )
         callbacks.append(curriculum_cb)  # type: ignore[arg-type]
         # Start with phase 1 dataset (spelling-only)

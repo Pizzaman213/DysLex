@@ -187,6 +187,12 @@ def generate_pedler_training_pairs(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "pedler_seq2seq.jsonl"
 
+    # Pre-build word-to-sentence index to avoid O(N*M) regex scanning
+    word_to_sentences: dict[str, list[str]] = {}
+    for sentence in corpus:
+        for word in set(re.findall(r'\b\w+\b', sentence.lower())):
+            word_to_sentences.setdefault(word, []).append(sentence)
+
     samples: list[dict[str, str]] = []
     random.seed(42)
 
@@ -201,11 +207,8 @@ def generate_pedler_training_pairs(
         wrong_words = [w for w in words if w != correct_word]
         wrong_word = random.choice(wrong_words)
 
-        # Find a corpus sentence containing the correct word
-        matching_sentences = [
-            s for s in corpus
-            if re.search(r'\b' + re.escape(correct_word) + r'\b', s, re.IGNORECASE)
-        ]
+        # Find corpus sentences containing the correct word via pre-built index
+        matching_sentences = word_to_sentences.get(correct_word.lower(), [])
 
         if matching_sentences:
             sentence = random.choice(matching_sentences)
@@ -416,17 +419,20 @@ def generate_dyslist_training_pairs(output_dir: Path, num_samples: int = 10000) 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "dyslist_seq2seq.jsonl"
 
+    # Pre-build word-to-sentence index to avoid O(N*M) regex scanning
+    word_to_sentences: dict[str, list[str]] = {}
+    for sentence in corpus:
+        for word in set(re.findall(r'\b\w+\b', sentence.lower())):
+            word_to_sentences.setdefault(word, []).append(sentence)
+
     samples: list[dict[str, str]] = []
     random.seed(42)
 
     for _ in range(num_samples):
         correct, error, cat = random.choice(all_examples)
 
-        # Try to find the word in the corpus and substitute
-        matching = [
-            s for s in corpus
-            if re.search(r'\b' + re.escape(correct) + r'\b', s, re.IGNORECASE)
-        ]
+        # Find corpus sentences containing the correct word via pre-built index
+        matching = word_to_sentences.get(correct.lower(), [])
 
         if matching:
             sentence = random.choice(matching)
