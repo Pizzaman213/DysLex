@@ -76,6 +76,10 @@ tmp/
 temp/
 *.tmp
 
+# DysLex AI auto-setup state
+.dyslex.lock
+.dyslex-setup-state.json
+
 # TTS audio storage
 backend/storage/audio/*.mp3
 backend/storage/audio/*.meta

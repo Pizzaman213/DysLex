@@ -45,7 +45,9 @@ License:
 
 import asyncio
 import argparse
+import atexit
 import json
+import shutil
 import ssl
 import sys
 import os
@@ -73,10 +75,11 @@ DEFAULT_HOST = '0.0.0.0'
 POSTGRES_PORT = 5432
 REDIS_PORT = 6379
 
-BACKEND_HEALTH_ENDPOINT = "{protocol}://localhost:{port}/health"  # Always check via localhost
-BACKEND_STARTUP_TIMEOUT = 30  # seconds
-FRONTEND_STARTUP_TIMEOUT = 10  # seconds
+BACKEND_HEALTH_ENDPOINT = "{protocol}://localhost:{port}/health/ready"  # Validates DB + Redis, not just process liveness
+BACKEND_STARTUP_TIMEOUT = 30  # seconds (overridable via DYSLEX_BACKEND_TIMEOUT env var or --startup-timeout)
+FRONTEND_STARTUP_TIMEOUT = 10  # seconds (overridable via DYSLEX_FRONTEND_TIMEOUT env var)
 HEALTH_CHECK_INTERVAL = 1  # seconds
+HEALTH_CHECK_REQUEST_TIMEOUT = 5  # seconds per HTTP request (cold starts with SQLAlchemy lazy init take longer)
 
 SHUTDOWN_TIMEOUT = 5  # seconds to wait for graceful shutdown
 
@@ -122,6 +125,244 @@ class CheckSkipped(Exception):
 
 
 # ============================================================================
+# ProcessLock — Prevent Concurrent Instances
+# ============================================================================
+
+class ProcessLock:
+    """File-based lock to prevent multiple run.py instances from running simultaneously.
+
+    Uses fcntl.flock() on Unix and msvcrt.locking() on Windows.
+    The lock file stores the owning PID for diagnostics.
+    """
+
+    def __init__(self, lock_path: Path):
+        self.lock_path = lock_path
+        self._fd: Optional[int] = None
+
+    def acquire(self) -> bool:
+        """Try to acquire the lock (non-blocking). Returns True on success."""
+        try:
+            self._fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR)
+            if platform.system() == 'Windows':
+                import msvcrt
+                try:
+                    msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    self._read_owner_pid()
+                    os.close(self._fd)
+                    self._fd = None
+                    return False
+            else:
+                import fcntl
+                try:
+                    fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    self._read_owner_pid()
+                    os.close(self._fd)
+                    self._fd = None
+                    return False
+
+            # Write our PID
+            os.ftruncate(self._fd, 0)
+            os.lseek(self._fd, 0, os.SEEK_SET)
+            os.write(self._fd, str(os.getpid()).encode())
+            return True
+        except Exception:
+            if self._fd is not None:
+                os.close(self._fd)
+                self._fd = None
+            return False
+
+    def _read_owner_pid(self):
+        """Read and print the PID of the process holding the lock."""
+        try:
+            if self._fd is not None:
+                os.lseek(self._fd, 0, os.SEEK_SET)
+                data = os.read(self._fd, 32)
+                pid = data.decode().strip()
+                if pid:
+                    print(f"{Color.RED}Another instance of run.py is already running (PID {pid}).{Color.RESET}")
+                    print(f"  If this is stale, delete {self.lock_path} and retry.")
+                    return
+        except Exception:
+            pass
+        print(f"{Color.RED}Another instance of run.py is already running.{Color.RESET}")
+        print(f"  If this is stale, delete {self.lock_path} and retry.")
+
+    def release(self):
+        """Release the lock and remove the lock file."""
+        if self._fd is not None:
+            try:
+                if platform.system() == 'Windows':
+                    import msvcrt
+                    try:
+                        msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+                    except OSError:
+                        pass
+                else:
+                    import fcntl
+                    try:
+                        fcntl.flock(self._fd, fcntl.LOCK_UN)
+                    except OSError:
+                        pass
+                os.close(self._fd)
+                self._fd = None
+            except Exception:
+                pass
+            try:
+                self.lock_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+# ============================================================================
+# SetupState — Checkpoint / Resume for Auto-Setup
+# ============================================================================
+
+class SetupState:
+    """Tracks auto-setup progress in a JSON checkpoint file.
+
+    Allows resuming from the exact point of interruption after Ctrl+C or failure.
+    The state file is deleted on full success so the next run starts clean.
+    """
+
+    STEPS = [
+        'system_prerequisites',
+        'node_install',
+        'postgres_install',
+        'redis_install',
+        'venv_create',
+        'pip_light_packages',
+        'pip_heavy_packages',
+        'npm_install',
+        'env_file',
+    ]
+
+    def __init__(self, state_path: Path):
+        self.state_path = state_path
+        self._state: Dict[str, Any] = self._load()
+
+    def _load(self) -> Dict[str, Any]:
+        """Load state from disk, or return empty state."""
+        try:
+            if self.state_path.exists():
+                return json.loads(self.state_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+        return {"completed_steps": []}
+
+    def _save(self):
+        """Atomically persist state to disk."""
+        atomic_write(self.state_path, json.dumps(self._state, indent=2) + '\n')
+
+    def is_step_done(self, step: str) -> bool:
+        """Check if a step has already been completed."""
+        return step in self._state.get("completed_steps", [])
+
+    def mark_done(self, step: str):
+        """Mark a step as completed and persist."""
+        completed = self._state.setdefault("completed_steps", [])
+        if step not in completed:
+            completed.append(step)
+        self._save()
+
+    def clear(self):
+        """Remove the state file (called on full success or rollback)."""
+        try:
+            self.state_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def has_any_progress(self) -> bool:
+        """True if any steps were previously completed."""
+        return len(self._state.get("completed_steps", [])) > 0
+
+
+# ============================================================================
+# Utility: Atomic File Write
+# ============================================================================
+
+def atomic_write(target: Path, content: str):
+    """Write content to a file atomically via a temp file + rename.
+
+    On POSIX, Path.replace() is atomic within the same filesystem.
+    This prevents partial writes if the process is interrupted.
+    """
+    tmp_path = target.with_suffix(target.suffix + '.tmp')
+    tmp_path.write_text(content)
+    tmp_path.replace(target)
+
+
+# ============================================================================
+# Utility: Smart First-Run Detection
+# ============================================================================
+
+def should_auto_setup(script_dir: Path) -> Tuple[bool, str]:
+    """Determine whether auto-setup should be triggered.
+
+    Returns (should_trigger, reason) tuple.
+    Checks:
+    1. Venv existence (both 'venv' and '.venv' naming conventions)
+    2. Venv integrity (python binary exists AND core imports work)
+    3. node_modules existence and completeness (package-lock.json marker)
+    4. .env file existence
+    """
+    backend_dir = script_dir / 'backend'
+    frontend_dir = script_dir / 'frontend'
+
+    # Check for venv in both naming conventions
+    venv_dir = None
+    for name in ('venv', '.venv'):
+        candidate = backend_dir / name
+        if candidate.is_dir():
+            venv_dir = candidate
+            break
+
+    venv_ok = False
+    if venv_dir:
+        # Validate venv integrity: python binary must exist
+        python_bin = venv_dir / 'bin' / 'python'
+        if not python_bin.exists():
+            python_bin = venv_dir / 'Scripts' / 'python.exe'
+
+        if python_bin.exists():
+            # Validate core imports work (catches partial installs)
+            try:
+                result = subprocess.run(
+                    [str(python_bin), '-c', 'import fastapi; import sqlalchemy'],
+                    capture_output=True, timeout=10,
+                )
+                venv_ok = result.returncode == 0
+            except Exception:
+                venv_ok = False
+
+        if not venv_ok:
+            return (True, "Backend venv exists but core dependencies are missing or broken")
+
+    # Check node_modules
+    node_modules = frontend_dir / 'node_modules'
+    node_modules_ok = node_modules.is_dir() and (node_modules / '.package-lock.json').exists()
+
+    # Check .env
+    env_ok = (script_dir / '.env').is_file() or (backend_dir / '.env').is_file()
+
+    # If nothing exists at all, it's a first run
+    if not venv_dir and not node_modules.is_dir() and not env_ok:
+        return (True, "First run detected — no backend venv, node_modules, or .env found")
+
+    # If venv is missing entirely
+    if not venv_dir:
+        return (True, "Backend virtual environment not found")
+
+    # If node_modules is missing or incomplete
+    if not node_modules_ok:
+        return (True, "Frontend dependencies are missing or incomplete")
+
+    # Everything looks fine
+    return (False, "")
+
+
+# ============================================================================
 # PackageInstaller
 # ============================================================================
 
@@ -144,6 +385,49 @@ class PackageInstaller:
         if not self.color_enabled:
             return text
         return f"{color}{text}{Color.RESET}"
+
+    # ------------------------------------------------------------------
+    # Retry logic for network operations
+    # ------------------------------------------------------------------
+
+    def _retry_command(
+        self,
+        cmd: List[str],
+        description: str,
+        max_retries: int = 3,
+        timeout: int = 600,
+        cwd: Optional[str] = None,
+    ) -> subprocess.CompletedProcess:
+        """Run a command with retry and exponential backoff for network operations.
+
+        Retries on non-zero exit code. Does NOT retry on KeyboardInterrupt or timeout.
+        """
+        last_result = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=False,
+                    text=True,
+                    timeout=timeout,
+                    cwd=cwd,
+                )
+                if result.returncode == 0:
+                    return result
+                last_result = result
+                if attempt < max_retries:
+                    delay = 2 ** attempt  # 2s, 4s, 8s
+                    print(self._colorize(
+                        f'  Attempt {attempt}/{max_retries} failed ({description}). '
+                        f'Retrying in {delay}s...',
+                        Color.YELLOW,
+                    ))
+                    time.sleep(delay)
+            except subprocess.TimeoutExpired:
+                raise
+            except KeyboardInterrupt:
+                raise
+        return last_result  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # User confirmation
@@ -979,9 +1263,10 @@ class PackageInstaller:
         print(self._colorize('⚙️  Installing frontend dependencies...', Color.YELLOW))
         try:
             frontend_dir = Path('frontend').resolve()
-            # Try strict install first
-            result = self._run_command(
+            # Try strict install first (with retry for network flakiness)
+            result = self._retry_command(
                 ['npm', 'install'],
+                description='npm install',
                 timeout=600,
                 cwd=str(frontend_dir),
             )
@@ -991,8 +1276,9 @@ class PackageInstaller:
 
             # Fallback: --legacy-peer-deps to resolve peer dep conflicts
             print(self._colorize('  Retrying with --legacy-peer-deps...', Color.YELLOW))
-            result = self._run_command(
+            result = self._retry_command(
                 ['npm', 'install', '--legacy-peer-deps'],
+                description='npm install --legacy-peer-deps',
                 timeout=600,
                 cwd=str(frontend_dir),
             )
@@ -1145,7 +1431,7 @@ REDIS_URL=redis://localhost:6379/0
 # Auth
 JWT_SECRET_KEY=change-me-in-production
 """
-        env_file.write_text(env_content)
+        atomic_write(env_file, env_content)
         print(self._colorize('✓ .env created — edit it to add your NVIDIA_NIM_API_KEY', Color.GREEN))
         return True
 
@@ -1167,12 +1453,20 @@ class PrerequisiteChecker:
         self.auto_setup = config.get('auto_setup', False)
         self.kill_ports = config.get('kill_ports', False)
         self.services_started: List[str] = []  # Track what we started
+        self.created_artifacts: List[Tuple[str, Path]] = []  # For rollback
         self.installer: Optional[PackageInstaller] = None
+        self.setup_state: Optional[SetupState] = None
         if self.auto_setup:
             self.installer = PackageInstaller(
                 color_enabled=color_enabled,
                 yes=config.get('yes', False),
             )
+            self.setup_state = SetupState(Path('.dyslex-setup-state.json'))
+            if self.setup_state.has_any_progress():
+                print(self._colorize(
+                    '  Resuming previous auto-setup (some steps already completed)...',
+                    Color.CYAN,
+                ))
 
     def _colorize(self, text: str, color: str) -> str:
         """Apply color to text if colors are enabled."""
@@ -1184,6 +1478,7 @@ class PrerequisiteChecker:
         """Run all applicable checks. Returns True if all critical checks pass.
 
         Check order is dependency-aware:
+        0. Pre-flight checks (disk space, network, sudo)
         1. Python version (always first — we're running in it)
         2. Node.js (needed before frontend deps)
         3. PostgreSQL (install → start → database setup)
@@ -1196,9 +1491,16 @@ class PrerequisiteChecker:
         10. Environment variables (NVIDIA key prompt)
         11. NVIDIA NIM API ping
         """
+        # Pre-flight checks (disk space, network connectivity, sudo)
+        if self.auto_setup and self.mode != 'docker':
+            self.preflight_checks()
+
         # Install system build tools & libraries upfront on Linux
         if self.auto_setup and self.installer and self.mode != 'docker':
-            self.installer.install_system_prerequisites()
+            if not self.setup_state or not self.setup_state.is_step_done('system_prerequisites'):
+                self.installer.install_system_prerequisites()
+                if self.setup_state:
+                    self.setup_state.mark_done('system_prerequisites')
 
         checks = [
             ("Python version", self.check_python_version),
@@ -1247,7 +1549,106 @@ class PrerequisiteChecker:
             except CheckSkipped:
                 pass
 
+        if self.errors and self.auto_setup:
+            self.rollback()
+
+        # On full success, clear the setup state file
+        if not self.errors and self.setup_state:
+            self.setup_state.clear()
+
         return len(self.errors) == 0
+
+    def preflight_checks(self):
+        """Run pre-flight checks before starting auto-setup.
+
+        Warns about potential issues that would cause installs to fail:
+        - Low disk space
+        - No network connectivity to package registries
+        - Missing sudo access (Linux only)
+        """
+        # --- Disk space ---
+        try:
+            usage = shutil.disk_usage(Path('.').resolve())
+            free_gb = usage.free / (1024 ** 3)
+            if free_gb < 2:
+                print(self._colorize(
+                    f'  Warning: Only {free_gb:.1f}GB disk space free. '
+                    f'Auto-setup needs at least 2GB (5GB recommended).',
+                    Color.YELLOW,
+                ))
+            elif free_gb < 5:
+                print(self._colorize(
+                    f'  Note: {free_gb:.1f}GB disk space free. '
+                    f'5GB recommended for full backend + ML packages.',
+                    Color.YELLOW,
+                ))
+        except Exception:
+            pass
+
+        # --- Network connectivity ---
+        for host, port, label in [
+            ('pypi.org', 443, 'PyPI (Python packages)'),
+            ('registry.npmjs.org', 443, 'npm (Node packages)'),
+        ]:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(5)
+                    s.connect((host, port))
+            except (socket.timeout, ConnectionRefusedError, OSError):
+                print(self._colorize(
+                    f'  Warning: Cannot reach {label} ({host}:{port}). '
+                    f'Package installs may fail.',
+                    Color.YELLOW,
+                ))
+
+        # --- Sudo access (Linux only) ---
+        if self.platform_name == 'Linux':
+            try:
+                result = subprocess.run(
+                    ['sudo', '-v'],
+                    timeout=30,
+                )
+                if result.returncode != 0:
+                    print(self._colorize(
+                        '  Warning: sudo access not available. '
+                        'Some system packages may fail to install.',
+                        Color.YELLOW,
+                    ))
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                print(self._colorize(
+                    '  Warning: sudo not found or timed out.',
+                    Color.YELLOW,
+                ))
+
+    def rollback(self):
+        """Clean up artifacts created during a failed auto-setup.
+
+        - Removes broken venv directories
+        - Stops auto-started services
+        - Clears setup state so next run starts fresh
+        - Does NOT remove .env (may contain user-entered API keys)
+        - Does NOT remove node_modules (safe to re-run npm install)
+        """
+        if not self.auto_setup:
+            return
+
+        print(self._colorize('\n  Cleaning up after failed auto-setup...', Color.YELLOW))
+
+        # Remove created artifacts (broken venv dirs)
+        for artifact_type, artifact_path in self.created_artifacts:
+            if artifact_type == 'venv' and artifact_path.exists():
+                print(self._colorize(f'  Removing broken {artifact_path}...', Color.GRAY))
+                try:
+                    shutil.rmtree(artifact_path)
+                except Exception as e:
+                    print(self._colorize(f'  Warning: Could not remove {artifact_path}: {e}', Color.YELLOW))
+
+        # Stop any auto-started services
+        self.cleanup_started_services()
+
+        # Clear setup state so next run starts fresh
+        if self.setup_state:
+            self.setup_state.clear()
 
     def check_python_version(self):
         """Verify Python version is 3.11+."""
@@ -1381,7 +1782,7 @@ class PrerequisiteChecker:
                         break
                 if not found:
                     lines.append(f'NVIDIA_NIM_API_KEY={key}')
-                env_file.write_text('\n'.join(lines) + '\n')
+                atomic_write(env_file, '\n'.join(lines) + '\n')
                 print(f"   {self._colorize('✓ API key saved to .env', Color.GREEN)}")
             else:
                 raise CheckWarning(
@@ -1468,9 +1869,19 @@ class PrerequisiteChecker:
 
         if not venv_python or not venv_python.exists():
             if self.auto_setup:
+                # Check if venv steps are already done from a previous run
+                if self.setup_state and self.setup_state.is_step_done('pip_heavy_packages'):
+                    # State says done but venv is missing — stale state, reset
+                    if self.setup_state:
+                        self.setup_state.clear()
+
                 print(f"{self._colorize('⚙️  Creating backend virtual environment...', Color.YELLOW)}")
                 if self._create_backend_venv():
                     print(f"{self._colorize('✓ Backend venv created and dependencies installed', Color.GREEN)}")
+                    if self.setup_state:
+                        self.setup_state.mark_done('venv_create')
+                        self.setup_state.mark_done('pip_light_packages')
+                        self.setup_state.mark_done('pip_heavy_packages')
                     return
                 else:
                     raise CheckError(
@@ -1493,7 +1904,12 @@ class PrerequisiteChecker:
         node_modules = Path('frontend/node_modules')
         if not node_modules.exists():
             if self.auto_setup and self.installer:
+                if self.setup_state and self.setup_state.is_step_done('npm_install'):
+                    # State says done but node_modules is missing — stale state
+                    pass  # Fall through to re-install
                 if self.installer.install_frontend_deps():
+                    if self.setup_state:
+                        self.setup_state.mark_done('npm_install')
                     return
                 raise CheckError(
                     "Failed to install frontend dependencies automatically\n"
@@ -1522,6 +1938,8 @@ class PrerequisiteChecker:
 
         if self.installer:
             self.installer.create_env_file()
+            if self.setup_state:
+                self.setup_state.mark_done('env_file')
 
     def check_docker_availability(self):
         """Verify Docker is installed and running."""
@@ -1810,6 +2228,7 @@ class PrerequisiteChecker:
                     )
 
             # Create venv — try venv first, fall back to virtualenv on Windows
+            venv_path = backend_dir / 'venv'
             print(f"{self._colorize('  Creating virtual environment...', Color.GRAY)}")
             result = subprocess.run(
                 [sys.executable, '-m', 'venv', 'venv'],
@@ -1829,6 +2248,9 @@ class PrerequisiteChecker:
                 if result.returncode != 0:
                     print(f"{self._colorize(f'  Error: {result.stderr.decode()}', Color.RED)}")
                     return False
+
+            # Track created venv for rollback on later failure
+            self.created_artifacts.append(('venv', venv_path))
 
             # Wait for venv to be fully created
             time.sleep(1)
@@ -1960,15 +2382,22 @@ class PrerequisiteChecker:
 
             pip_base = [str(venv_pip), 'install', '--no-cache-dir']
 
+            # Helper: retry pip installs via the installer if available
+            def _pip_retry(cmd, desc, timeout=600):
+                if self.installer:
+                    return self.installer._retry_command(
+                        cmd, description=desc, timeout=timeout,
+                        cwd=str(backend_dir),
+                    )
+                return subprocess.run(
+                    cmd, cwd=str(backend_dir),
+                    capture_output=False, timeout=timeout,
+                )
+
             # Batch 1: lightweight packages (framework, db, auth, utils, dev)
             if light_reqs:
                 print(f"{self._colorize(f'  [1/3] Installing core packages ({len(light_reqs)})...', Color.GRAY)}")
-                result = subprocess.run(
-                    pip_base + light_reqs,
-                    cwd=str(backend_dir),
-                    capture_output=False,
-                    timeout=600,
-                )
+                result = _pip_retry(pip_base + light_reqs, 'pip install (core)', timeout=600)
                 if result.returncode != 0:
                     print(f"{self._colorize('  Core package install failed', Color.RED)}")
                     return False
@@ -2001,12 +2430,7 @@ class PrerequisiteChecker:
 
                 install_cmd.append(req)
 
-                result = subprocess.run(
-                    install_cmd,
-                    cwd=str(backend_dir),
-                    capture_output=False,
-                    timeout=900,
-                )
+                result = _pip_retry(install_cmd, f'pip install {pkg_display}', timeout=900)
                 if result.returncode != 0:
                     print(f"{self._colorize(f'  Warning: {pkg_display} failed to install (ML features may be limited)', Color.YELLOW)}")
 
@@ -2041,6 +2465,14 @@ class PrerequisiteChecker:
             print(f"{self._colorize(f'Error creating venv: {e}', Color.YELLOW)}")
             import traceback
             traceback.print_exc()
+            # Remove partial venv to prevent "already exists" false positives
+            partial_venv = Path('backend').resolve() / 'venv'
+            if partial_venv.exists():
+                print(f"{self._colorize('  Removing partial venv...', Color.GRAY)}")
+                try:
+                    shutil.rmtree(partial_venv)
+                except Exception:
+                    pass
             return False
 
     def _kill_port_process(self, port: int) -> bool:
@@ -2268,16 +2700,37 @@ class HealthMonitor:
             return False
 
     def _sync_http_check(self, url: str):
-        """Synchronous HTTP check helper."""
-        if url.startswith("https://"):
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            with urlopen(url, timeout=2, context=ctx) as response:
-                return response.status == 200
-        else:
-            with urlopen(url, timeout=2) as response:
-                return response.status == 200
+        """Synchronous HTTP check helper.
+
+        For /health/ready endpoint, accepts both "ready" (200) and "degraded" (503)
+        status responses. A degraded response means the backend is running but Redis
+        or DB may not be fully connected yet — acceptable for startup.
+        """
+        timeout = HEALTH_CHECK_REQUEST_TIMEOUT
+        try:
+            if url.startswith("https://"):
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                with urlopen(url, timeout=timeout, context=ctx) as response:
+                    body = response.read().decode('utf-8', errors='replace')
+                    data = json.loads(body)
+                    return data.get('status') in ('ready', 'degraded')
+            else:
+                with urlopen(url, timeout=timeout) as response:
+                    body = response.read().decode('utf-8', errors='replace')
+                    data = json.loads(body)
+                    return data.get('status') in ('ready', 'degraded')
+        except HTTPError as e:
+            # /health/ready returns 503 for "degraded" — still means backend is alive
+            if e.code == 503:
+                try:
+                    body = e.read().decode('utf-8', errors='replace')
+                    data = json.loads(body)
+                    return data.get('status') == 'degraded'
+                except Exception:
+                    pass
+            raise
 
 
 # ============================================================================
@@ -2791,6 +3244,12 @@ For more information, see: https://github.com/anthropics/dyslex-ai
         action='store_true',
         help='Automatically kill processes using required ports'
     )
+    parser.add_argument(
+        '--startup-timeout',
+        type=int,
+        default=None,
+        help='Backend startup timeout in seconds (default: 30, overrides DYSLEX_BACKEND_TIMEOUT env var)'
+    )
 
     # HTTPS / SSL (enabled by default)
     parser.add_argument(
@@ -2831,6 +3290,12 @@ async def main():
     script_dir = Path(__file__).parent.resolve()
     os.chdir(script_dir)
 
+    # Acquire process lock — prevent concurrent instances
+    lock = ProcessLock(script_dir / '.dyslex.lock')
+    if not lock.acquire():
+        sys.exit(1)
+    atexit.register(lock.release)
+
     # Load environment variables from .env if present
     load_dotenv()
 
@@ -2838,14 +3303,11 @@ async def main():
     parser = create_argument_parser()
     args = parser.parse_args()
 
-    # First-run detection: if key setup artifacts are missing, enable auto-setup
+    # Smart first-run detection: validate venv integrity, not just existence
     if not args.auto_setup:
-        venv_exists = (script_dir / 'backend' / '.venv').is_dir()
-        node_modules_exists = (script_dir / 'frontend' / 'node_modules').is_dir()
-        env_exists = (script_dir / '.env').is_file() or (script_dir / 'backend' / '.env').is_file()
-        if not venv_exists and not node_modules_exists and not env_exists:
-            print(f"\n{Color.CYAN}{Color.BOLD}First run detected!{Color.RESET}")
-            print(f"  No backend venv, node_modules, or .env found.")
+        trigger, reason = should_auto_setup(script_dir)
+        if trigger:
+            print(f"\n{Color.CYAN}{Color.BOLD}{reason}{Color.RESET}")
             print(f"  Enabling --auto-setup to install prerequisites automatically.\n")
             args.auto_setup = True
 
@@ -2858,6 +3320,21 @@ async def main():
         mode = 'frontend'
     else:
         mode = 'dev'
+
+    # Apply configurable startup timeouts from env vars or CLI flag
+    global BACKEND_STARTUP_TIMEOUT, FRONTEND_STARTUP_TIMEOUT
+    if args.startup_timeout is not None:
+        BACKEND_STARTUP_TIMEOUT = args.startup_timeout
+    elif os.getenv('DYSLEX_BACKEND_TIMEOUT'):
+        try:
+            BACKEND_STARTUP_TIMEOUT = int(os.environ['DYSLEX_BACKEND_TIMEOUT'])
+        except ValueError:
+            pass
+    if os.getenv('DYSLEX_FRONTEND_TIMEOUT'):
+        try:
+            FRONTEND_STARTUP_TIMEOUT = int(os.environ['DYSLEX_FRONTEND_TIMEOUT'])
+        except ValueError:
+            pass
 
     # Resolve SSL certificate paths
     ssl_cert = args.ssl_cert
@@ -2903,9 +3380,11 @@ async def main():
         checker.print_results()
 
         if not checks_passed:
+            lock.release()
             sys.exit(1)
 
         if args.check_only:
+            lock.release()
             sys.exit(0)
 
     # Initialize logger
@@ -2942,6 +3421,9 @@ async def main():
         # Stop any auto-started services
         if checker and config.get('auto_setup'):
             checker.cleanup_started_services()
+
+        # Release the process lock
+        lock.release()
 
 
 if __name__ == '__main__':
