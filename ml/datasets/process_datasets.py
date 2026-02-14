@@ -4,7 +4,7 @@ Converts raw data files into JSONL with corrections embedded in sentences.
 
 Output formats:
   - BIO (token classification): {"tokens": [...], "labels": [...]}
-  - Seq2seq (text-to-text): {"input_text": "correct: ...", "target_text": "..."}
+  - Seq2seq (text-to-text): {"input_text": "...", "target_text": "..."}
 """
 
 import gzip
@@ -282,7 +282,7 @@ def _pairs_to_seq2seq(
         error_type = _classify_error(misspelling, correct)
 
         samples.append({
-            "input_text": f"correct: {error_sent}",
+            "input_text": error_sent,
             "target_text": clean_sent,
             "source": source,
             "error_type": error_type,
@@ -291,7 +291,7 @@ def _pairs_to_seq2seq(
         # Also add no-change samples (correct text stays unchanged) ~20%
         if random.random() < 0.2:
             samples.append({
-                "input_text": f"correct: {clean_sent}",
+                "input_text": clean_sent,
                 "target_text": clean_sent,
                 "source": source,
                 "error_type": "none",

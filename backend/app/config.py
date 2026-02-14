@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     circuit_breaker_failure_threshold: int = 3
     circuit_breaker_cooldown_seconds: int = 60
 
+    # ONNX Runtime — comma-separated provider override (auto-detect if empty)
+    onnx_providers: str = ""
+
     # Correction Routing
     confidence_threshold: float = 0.85
     deep_analysis_word_threshold: int = 100  # Tier 2 only fires for text >= this word count (unless Tier 1 has no results)

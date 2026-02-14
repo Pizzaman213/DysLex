@@ -411,7 +411,7 @@ def run_seq2seq_tests(samples: list[TestSample], verbose: bool = False) -> dict[
 
     # Warmup
     for _ in range(3):
-        inputs = tokenizer("correct: teh cat sat on teh mat", return_tensors="pt", truncation=True, max_length=128)
+        inputs = tokenizer("teh cat sat on teh mat", return_tensors="pt", truncation=True, max_length=128)
         with torch.no_grad():
             model.generate(**inputs, max_length=128, num_beams=1)
 
@@ -419,8 +419,7 @@ def run_seq2seq_tests(samples: list[TestSample], verbose: bool = False) -> dict[
     all_results: list[dict] = []
 
     for sample in samples:
-        prompt = f"correct: {sample.input_text}"
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=128)
+        inputs = tokenizer(sample.input_text, return_tensors="pt", truncation=True, max_length=128)
 
         start = time.perf_counter()
         with torch.no_grad():

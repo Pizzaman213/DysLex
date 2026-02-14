@@ -927,15 +927,12 @@
     "<extra_id_98>",
     "<extra_id_99>"
   ],
-  "clean_up_tokenization_spaces": true,
+  "clean_up_tokenization_spaces": false,
   "eos_token": "</s>",
   "extra_ids": 100,
-  "max_length": 128,
   "model_max_length": 512,
   "pad_token": "<pad>",
-  "stride": 0,
+  "sp_model_kwargs": {},
   "tokenizer_class": "T5Tokenizer",
-  "truncation_side": "right",
-  "truncation_strategy": "longest_first",
   "unk_token": "<unk>"
 }

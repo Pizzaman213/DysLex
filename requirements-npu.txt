@@ -1,0 +1,29 @@
+# Optional NPU/accelerator dependencies for ONNX Runtime.
+#
+# These packages are MUTUALLY EXCLUSIVE with the base `onnxruntime` package.
+# Install only ONE of these depending on your hardware, then uninstall the
+# base `onnxruntime` package if it was previously installed.
+#
+# Apple Neural Engine (macOS ARM64)
+#   No extra install needed — CoreMLExecutionProvider is included in the
+#   standard `onnxruntime` package on Apple Silicon.
+#
+# Intel NPU (Core Ultra / Meteor Lake+)
+#   pip install onnxruntime-openvino>=1.21.0
+#
+# Windows DirectML (any GPU — Intel, AMD, NVIDIA)
+#   pip install onnxruntime-directml>=1.21.0
+#
+# Qualcomm NPU (Snapdragon X Elite / X Plus)
+#   pip install onnxruntime-qnn
+#   (available from Qualcomm AI Hub)
+#
+# AMD Ryzen AI (XDNA NPU)
+#   Requires the Vitis AI toolkit and the onnxruntime-vitisai package.
+#   See https://ryzenai.docs.amd.com for platform-specific setup.
+#
+# NVIDIA GPU (CUDA)
+#   pip install onnxruntime-gpu>=1.21.0
+#
+# To verify which providers are available after installation:
+#   python -c "import onnxruntime; print(onnxruntime.get_available_providers())"

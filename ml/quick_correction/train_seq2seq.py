@@ -1,11 +1,11 @@
 """Training script for Seq2Seq Quick Correction Model.
 
-Fine-tunes T5-small for text-to-text correction of dyslexic errors.
+Fine-tunes FLAN-T5-base for text-to-text correction of dyslexic errors.
 The model directly generates corrected text, eliminating the dictionary
 lookup bottleneck of the BIO-tagging approach.
 
 Input format (JSONL):
-  {"input_text": "correct: I recieved teh letter", "target_text": "I received the letter"}
+  {"input_text": "I recieved teh letter", "target_text": "I received the letter"}
 """
 
 import argparse
@@ -33,12 +33,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration defaults
-MODEL_NAME = "google/flan-t5-small"
+MODEL_NAME = "google/flan-t5-base"
 MAX_INPUT_LENGTH = 128
 MAX_TARGET_LENGTH = 128
-BATCH_SIZE = 32
-LEARNING_RATE = 1e-4  # Lower LR for larger dataset and better convergence
-EPOCHS = 12  # More epochs with early stopping for grammar-augmented data
+BATCH_SIZE = 16
+LEARNING_RATE = 5e-5  # Lower LR for flan-t5-base
+EPOCHS = 20  # More epochs with early stopping for grammar-augmented data
 OUTPUT_DIR = Path(__file__).parent / "models" / "quick_correction_seq2seq_v1"
 
 
@@ -61,8 +61,12 @@ def load_seq2seq_data(data_file: Path) -> list[dict[str, str]]:
             sample = json.loads(line)
 
             if "input_text" in sample and "target_text" in sample:
+                # Strip legacy "correct: " prefix for backward compat
+                input_text = sample["input_text"]
+                if input_text.startswith("correct: "):
+                    input_text = input_text[len("correct: "):]
                 samples.append({
-                    "input_text": sample["input_text"],
+                    "input_text": input_text,
                     "target_text": sample["target_text"],
                 })
             else:
@@ -295,8 +299,9 @@ def train_seq2seq_model(
     epochs: int = EPOCHS,
     batch_size: int = BATCH_SIZE,
     learning_rate: float = LEARNING_RATE,
-    patience: int = 15,
-    max_eval_samples: int = 2000,
+    patience: int = 25,
+    max_eval_samples: int = 0,
+    no_custom_tokens: bool = False,
 ) -> None:
     """Train the Seq2Seq Quick Correction Model.
 
@@ -309,6 +314,7 @@ def train_seq2seq_model(
         learning_rate: Learning rate
         patience: Early stopping patience (in eval steps)
         max_eval_samples: Max eval samples during training (0 = no cap)
+        no_custom_tokens: If True, skip loading custom dyslexic tokens
     """
     logger.info("Starting Seq2Seq Quick Correction Model training...")
     logger.info(f"  Model: {model_name}")
@@ -321,6 +327,23 @@ def train_seq2seq_model(
     logger.info(f"Loading {model_name}...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    # Load custom dyslexic tokens (misspellings that fragment under SentencePiece)
+    custom_tokens_file = Path(__file__).parent / "data" / "custom_dyslexic_tokens.json"
+    if not no_custom_tokens and custom_tokens_file.exists():
+        with open(custom_tokens_file) as f:
+            token_data = json.load(f)
+        new_tokens = token_data.get("tokens", [])
+        if new_tokens:
+            num_added = tokenizer.add_tokens(new_tokens)
+            if num_added > 0:
+                model.resize_token_embeddings(len(tokenizer))
+                logger.info(
+                    f"Added {num_added} custom dyslexic tokens "
+                    f"(vocab: {token_data.get('base_vocab_size', '?')} -> {len(tokenizer)})"
+                )
+    elif no_custom_tokens:
+        logger.info("Custom tokens: DISABLED (--no-custom-tokens)")
 
     # Load training data
     train_file = data_dir / "train_seq2seq.jsonl"
@@ -383,7 +406,7 @@ def train_seq2seq_model(
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         fp16=use_fp16,
-        label_smoothing_factor=0.1,
+        label_smoothing_factor=0.05,
         logging_dir=str(output_dir / "logs"),
         logging_steps=100,
         load_best_model_at_end=True,
@@ -392,11 +415,12 @@ def train_seq2seq_model(
         push_to_hub=False,
         save_total_limit=2,
         predict_with_generate=True,
-        generation_max_length=96,
-        gradient_accumulation_steps=2,
+        generation_max_length=MAX_TARGET_LENGTH,
+        gradient_accumulation_steps=4,
         dataloader_num_workers=4 if use_cuda else 0,
         dataloader_pin_memory=use_cuda,
         torch_compile=use_torch_compile,
+        report_to="none",
     )
 
     # Data collator
@@ -495,7 +519,7 @@ def train_seq2seq_model(
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Train Seq2Seq Quick Correction Model (FLAN-T5-small)"
+        description="Train Seq2Seq Quick Correction Model (FLAN-T5-base)"
     )
     parser.add_argument(
         "--data-dir",
@@ -536,14 +560,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--patience",
         type=int,
-        default=15,
-        help="Early stopping patience in eval steps (default: 15)",
+        default=25,
+        help="Early stopping patience in eval steps (default: 25)",
     )
     parser.add_argument(
         "--max-eval-samples",
         type=int,
-        default=2000,
-        help="Max eval samples during training, 0 = no cap (default: 2000)",
+        default=0,
+        help="Max eval samples during training, 0 = no cap (default: 0)",
+    )
+    parser.add_argument(
+        "--no-custom-tokens",
+        action="store_true",
+        help="Skip loading custom dyslexic tokens into the tokenizer",
     )
     return parser.parse_args()
 
@@ -578,6 +607,7 @@ def main():
         learning_rate=args.lr,
         patience=args.patience,
         max_eval_samples=args.max_eval_samples,
+        no_custom_tokens=args.no_custom_tokens,
     )
 
 

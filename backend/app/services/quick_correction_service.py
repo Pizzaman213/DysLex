@@ -13,6 +13,7 @@ import numpy as np
 import onnxruntime as ort
 from transformers import AutoTokenizer
 
+from app.core.npu_provider import create_session, select_providers
 from app.models.correction import Correction, Position
 
 logger = logging.getLogger(__name__)
@@ -25,45 +26,51 @@ class QuickCorrectionService:
         self,
         model_path: str | Path,
         cache_ttl: int = 60,
+        providers: list[str] | None = None,
     ):
         """Initialize the service.
 
         Args:
             model_path: Path to ONNX model directory
             cache_ttl: Cache time-to-live in seconds
+            providers: Ordered list of ONNX execution providers to try.
+                Defaults to auto-detected providers via :func:`select_providers`.
         """
         self.model_path = Path(model_path)
         self.cache_ttl = cache_ttl
         self.cache: dict[str, tuple[list[Correction], float]] = {}
+        self.providers = providers or select_providers()
 
         # Load base model
         logger.info(f"Loading ONNX model from {self.model_path}...")
-        self.base_session = self._load_session(self.model_path)
+        self.base_session, self.active_provider = self._load_session(self.model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
 
         # User-specific sessions (for personalized adapters)
         self.user_sessions: dict[str, ort.InferenceSession] = {}
 
-        logger.info("QuickCorrectionService initialized")
+        logger.info(
+            "QuickCorrectionService initialized (provider: %s)",
+            self.active_provider,
+        )
 
-    def _load_session(self, model_path: Path) -> ort.InferenceSession:
-        """Load ONNX inference session.
+    def _load_session(
+        self, model_path: Path
+    ) -> tuple[ort.InferenceSession, str]:
+        """Load ONNX inference session with NPU auto-detection.
 
         Args:
             model_path: Path to model directory
 
         Returns:
-            ONNX InferenceSession
+            Tuple of (InferenceSession, active_provider_name)
         """
         onnx_file = model_path / "model.onnx"
 
         if not onnx_file.exists():
             raise FileNotFoundError(f"ONNX model not found: {onnx_file}")
 
-        return ort.InferenceSession(
-            str(onnx_file),
-            providers=["CPUExecutionProvider"],
-        )
+        return create_session(str(onnx_file), self.providers)
 
     def _get_cache_key(self, text: str, user_id: str) -> str:
         """Generate cache key for text and user.
@@ -338,15 +345,22 @@ class QuickCorrectionService:
         if user_model_path.exists():
             try:
                 logger.info(f"Loading personalized model for user {user_id}")
-                self.user_sessions[user_id] = ort.InferenceSession(
-                    str(user_model_path),
-                    providers=["CPUExecutionProvider"],
+                session, provider = create_session(
+                    str(user_model_path), self.providers
                 )
+                logger.info(
+                    "User %s adapter loaded (provider: %s)", user_id, provider
+                )
+                self.user_sessions[user_id] = session
                 return self.user_sessions[user_id]
             except Exception as e:
                 logger.error(f"Failed to load user model: {e}")
 
         return None
+
+    def get_provider_info(self) -> str:
+        """Return the name of the active ONNX execution provider."""
+        return self.active_provider
 
     def clear_cache(self) -> None:
         """Clear the correction cache."""
@@ -378,7 +392,12 @@ def get_quick_correction_service() -> QuickCorrectionService | None:
         return None
 
     try:
-        _service_instance = QuickCorrectionService(model_path)
+        from app.config import settings
+
+        providers = select_providers(settings.onnx_providers or None)
+        _service_instance = QuickCorrectionService(
+            model_path, providers=providers
+        )
         return _service_instance
     except Exception as e:
         logger.error(f"Failed to initialize Quick Correction Service: {e}")

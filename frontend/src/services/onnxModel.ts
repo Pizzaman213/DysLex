@@ -666,7 +666,109 @@ function diffToCorrections(inputText: string, generatedText: string): LocalCorre
 }
 
 /**
- * Run local correction on text using the T5 seq2seq pipeline
+ * Maximum words per chunk for seq2seq inference.
+ * T5 uses ~1.3 tokens per word; 80 words ≈ 104 tokens, safely under the
+ * 128-token generation limit.
+ */
+const MAX_CHUNK_WORDS = 80;
+
+interface TextChunk {
+  text: string;
+  offset: number;
+}
+
+/**
+ * Split text into chunks that fit within the model's token limit.
+ * Primary strategy: split at sentence boundaries (.!?\n).
+ * Fallback: split at word boundaries for very long sentences.
+ * Each chunk includes its character offset in the original text.
+ */
+function splitIntoChunks(text: string): TextChunk[] {
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= MAX_CHUNK_WORDS) {
+    return [{ text, offset: 0 }];
+  }
+
+  // Find sentence break positions (after .!? or \n, skipping trailing whitespace)
+  const breakPositions: number[] = [];
+  for (let i = 0; i < text.length - 1; i++) {
+    if ('.!?\n'.includes(text[i]) && /\s/.test(text[i + 1])) {
+      let next = i + 1;
+      while (next < text.length && /\s/.test(text[next])) next++;
+      if (next < text.length) {
+        breakPositions.push(next);
+      }
+    }
+  }
+
+  const chunks: TextChunk[] = [];
+  let chunkStart = 0;
+  let lastBreak = 0;
+
+  for (const bp of breakPositions) {
+    const segment = text.slice(chunkStart, bp);
+    const segWords = segment.split(/\s+/).filter(Boolean).length;
+
+    if (segWords > MAX_CHUNK_WORDS && lastBreak > chunkStart) {
+      // Over limit — emit chunk up to the previous sentence break
+      chunks.push({ text: text.slice(chunkStart, lastBreak).trimEnd(), offset: chunkStart });
+      chunkStart = lastBreak;
+    }
+    lastBreak = bp;
+  }
+
+  // Remaining text after last emitted chunk
+  if (chunkStart < text.length) {
+    const remaining = text.slice(chunkStart).trimEnd();
+    if (remaining) {
+      const remainingWords = remaining.split(/\s+/).filter(Boolean).length;
+      if (remainingWords > MAX_CHUNK_WORDS) {
+        chunks.push(...splitAtWordBoundary(remaining, chunkStart));
+      } else {
+        chunks.push({ text: remaining, offset: chunkStart });
+      }
+    }
+  }
+
+  return chunks.length > 0 ? chunks : [{ text, offset: 0 }];
+}
+
+/**
+ * Force-split a long segment at word boundaries when no sentence breaks exist.
+ */
+function splitAtWordBoundary(text: string, baseOffset: number): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  const parts = text.split(/(\s+)/); // preserves whitespace segments
+  let current = '';
+  let wordCount = 0;
+  let chunkStart = 0; // position within `text`
+
+  for (const part of parts) {
+    if (/^\s+$/.test(part)) {
+      current += part;
+      continue;
+    }
+    if (wordCount >= MAX_CHUNK_WORDS && current.trimEnd()) {
+      chunks.push({ text: current.trimEnd(), offset: baseOffset + chunkStart });
+      chunkStart += current.length;
+      current = '';
+      wordCount = 0;
+    }
+    current += part;
+    wordCount++;
+  }
+
+  if (current.trimEnd()) {
+    chunks.push({ text: current.trimEnd(), offset: baseOffset + chunkStart });
+  }
+
+  return chunks;
+}
+
+/**
+ * Run local correction on text using the T5 seq2seq pipeline.
+ * Splits long text into sentence-level chunks so the full document
+ * can be processed within the model's token limit.
  */
 export async function runLocalCorrection(text: string): Promise<LocalCorrection[]> {
   // Ensure model is loaded
@@ -681,28 +783,37 @@ export async function runLocalCorrection(text: string): Promise<LocalCorrection[
   }
 
   try {
+    const chunks = splitIntoChunks(text);
     const startTime = performance.now();
+    const allCorrections: LocalCorrection[] = [];
 
-    // Run seq2seq generation
-    const result = await state.pipeline('correct: ' + text, {
-      max_length: 128,
-    });
+    // Process chunks sequentially to avoid overwhelming the browser thread
+    for (const chunk of chunks) {
+      const result = await state.pipeline(chunk.text, {
+        max_length: 128,
+      });
 
-    const generatedText: string = result[0]?.generated_text ?? '';
+      const generatedText: string = result[0]?.generated_text ?? '';
+      if (!generatedText) continue;
 
-    if (!generatedText) {
-      return dictionaryOnlyCorrections(text);
+      const chunkCorrections = diffToCorrections(chunk.text, generatedText);
+
+      // Adjust positions to be relative to the full document
+      for (const correction of chunkCorrections) {
+        correction.position.start += chunk.offset;
+        correction.position.end += chunk.offset;
+        allCorrections.push(correction);
+      }
     }
-
-    // Diff input vs output to find corrections
-    const corrections = diffToCorrections(text, generatedText);
 
     const elapsedMs = performance.now() - startTime;
-    if (corrections.length > 0) {
-      console.log(`[ONNX] Seq2Seq inference: ${elapsedMs.toFixed(1)}ms, ${corrections.length} corrections found`);
+    if (allCorrections.length > 0) {
+      console.log(
+        `[ONNX] Seq2Seq inference: ${elapsedMs.toFixed(1)}ms, ${chunks.length} chunk(s), ${allCorrections.length} corrections found`
+      );
     }
 
-    return corrections;
+    return allCorrections;
   } catch (error) {
     console.error('[ONNX] Seq2Seq inference failed:', error);
     // Fallback to dictionary-only mode

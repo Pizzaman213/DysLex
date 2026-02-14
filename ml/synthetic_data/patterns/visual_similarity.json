@@ -1,0 +1,32 @@
+{
+  "description": "Visual similarity patterns — letters and letter combinations that look alike in common fonts, causing misreading/miswriting in dyslexia.",
+  "patterns": [
+    {"from": "rn", "to": "m", "frequency": 0.25, "context": "any"},
+    {"from": "m", "to": "rn", "frequency": 0.20, "context": "any"},
+    {"from": "cl", "to": "d", "frequency": 0.15, "context": "any"},
+    {"from": "d", "to": "cl", "frequency": 0.12, "context": "any"},
+    {"from": "vv", "to": "w", "frequency": 0.10, "context": "any"},
+    {"from": "w", "to": "vv", "frequency": 0.08, "context": "any"},
+    {"from": "li", "to": "h", "frequency": 0.10, "context": "any"},
+    {"from": "nn", "to": "m", "frequency": 0.10, "context": "any"},
+    {"from": "ri", "to": "n", "frequency": 0.08, "context": "any"},
+    {"from": "I", "to": "l", "frequency": 0.15, "context": "any"},
+    {"from": "l", "to": "I", "frequency": 0.10, "context": "any"}
+  ],
+  "common_examples": [
+    {"correct": "burn", "error": "bum"},
+    {"correct": "corner", "error": "comer"},
+    {"correct": "modern", "error": "modem"},
+    {"correct": "barn", "error": "bam"},
+    {"correct": "kernel", "error": "kemel"},
+    {"correct": "morning", "error": "moming"},
+    {"correct": "learning", "error": "leaming"},
+    {"correct": "turning", "error": "tuming"},
+    {"correct": "warning", "error": "waming"},
+    {"correct": "running", "error": "ruming"},
+    {"correct": "close", "error": "dose"},
+    {"correct": "claim", "error": "daim"},
+    {"correct": "clean", "error": "dean"},
+    {"correct": "climb", "error": "dimb"}
+  ]
+}

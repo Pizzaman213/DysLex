@@ -41,7 +41,7 @@ ml/datasets/processed/
 ml/quick_correction/data/
 
 # Trained/exported model binaries (too large for git)
-ml/models/**/*.onnx
+# ml/models/**/*.onnx  — now tracked via Git LFS
 ml/models/**/*.bin
 ml/models/**/frequency_dictionary_*.txt
 

@@ -112,13 +112,13 @@ def export_seq2seq_to_onnx(
 
 def test_onnx_seq2seq_inference(
     model_path: Path | str,
-    test_text: str = "correct: teh cat sat on teh mat",
+    test_text: str = "teh cat sat on teh mat",
 ) -> None:
     """Test ONNX seq2seq model inference.
 
     Args:
         model_path: Path to ONNX model directory
-        test_text: Test text with "correct: " prefix
+        test_text: Test text to correct
     """
     import time
 

@@ -1,0 +1,43 @@
+{
+  "description": "Vowel confusion patterns common in dyslexia. Dyslexic writers frequently confuse visually and phonetically similar vowels.",
+  "patterns": [
+    {"from": "a", "to": "e", "frequency": 0.25, "context": "any"},
+    {"from": "e", "to": "a", "frequency": 0.25, "context": "any"},
+    {"from": "i", "to": "e", "frequency": 0.20, "context": "any"},
+    {"from": "e", "to": "i", "frequency": 0.20, "context": "any"},
+    {"from": "o", "to": "u", "frequency": 0.15, "context": "any"},
+    {"from": "u", "to": "o", "frequency": 0.15, "context": "any"},
+    {"from": "ea", "to": "ee", "frequency": 0.15, "context": "middle"},
+    {"from": "ee", "to": "ea", "frequency": 0.15, "context": "middle"},
+    {"from": "ou", "to": "ow", "frequency": 0.12, "context": "middle"},
+    {"from": "ow", "to": "ou", "frequency": 0.12, "context": "middle"},
+    {"from": "ai", "to": "ay", "frequency": 0.10, "context": "middle"},
+    {"from": "ay", "to": "ai", "frequency": 0.10, "context": "end"},
+    {"from": "ie", "to": "ei", "frequency": 0.15, "context": "middle"},
+    {"from": "ei", "to": "ie", "frequency": 0.15, "context": "middle"},
+    {"from": "oo", "to": "ou", "frequency": 0.10, "context": "middle"},
+    {"from": "ou", "to": "oo", "frequency": 0.10, "context": "middle"}
+  ],
+  "common_examples": [
+    {"correct": "separate", "error": "seperate"},
+    {"correct": "definite", "error": "definate"},
+    {"correct": "desperate", "error": "desperate"},
+    {"correct": "relevant", "error": "relevent"},
+    {"correct": "excellent", "error": "excellant"},
+    {"correct": "independent", "error": "independant"},
+    {"correct": "persistent", "error": "persistant"},
+    {"correct": "different", "error": "differant"},
+    {"correct": "apparent", "error": "apparant"},
+    {"correct": "occurrence", "error": "occurrance"},
+    {"correct": "privilege", "error": "privelege"},
+    {"correct": "category", "error": "catagory"},
+    {"correct": "calendar", "error": "calender"},
+    {"correct": "grammar", "error": "grammer"},
+    {"correct": "regular", "error": "reguler"},
+    {"correct": "familiar", "error": "familier"},
+    {"correct": "similar", "error": "similer"},
+    {"correct": "particular", "error": "perticular"},
+    {"correct": "popular", "error": "populer"},
+    {"correct": "temperature", "error": "temperture"}
+  ]
+}

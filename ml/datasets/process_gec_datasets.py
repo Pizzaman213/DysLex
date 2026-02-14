@@ -8,7 +8,7 @@ Supported datasets:
   - W&I+LOCNESS (BEA-2019): filtered for native-writer subset
 
 Output format (same as existing seq2seq data):
-  {"input_text": "correct: <erroneous>", "target_text": "<corrected>", "source": "jfleg", "error_type": "grammar"}
+  {"input_text": "<erroneous>", "target_text": "<corrected>", "source": "jfleg", "error_type": "grammar"}
 """
 
 import json
@@ -136,7 +136,7 @@ def parse_jfleg(data_dir: Path) -> list[dict[str, str]]:
 
                 error_type = classify_grammar_error(src, ref)
                 pairs.append({
-                    "input_text": f"correct: {src}",
+                    "input_text": src,
                     "target_text": ref,
                     "source": "jfleg",
                     "error_type": error_type,
@@ -177,7 +177,7 @@ def parse_wi_locness(data_dir: Path) -> list[dict[str, str]]:
                 if src and tgt and src != tgt:
                     error_type = classify_grammar_error(src, tgt)
                     pairs.append({
-                        "input_text": f"correct: {src}",
+                        "input_text": src,
                         "target_text": tgt,
                         "source": "wi_locness",
                         "error_type": error_type,
@@ -255,7 +255,7 @@ def _parse_m2_file(filepath: Path, source_name: str = "gec") -> list[dict[str, s
         if source_line != target_line:
             error_type = classify_grammar_error(source_line, target_line)
             pairs.append({
-                "input_text": f"correct: {source_line}",
+                "input_text": source_line,
                 "target_text": target_line,
                 "source": source_name,
                 "error_type": error_type,
@@ -284,7 +284,7 @@ def parse_tsv_pairs(filepath: Path, source_name: str = "gec") -> list[dict[str, 
                 if src and tgt and src != tgt:
                     error_type = classify_grammar_error(src, tgt)
                     pairs.append({
-                        "input_text": f"correct: {src}",
+                        "input_text": src,
                         "target_text": tgt,
                         "source": source_name,
                         "error_type": error_type,

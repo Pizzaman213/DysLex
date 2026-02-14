@@ -7,8 +7,10 @@ Or run individual stages:
     python ml/quick_correction/train_pipeline.py --download
     python ml/quick_correction/train_pipeline.py --process
     python ml/quick_correction/train_pipeline.py --combine
+    python ml/quick_correction/train_pipeline.py --build-tokens
     python ml/quick_correction/train_pipeline.py --train
     python ml/quick_correction/train_pipeline.py --evaluate
+    python ml/quick_correction/train_pipeline.py --mine-hard
     python ml/quick_correction/train_pipeline.py --export
 
 Model types:
@@ -18,7 +20,12 @@ Model types:
 Grammar support:
     --grammar              Include grammar error data (seq2seq only)
 
-Stages: download -> process -> [grammar] -> combine -> train -> evaluate -> export
+Accuracy improvements:
+    --build-tokens         Build custom dyslexic tokens for tokenizer
+    --augment              Enable data augmentation (multi-error + position shuffle)
+    --mine-hard            Mine hard examples after training for oversampled retraining
+
+Stages: download -> process -> [grammar] -> combine -> build-tokens -> train -> evaluate -> [mine-hard] -> export
 """
 
 import argparse
@@ -379,17 +386,24 @@ def stage_process_seq2seq() -> bool:
     return True
 
 
-def stage_combine_seq2seq(target_total: int = 80000, include_grammar: bool = False) -> bool:
+def stage_combine_seq2seq(
+    target_total: int = 80000,
+    include_grammar: bool = False,
+    augment: bool = False,
+) -> bool:
     """Stage 3 (seq2seq): Combine real and synthetic data into seq2seq train/val/test splits.
 
     Args:
         target_total: Target total number of samples
         include_grammar: Whether to include grammar data in the mix
+        augment: Whether to apply data augmentation
     """
     logger.info("=" * 60)
     logger.info("STAGE 3: Combine Datasets (seq2seq)")
     if include_grammar:
         logger.info("  (Including grammar data)")
+    if augment:
+        logger.info("  (Data augmentation: ENABLED)")
     logger.info("=" * 60)
 
     from ml.datasets.combine_datasets import combine_and_split_seq2seq  # type: ignore[import-not-found]
@@ -398,6 +412,7 @@ def stage_combine_seq2seq(target_total: int = 80000, include_grammar: bool = Fal
         processed_dir=PROCESSED_DIR,
         output_dir=DATA_DIR,
         target_total=target_total,
+        augment=augment,
     )
     total = sum(results.values())
 
@@ -410,14 +425,14 @@ def stage_combine_seq2seq(target_total: int = 80000, include_grammar: bool = Fal
 
 
 def stage_train_seq2seq(
-    model_name: str = "google/flan-t5-small",
-    epochs: int = 12,
-    batch_size: int = 32,
-    learning_rate: float = 1e-4,
-    patience: int = 15,
-    max_eval_samples: int = 2000,
+    model_name: str = "google/flan-t5-base",
+    epochs: int = 20,
+    batch_size: int = 16,
+    learning_rate: float = 5e-5,
+    patience: int = 25,
+    max_eval_samples: int = 0,
 ) -> bool:
-    """Stage 4 (seq2seq): Fine-tune T5-small on the combined seq2seq dataset."""
+    """Stage 4 (seq2seq): Fine-tune FLAN-T5-base on the combined seq2seq dataset."""
     logger.info("=" * 60)
     logger.info("STAGE 4: Train Seq2Seq Model")
     logger.info("=" * 60)
@@ -525,6 +540,89 @@ def stage_export_seq2seq(quantize: bool = True) -> bool:
     return True
 
 
+def stage_build_custom_tokens() -> bool:
+    """Stage: Build custom dyslexic token list for tokenizer expansion."""
+    logger.info("=" * 60)
+    logger.info("STAGE: Build Custom Dyslexic Tokens")
+    logger.info("=" * 60)
+
+    from ml.quick_correction.build_custom_tokens import build_custom_tokens
+
+    result = build_custom_tokens(verbose=True)
+
+    if not result:
+        logger.error("Failed to build custom token list")
+        return False
+
+    logger.info(f"Custom tokens: {result.get('token_count', 0)} tokens ready")
+    return True
+
+
+def stage_mine_hard_examples(max_samples: int = 0) -> bool:
+    """Stage: Mine hard examples from training data for oversampled retraining.
+
+    Args:
+        max_samples: Max training samples to evaluate (0 = all)
+    """
+    logger.info("=" * 60)
+    logger.info("STAGE: Mine Hard Examples")
+    logger.info("=" * 60)
+
+    if not SEQ2SEQ_MODEL_DIR.exists():
+        logger.error(f"Trained model not found at {SEQ2SEQ_MODEL_DIR}. Run --train first.")
+        return False
+
+    train_file = DATA_DIR / "train_seq2seq.jsonl"
+    if not train_file.exists():
+        logger.error(f"Training data not found at {train_file}. Run --combine first.")
+        return False
+
+    from ml.quick_correction.mine_hard_examples import mine_hard_examples
+
+    stats = mine_hard_examples(
+        model_dir=SEQ2SEQ_MODEL_DIR,
+        train_file=train_file,
+        output_file=DATA_DIR / "hard_examples_seq2seq.jsonl",
+        max_samples=max_samples,
+        verbose=True,
+    )
+
+    if not stats:
+        logger.error("Hard example mining failed")
+        return False
+
+    logger.info(
+        f"Mined {stats.get('total_wrong', 0)} hard examples "
+        f"(oversampled to {stats.get('oversampled_count', 0)})"
+    )
+    return True
+
+
+def stage_download_dyslexia() -> bool:
+    """Stage: Download dyslexia-specific datasets (Pedler, DysList).
+
+    Downloads and processes:
+    - Pedler confused word sets (real-word confusion from dyslexic writing)
+    - DysList error taxonomy patterns (Rello & Baeza-Yates 2014)
+    """
+    logger.info("=" * 60)
+    logger.info("STAGE: Download Dyslexia-Specific Datasets")
+    logger.info("=" * 60)
+
+    from ml.datasets.download_dyslexia_datasets import download_all
+
+    results = download_all(output_dir=RAW_DIR)
+    succeeded = sum(1 for v in results.values() if v)
+    total = len(results)
+
+    if succeeded == 0:
+        logger.error("No dyslexia datasets downloaded/generated.")
+        return False
+
+    logger.info(f"Dyslexia dataset stage complete: {succeeded}/{total} succeeded")
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -565,11 +663,14 @@ Examples:
     stages = parser.add_argument_group("stages")
     stages.add_argument("--all", action="store_true", help="Run all stages")
     stages.add_argument("--download", action="store_true", help="Download datasets")
+    stages.add_argument("--download-dyslexia", action="store_true", help="Download dyslexia-specific datasets (Pedler, DysList)")
     stages.add_argument("--process", action="store_true", help="Process datasets")
     stages.add_argument("--combine", action="store_true", help="Combine datasets")
     stages.add_argument("--train", action="store_true", help="Train model")
     stages.add_argument("--evaluate", action="store_true", help="Evaluate model")
     stages.add_argument("--export", action="store_true", help="Export to ONNX")
+    stages.add_argument("--build-tokens", action="store_true", help="Build custom dyslexic token list for tokenizer")
+    stages.add_argument("--mine-hard", action="store_true", help="Mine hard examples after training for oversampled retraining")
 
     # Grammar support
     grammar = parser.add_argument_group("grammar")
@@ -579,6 +680,14 @@ Examples:
         help="Include grammar error data in training (seq2seq only). "
              "Generates synthetic grammar errors, processes GEC datasets, "
              "and mixes them with spelling data.",
+    )
+
+    # Data augmentation
+    augmentation = parser.add_argument_group("data augmentation")
+    augmentation.add_argument(
+        "--augment",
+        action="store_true",
+        help="Enable data augmentation during combine (multi-error injection + position shuffling)",
     )
 
     # Quality gates
@@ -619,8 +728,8 @@ Examples:
     training.add_argument(
         "--patience",
         type=int,
-        default=15,
-        help="Early stopping patience in eval steps (default: 15)",
+        default=25,
+        help="Early stopping patience in eval steps (default: 25)",
     )
 
     # Dataset parameters
@@ -634,8 +743,8 @@ Examples:
     dataset.add_argument(
         "--max-eval-samples",
         type=int,
-        default=2000,
-        help="Max eval samples during training, 0 = no cap (default: 2000)",
+        default=0,
+        help="Max eval samples during training, 0 = no cap (default: 0)",
     )
 
     # Export parameters
@@ -654,7 +763,13 @@ def main():
     args = parse_args()
 
     # If no stages specified, show help
-    stages = [args.download, args.process, args.combine, args.train, args.evaluate, args.export]
+    download_dyslexia = getattr(args, "download_dyslexia", False)
+    build_tokens = getattr(args, "build_tokens", False)
+    mine_hard = getattr(args, "mine_hard", False)
+    stages = [
+        args.download, download_dyslexia, args.process, args.combine,
+        args.train, args.evaluate, args.export, build_tokens, mine_hard,
+    ]
     if not args.all and not any(stages):
         logger.info("No stages specified. Use --all to run everything, or specify stages.")
         logger.info("Run with --help for usage information.")
@@ -667,6 +782,8 @@ def main():
         args.train = True
         args.evaluate = True
         args.export = True
+        download_dyslexia = True  # Always include dyslexia datasets in --all
+        build_tokens = True  # Build custom tokens in --all flow
 
     is_seq2seq = args.model_type == "seq2seq"
     include_grammar = args.grammar
@@ -698,6 +815,12 @@ def main():
         stage_results["download"] = success
         if not success and args.all:
             logger.warning("Download had failures, continuing with available data...")
+
+    if download_dyslexia:
+        success = stage_download_dyslexia()
+        stage_results["download_dyslexia"] = success
+        if not success:
+            logger.warning("Dyslexia dataset download had failures, continuing...")
 
     if args.process:
         if is_seq2seq:
@@ -736,6 +859,7 @@ def main():
             success = stage_combine_seq2seq(
                 target_total=target,
                 include_grammar=include_grammar,
+                augment=args.augment,
             )
         else:
             success = stage_combine(target_total=args.target_samples)
@@ -745,15 +869,22 @@ def main():
             _print_summary(stage_results)
             return
 
+    # Build custom tokens (after combine, before train)
+    if build_tokens and is_seq2seq:
+        success = stage_build_custom_tokens()
+        stage_results["build_tokens"] = success
+        if not success:
+            logger.warning("Custom token building failed, continuing without custom tokens...")
+
     if args.train:
         if is_seq2seq:
             # Use seq2seq defaults if user didn't override
-            model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "google/flan-t5-small"
-            # Use lower LR for better convergence on larger dataset
-            default_lr = 1e-4 if include_grammar else 1e-4
+            model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "google/flan-t5-base"
+            # Use lower LR for flan-t5-base
+            default_lr = 5e-5
             lr = args.lr if args.lr != 2e-5 else default_lr
-            # More epochs with early stopping for larger dataset
-            epochs = args.epochs if args.epochs != 5 else (12 if include_grammar else 8)
+            # More epochs with early stopping
+            epochs = args.epochs if args.epochs != 5 else 20
             success = stage_train_seq2seq(
                 model_name=model_name,
                 epochs=epochs,
@@ -782,6 +913,13 @@ def main():
         else:
             success = stage_evaluate()
         stage_results["evaluate"] = success
+
+    # Mine hard examples (after evaluate, before optional retrain)
+    if mine_hard and is_seq2seq:
+        success = stage_mine_hard_examples()
+        stage_results["mine_hard"] = success
+        if not success:
+            logger.warning("Hard example mining failed, continuing...")
 
     if args.export:
         if is_seq2seq:

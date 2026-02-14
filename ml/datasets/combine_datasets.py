@@ -17,15 +17,25 @@ logger = logging.getLogger(__name__)
 random.seed(42)
 
 # Default sampling weights by source (higher = more samples selected)
+# Rebalanced to prioritize dyslexia-specific spelling data over grammar
 SOURCE_WEIGHTS = {
-    "birkbeck": 0.18,
+    "birkbeck": 0.35,
     "wikipedia": 0.12,
     "aspell": 0.08,
-    "synthetic": 0.07,
+    "synthetic": 0.20,
     "github_typo": 0.05,
-    "grammar_synthetic": 0.15,
-    "mixed_synthetic": 0.30,
+    "pedler": 0.10,
+    "grammar_synthetic": 0.05,
+    "mixed_synthetic": 0.05,
 }
+
+# Error types that represent core dyslexic patterns — oversampled 2x
+DYSLEXIA_CORE_ERROR_TYPES = {
+    "phonetic", "reversal", "vowel_confusion", "homophone", "visual_similarity",
+}
+
+# Pattern files for augmentation (multi-error injection)
+PATTERNS_DIR = Path(__file__).parent.parent / "synthetic_data" / "patterns"
 
 
 def _load_jsonl(filepath: Path) -> list[dict[str, Any]]:
@@ -45,6 +55,159 @@ def _write_jsonl(samples: list[dict[str, Any]], filepath: Path) -> None:
     with open(filepath, "w") as f:
         for sample in samples:
             f.write(json.dumps(sample) + "\n")
+
+
+def _load_error_pairs() -> list[tuple[str, str]]:
+    """Load (correct, error) pairs from pattern files for augmentation."""
+    pairs: list[tuple[str, str]] = []
+    pattern_files = ["transpositions.json", "vowel_confusion.json", "visual_similarity.json", "omissions.json"]
+
+    for filename in pattern_files:
+        filepath = PATTERNS_DIR / filename
+        if not filepath.exists():
+            continue
+        with open(filepath) as f:
+            data = json.load(f)
+        examples_key = "common_examples" if "common_examples" in data else "examples"
+        for ex in data.get(examples_key, []):
+            correct = ex.get("correct", "")
+            error = ex.get("error", "")
+            if correct and error and correct.lower() != error.lower():
+                pairs.append((correct.lower(), error.lower()))
+
+    return pairs
+
+
+def augment_training_data(
+    samples: list[dict[str, Any]],
+    multi_error_ratio: float = 0.15,
+    position_shuffle_ratio: float = 0.10,
+) -> list[dict[str, Any]]:
+    """Augment training data with multi-error and position-varied samples.
+
+    Two strategies:
+    1. Multi-error injection: For a fraction of samples, inject a second random
+       error into a different word in the sentence.
+    2. Error position shuffling: Create variants with the same error word
+       at different positions in the sentence.
+
+    Args:
+        samples: Original training samples
+        multi_error_ratio: Fraction of samples to create multi-error variants for
+        position_shuffle_ratio: Fraction of samples to create position variants for
+
+    Returns:
+        Augmented samples (original + new variants)
+    """
+    error_pairs = _load_error_pairs()
+    if not error_pairs:
+        logger.warning("No error pairs loaded for augmentation, skipping")
+        return samples
+
+    # Build a lookup from correct word -> list of error variants
+    correct_to_errors: dict[str, list[str]] = {}
+    for correct, error in error_pairs:
+        correct_to_errors.setdefault(correct, []).append(error)
+
+    augmented: list[dict[str, Any]] = []
+    multi_error_count = 0
+    position_count = 0
+
+    # Strategy 1: Multi-error injection
+    n_multi = int(len(samples) * multi_error_ratio)
+    multi_candidates = random.sample(range(len(samples)), min(n_multi, len(samples)))
+
+    for idx in multi_candidates:
+        sample = samples[idx]
+        input_text = sample.get("input_text", "")
+        target_text = sample.get("target_text", "")
+
+        # Find a word in the target that has a known error variant
+        target_words = target_text.split()
+        injectable = [
+            (i, w) for i, w in enumerate(target_words)
+            if w.lower() in correct_to_errors
+        ]
+
+        if not injectable:
+            continue
+
+        # Pick a random word to inject an error into
+        word_idx, word = random.choice(injectable)
+        error_variant = random.choice(correct_to_errors[word.lower()])
+
+        # Apply the error to both input and keep target clean
+        input_words = input_text.split()
+        # Only inject if this word position exists and matches in input
+        if word_idx < len(input_words) and input_words[word_idx].lower() == word.lower():
+            new_input_words = list(input_words)
+            # Preserve original casing pattern
+            if word[0].isupper():
+                error_variant = error_variant.capitalize()
+            new_input_words[word_idx] = error_variant
+
+            new_sample = dict(sample)
+            new_sample["input_text"] = " ".join(new_input_words)
+            new_sample["error_type"] = sample.get("error_type", "unknown") + "+augmented"
+            new_sample["source"] = sample.get("source", "unknown")
+            augmented.append(new_sample)
+            multi_error_count += 1
+
+    # Strategy 2: Error position shuffling
+    # For samples where error word is near start/end, create a variant with it in middle
+    n_position = int(len(samples) * position_shuffle_ratio)
+    position_candidates = random.sample(range(len(samples)), min(n_position, len(samples)))
+
+    for idx in position_candidates:
+        sample = samples[idx]
+        input_text = sample.get("input_text", "")
+        target_text = sample.get("target_text", "")
+        input_words = input_text.split()
+        target_words = target_text.split()
+
+        min_len = min(len(input_words), len(target_words))
+        if min_len < 4:
+            continue
+
+        # Find differing words (the error)
+        diffs = [
+            i for i, (iw, tw) in enumerate(zip(input_words, target_words))
+            if iw.lower() != tw.lower()
+        ]
+        if not diffs or len(diffs) > 2:
+            continue
+
+        error_pos = diffs[0]
+
+        # Only shuffle if error is in first or last quarter
+        if min_len // 4 < error_pos < min_len * 3 // 4:
+            continue
+
+        # Swap the error word position with a word in the middle
+        mid = min_len // 2
+        if mid == error_pos:
+            continue
+
+        new_input = list(input_words)
+        new_target = list(target_words)
+        new_input[error_pos], new_input[mid] = new_input[mid], new_input[error_pos]
+        new_target[error_pos], new_target[mid] = new_target[mid], new_target[error_pos]
+
+        new_sample = dict(sample)
+        new_sample["input_text"] = " ".join(new_input)
+        new_sample["target_text"] = " ".join(new_target)
+        new_sample["error_type"] = sample.get("error_type", "unknown") + "+shuffled"
+        new_sample["source"] = sample.get("source", "unknown")
+        augmented.append(new_sample)
+        position_count += 1
+
+    logger.info(
+        f"Augmentation: +{multi_error_count} multi-error, "
+        f"+{position_count} position-shuffled "
+        f"({len(augmented)} total new samples)"
+    )
+
+    return samples + augmented
 
 
 def combine_and_split(
@@ -111,6 +274,7 @@ def combine_and_split_seq2seq(
     target_total: int = 80000,
     train_ratio: float = 0.875,
     val_ratio: float = 0.097,
+    augment: bool = False,
 ) -> dict[str, int]:
     """Combine seq2seq format datasets into train/val/test splits.
 
@@ -124,6 +288,7 @@ def combine_and_split_seq2seq(
         target_total: Target total number of samples
         train_ratio: Fraction for training set
         val_ratio: Fraction for validation set
+        augment: If True, apply data augmentation (multi-error + position shuffle)
 
     Returns:
         Dict mapping split name to sample count
@@ -196,12 +361,34 @@ def combine_and_split_seq2seq(
                 deficit -= take
                 logger.info(f"  {source_name}: added {take} more to fill target")
 
+    # Oversample core dyslexic error types 2x (phonetic, reversal, vowel, homophone, visual)
+    core_samples = [
+        s for s in all_samples
+        if s.get("error_type", "unknown") in DYSLEXIA_CORE_ERROR_TYPES
+    ]
+    if core_samples:
+        all_samples.extend(core_samples)  # duplicate = 2x total
+        logger.info(f"  Oversampled {len(core_samples)} core dyslexic error samples (2x)")
+
+    # Data augmentation (before cap, after oversampling)
+    if augment:
+        logger.info("Applying data augmentation...")
+        all_samples = augment_training_data(all_samples)
+
     # Cap at target
     if len(all_samples) > target_total:
         random.shuffle(all_samples)
         all_samples = all_samples[:target_total]
 
     logger.info(f"Combined dataset: {len(all_samples)} samples")
+
+    # Merge hard examples if they exist
+    hard_examples_file = output_dir / "hard_examples_seq2seq.jsonl"
+    if hard_examples_file.exists():
+        hard_samples = _load_jsonl(hard_examples_file)
+        if hard_samples:
+            all_samples.extend(hard_samples)
+            logger.info(f"  Added {len(hard_samples)} hard examples from previous mining")
 
     # Split into train/val/test
     random.shuffle(all_samples)
@@ -221,7 +408,10 @@ def combine_and_split_seq2seq(
 
     # Create curriculum phase splits for curriculum learning
     if has_grammar:
-        spelling_types = {"reversal", "transposition", "phonetic", "omission", "spelling"}
+        spelling_types = {
+            "reversal", "transposition", "phonetic", "omission", "spelling",
+            "vowel_confusion", "homophone", "visual_similarity",
+        }
         grammar_types_set = grammar_types
         mixed_types = {"mixed_multi_2", "mixed_multi_3", "mixed_multi_4", "mixed_single_long"}
 

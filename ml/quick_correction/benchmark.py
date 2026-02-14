@@ -96,6 +96,7 @@ def get_system_info() -> dict[str, str]:
     try:
         import onnxruntime as ort
         info["onnxruntime_version"] = ort.__version__
+        info["onnx_available_providers"] = ", ".join(ort.get_available_providers())
     except ImportError:
         info["onnxruntime_version"] = "not installed"
 
@@ -217,8 +218,19 @@ def pytorch_predict_sample(text: str, tokenizer: Any, model: Any) -> list[int]:
 # ONNX inference helpers
 # ---------------------------------------------------------------------------
 
-def load_onnx_model(onnx_dir: Path) -> tuple[Any, Any]:
-    """Load ONNX session and tokenizer. Returns (tokenizer, session)."""
+def load_onnx_model(
+    onnx_dir: Path,
+    provider: str = "CPUExecutionProvider",
+) -> tuple[Any, Any]:
+    """Load ONNX session and tokenizer.
+
+    Args:
+        onnx_dir: Path to ONNX model directory.
+        provider: ONNX execution provider to use.
+
+    Returns:
+        Tuple of (tokenizer, session).
+    """
     import onnxruntime as ort
     from transformers import AutoTokenizer
 
@@ -229,7 +241,7 @@ def load_onnx_model(onnx_dir: Path) -> tuple[Any, Any]:
 
     session = ort.InferenceSession(
         str(onnx_file),
-        providers=["CPUExecutionProvider"],
+        providers=[provider],
     )
     return tokenizer, session
 
@@ -832,12 +844,42 @@ def print_memory_results(results: dict[str, Any]) -> None:
 # Main benchmark runner
 # ---------------------------------------------------------------------------
 
+def _detect_onnx_providers(providers_arg: str | None) -> list[str]:
+    """Return the list of ONNX providers to benchmark.
+
+    If *providers_arg* is given (comma-separated), use that list.
+    Otherwise auto-detect all available providers.
+    """
+    try:
+        import onnxruntime as _ort
+        available = set(_ort.get_available_providers())
+    except ImportError:
+        return []
+
+    if providers_arg:
+        requested = [p.strip() for p in providers_arg.split(",") if p.strip()]
+        return [p for p in requested if p in available]
+
+    # Default priority order
+    priority = [
+        "CoreMLExecutionProvider",
+        "OpenVINOExecutionProvider",
+        "QNNExecutionProvider",
+        "VitisAIExecutionProvider",
+        "DmlExecutionProvider",
+        "CUDAExecutionProvider",
+        "CPUExecutionProvider",
+    ]
+    return [p for p in priority if p in available]
+
+
 def run_benchmarks(
     model_dir: Path,
     onnx_dir: Path,
     test_data_path: Path,
     onnx_only: bool = False,
     num_runs: int = 100,
+    providers_arg: str | None = None,
 ) -> dict[str, Any]:
     """Run all benchmarks and return a combined report.
 
@@ -847,6 +889,8 @@ def run_benchmarks(
         test_data_path: Path to test data JSONL
         onnx_only: If True, skip PyTorch benchmarks
         num_runs: Number of timed runs for latency benchmarks
+        providers_arg: Comma-separated list of ONNX providers to benchmark.
+            If None, auto-detects all available providers.
 
     Returns:
         Full benchmark report dictionary
@@ -934,86 +978,132 @@ def run_benchmarks(
         print_memory_results(pt_memory)
 
     # -----------------------------------------------------------------------
-    # ONNX benchmarks
+    # ONNX benchmarks — loop over available providers
     # -----------------------------------------------------------------------
-    onnx_available = False
-    onnx_tokenizer: Any = None
-    onnx_session: Any = None
-    try:
-        if not onnx_dir.exists():
-            logger.info(f"\n  ONNX model not found at {onnx_dir} -- skipping ONNX benchmarks")
-        else:
-            onnx_model_file = onnx_dir / "model.onnx"
-            if not onnx_model_file.exists():
-                logger.info(f"\n  ONNX file not found at {onnx_model_file} -- skipping ONNX benchmarks")
-            else:
-                logger.info(f"\n  Loading ONNX model from {onnx_dir}...")
-                onnx_tokenizer, onnx_session = load_onnx_model(onnx_dir)
-                onnx_available = True
-                logger.info("  ONNX model loaded successfully.")
-    except ImportError as e:
-        logger.info(f"\n  onnxruntime not available ({e}) -- skipping ONNX benchmarks")
-    except Exception as e:
-        logger.info(f"\n  Failed to load ONNX model: {e} -- skipping ONNX benchmarks")
+    onnx_model_file = onnx_dir / "model.onnx"
+    onnx_providers = _detect_onnx_providers(providers_arg) if onnx_model_file.exists() else []
+    if onnx_providers:
+        logger.info(f"\n  ONNX providers to benchmark: {', '.join(onnx_providers)}")
 
-    if onnx_available:
+    onnx_provider_results: dict[str, dict[str, Any]] = {}
+
+    for provider in onnx_providers:
+        short = provider.replace("ExecutionProvider", "").lower()
+        backend_label = f"onnx-{short}"
+
+        onnx_tokenizer: Any = None
+        onnx_session: Any = None
+        try:
+            logger.info(f"\n  Loading ONNX model with {provider}...")
+            onnx_tokenizer, onnx_session = load_onnx_model(onnx_dir, provider=provider)
+            logger.info(f"  ONNX model loaded successfully ({backend_label}).")
+        except ImportError as e:
+            logger.info(f"\n  onnxruntime not available ({e}) -- skipping {provider}")
+            continue
+        except Exception as e:
+            logger.info(f"\n  Failed to load ONNX model with {provider}: {e} -- skipping")
+            continue
+
+        result: dict[str, Any] = {}
+
         # Latency
-        logger.info(f"\n  Running ONNX latency benchmark ({num_runs} runs)...")
-        onnx_latency = benchmark_latency(onnx_tokenizer, onnx_session, "onnx", num_runs=num_runs)  # type: ignore[possibly-undefined]
-        report["onnx_latency"] = onnx_latency
-        print_latency_results(onnx_latency, "onnx")
+        logger.info(f"\n  Running {backend_label} latency benchmark ({num_runs} runs)...")
+        onnx_latency = benchmark_latency(onnx_tokenizer, onnx_session, "onnx", num_runs=num_runs)
+        result["latency"] = onnx_latency
+        report[f"{backend_label}_latency"] = onnx_latency
+        print_latency_results(onnx_latency, backend_label)
 
         # Throughput
-        logger.info(f"\n  Running ONNX throughput benchmark...")
-        onnx_throughput = benchmark_throughput(onnx_tokenizer, onnx_session, "onnx", num_runs=min(num_runs, 50))  # type: ignore[possibly-undefined]
-        report["onnx_throughput"] = onnx_throughput
-        print_throughput_results(onnx_throughput, "onnx")
+        logger.info(f"\n  Running {backend_label} throughput benchmark...")
+        onnx_throughput = benchmark_throughput(onnx_tokenizer, onnx_session, "onnx", num_runs=min(num_runs, 50))
+        result["throughput"] = onnx_throughput
+        report[f"{backend_label}_throughput"] = onnx_throughput
+        print_throughput_results(onnx_throughput, backend_label)
 
         # Accuracy
         if test_data:
-            logger.info(f"\n  Running ONNX accuracy benchmark ({len(test_data)} samples)...")
-            onnx_accuracy = benchmark_accuracy(test_data, onnx_tokenizer, onnx_session, "onnx")  # type: ignore[possibly-undefined]
-            report["onnx_accuracy"] = onnx_accuracy
-            print_accuracy_results(onnx_accuracy, "onnx")
+            logger.info(f"\n  Running {backend_label} accuracy benchmark ({len(test_data)} samples)...")
+            onnx_accuracy = benchmark_accuracy(test_data, onnx_tokenizer, onnx_session, "onnx")
+            result["accuracy"] = onnx_accuracy
+            report[f"{backend_label}_accuracy"] = onnx_accuracy
+            print_accuracy_results(onnx_accuracy, backend_label)
 
         # Memory
-        logger.info(f"\n  Running ONNX memory benchmark...")
-        onnx_memory = benchmark_memory(model_dir, onnx_dir, onnx_tokenizer, onnx_session, "onnx")  # type: ignore[possibly-undefined]
-        report["onnx_memory"] = onnx_memory
+        logger.info(f"\n  Running {backend_label} memory benchmark...")
+        onnx_memory = benchmark_memory(model_dir, onnx_dir, onnx_tokenizer, onnx_session, "onnx")
+        result["memory"] = onnx_memory
+        report[f"{backend_label}_memory"] = onnx_memory
         print_memory_results(onnx_memory)
 
+        onnx_provider_results[backend_label] = result
+
+    # Backward-compat keys for default CPU provider
+    if "onnx-cpu" in onnx_provider_results:
+        for key in ("latency", "throughput", "accuracy", "memory"):
+            if key in onnx_provider_results["onnx-cpu"]:
+                report[f"onnx_{key}"] = onnx_provider_results["onnx-cpu"][key]
+
+    onnx_available = len(onnx_provider_results) > 0
+
     # -----------------------------------------------------------------------
-    # Comparison table (if both backends available)
+    # Comparison table (PyTorch vs first ONNX provider)
     # -----------------------------------------------------------------------
-    if pytorch_available and onnx_available:
+    first_onnx = next(iter(onnx_provider_results), None)
+    if pytorch_available and first_onnx is not None:
         logger.info("")
-        headers = ["Metric", "PyTorch", "ONNX", "Speedup"]
+        headers = ["Metric", "PyTorch", first_onnx, "Speedup"]
         rows = []
 
         pt_avg = report["pytorch_latency"]["total"]["avg_ms"]
-        ox_avg = report["onnx_latency"]["total"]["avg_ms"]
+        ox_avg = onnx_provider_results[first_onnx]["latency"]["total"]["avg_ms"]
         speedup = pt_avg / ox_avg if ox_avg > 0 else 0
         rows.append(["Avg latency (ms)", f"{pt_avg:.3f}", f"{ox_avg:.3f}", f"{speedup:.2f}x"])
 
         pt_p95 = report["pytorch_latency"]["total"]["p95_ms"]
-        ox_p95 = report["onnx_latency"]["total"]["p95_ms"]
+        ox_p95 = onnx_provider_results[first_onnx]["latency"]["total"]["p95_ms"]
         speedup_p95 = pt_p95 / ox_p95 if ox_p95 > 0 else 0
         rows.append(["P95 latency (ms)", f"{pt_p95:.3f}", f"{ox_p95:.3f}", f"{speedup_p95:.2f}x"])
 
         # Medium sentence throughput
-        if "medium_20w" in report.get("pytorch_throughput", {}) and "medium_20w" in report.get("onnx_throughput", {}):
-            pt_sps = report["pytorch_throughput"]["medium_20w"]["sentences_per_second"]
-            ox_sps = report["onnx_throughput"]["medium_20w"]["sentences_per_second"]
+        pt_thr = report.get("pytorch_throughput", {}).get("medium_20w")
+        ox_thr = onnx_provider_results[first_onnx].get("throughput", {}).get("medium_20w")
+        if pt_thr and ox_thr:
+            pt_sps = pt_thr["sentences_per_second"]
+            ox_sps = ox_thr["sentences_per_second"]
             tp_ratio = ox_sps / pt_sps if pt_sps > 0 else 0
             rows.append(["Throughput 20w (sent/s)", f"{pt_sps:.1f}", f"{ox_sps:.1f}", f"{tp_ratio:.2f}x"])
 
         # Accuracy comparison
-        if "pytorch_accuracy" in report and "onnx_accuracy" in report:
-            pt_f1 = report["pytorch_accuracy"]["overall"]["f1"]
-            ox_f1 = report["onnx_accuracy"]["overall"]["f1"]
+        pt_acc = report.get("pytorch_accuracy", {}).get("overall", {})
+        ox_acc = onnx_provider_results[first_onnx].get("accuracy", {}).get("overall", {})
+        if pt_acc and ox_acc:
+            pt_f1 = pt_acc.get("f1", 0)
+            ox_f1 = ox_acc.get("f1", 0)
             rows.append(["F1 score", f"{pt_f1:.6f}", f"{ox_f1:.6f}", "N/A"])
 
-        logger.info(format_table(headers, rows, "PyTorch vs ONNX Comparison"))
+        logger.info(format_table(headers, rows, f"PyTorch vs {first_onnx} Comparison"))
+
+    # -----------------------------------------------------------------------
+    # Provider-vs-provider comparison (when multiple ONNX providers)
+    # -----------------------------------------------------------------------
+    provider_keys = list(onnx_provider_results.keys())
+    if len(provider_keys) >= 2:
+        base_key = provider_keys[0]
+        base_avg = onnx_provider_results[base_key]["latency"]["total"]["avg_ms"]
+
+        headers = ["Metric"] + provider_keys
+        avg_row = ["Avg latency (ms)"]
+        p95_row = ["P95 latency (ms)"]
+        ratio_row = ["Ratio vs " + base_key]
+
+        for pk in provider_keys:
+            lat = onnx_provider_results[pk]["latency"]["total"]
+            avg_row.append(f"{lat['avg_ms']:.3f}")
+            p95_row.append(f"{lat['p95_ms']:.3f}")
+            ratio = base_avg / lat["avg_ms"] if lat["avg_ms"] > 0 else 0
+            ratio_row.append(f"{ratio:.2f}x")
+
+        logger.info(format_table(headers, [avg_row, p95_row, ratio_row], "Provider Comparison"))
 
     # -----------------------------------------------------------------------
     # Warnings and summary
@@ -1109,6 +1199,15 @@ def parse_args() -> argparse.Namespace:
             "(default: <model-dir>/benchmark_report.json)"
         ),
     )
+    parser.add_argument(
+        "--providers",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated ONNX providers to benchmark "
+            "(default: auto-detect all available)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1126,6 +1225,7 @@ def main() -> None:
         test_data_path=test_data_path,
         onnx_only=args.onnx_only,
         num_runs=args.runs,
+        providers_arg=args.providers,
     )
 
     # Determine output path

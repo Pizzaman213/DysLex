@@ -62,17 +62,21 @@ def generate_prediction(
     tokenizer: Any,
     model: Any,
     max_length: int = MAX_LENGTH,
+    num_beams: int = 1,
+    confidence_threshold: float = 0.0,
 ) -> str:
     """Run seq2seq inference on a single input and return generated text.
 
     Args:
-        input_text: Input text (with "correct: " prefix)
+        input_text: Input text
         tokenizer: Tokenizer instance
         model: Model instance
         max_length: Maximum generation length
+        num_beams: Number of beams for beam search (1 = greedy)
+        confidence_threshold: Min confidence to apply correction (0.0 = disabled)
 
     Returns:
-        Generated corrected text
+        Generated corrected text (or original if below confidence threshold)
     """
     inputs = tokenizer(
         input_text,
@@ -82,14 +86,44 @@ def generate_prediction(
     )
     inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_length=max_length,
-            num_beams=1,  # Greedy decode for speed
-        )
+    use_confidence = confidence_threshold > 0.0
 
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    with torch.no_grad():
+        if use_confidence:
+            outputs = model.generate(
+                **inputs,
+                max_length=max_length,
+                num_beams=num_beams,
+                output_scores=True,
+                return_dict_in_generate=True,
+            )
+            sequences = outputs.sequences
+            scores = outputs.scores  # tuple of (vocab_size,) tensors per step
+
+            # Compute sequence-level confidence
+            log_probs = []
+            for step_idx, step_scores in enumerate(scores):
+                token_id = sequences[0, step_idx + 1]  # +1 for decoder_start_token
+                step_log_probs = torch.nn.functional.log_softmax(step_scores[0], dim=-1)
+                log_probs.append(step_log_probs[token_id].item())
+
+            if log_probs:
+                avg_log_prob = sum(log_probs) / len(log_probs)
+                confidence = np.exp(avg_log_prob)
+            else:
+                confidence = 0.0
+
+            if confidence < confidence_threshold:
+                return input_text  # Safe passthrough
+
+            return tokenizer.decode(sequences[0], skip_special_tokens=True)
+        else:
+            outputs = model.generate(
+                **inputs,
+                max_length=max_length,
+                num_beams=num_beams,
+            )
+            return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 
 def generate_predictions_batched(
@@ -98,20 +132,25 @@ def generate_predictions_batched(
     model: Any,
     max_length: int = MAX_LENGTH,
     batch_size: int = 64,
+    num_beams: int = 1,
+    confidence_threshold: float = 0.0,
 ) -> list[str]:
     """Run batched seq2seq inference and return generated texts.
 
     Args:
-        input_texts: List of input texts (with "correct: " prefix)
+        input_texts: List of input texts
         tokenizer: Tokenizer instance
         model: Model instance
         max_length: Maximum generation length
         batch_size: Number of samples per batch
+        num_beams: Number of beams for beam search (1 = greedy)
+        confidence_threshold: Min confidence to apply correction (0.0 = disabled)
 
     Returns:
         List of generated corrected texts
     """
     all_predictions: list[str] = []
+    use_confidence = confidence_threshold > 0.0
 
     for i in range(0, len(input_texts), batch_size):
         batch_texts = input_texts[i : i + batch_size]
@@ -125,14 +164,49 @@ def generate_predictions_batched(
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_length=max_length,
-                num_beams=1,
-            )
+            if use_confidence:
+                outputs = model.generate(
+                    **inputs,
+                    max_length=max_length,
+                    num_beams=num_beams,
+                    output_scores=True,
+                    return_dict_in_generate=True,
+                )
+                sequences = outputs.sequences
+                scores = outputs.scores
 
-        decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        all_predictions.extend(decoded)
+                decoded = tokenizer.batch_decode(sequences, skip_special_tokens=True)
+
+                # Compute per-sequence confidence
+                for seq_idx in range(len(batch_texts)):
+                    log_probs = []
+                    for step_idx, step_scores in enumerate(scores):
+                        if step_idx + 1 >= sequences.shape[1]:
+                            break
+                        token_id = sequences[seq_idx, step_idx + 1]
+                        step_log_probs = torch.nn.functional.log_softmax(
+                            step_scores[seq_idx], dim=-1
+                        )
+                        log_probs.append(step_log_probs[token_id].item())
+
+                    if log_probs:
+                        avg_log_prob = sum(log_probs) / len(log_probs)
+                        confidence = np.exp(avg_log_prob)
+                    else:
+                        confidence = 0.0
+
+                    if confidence < confidence_threshold:
+                        all_predictions.append(batch_texts[seq_idx])
+                    else:
+                        all_predictions.append(decoded[seq_idx])
+            else:
+                outputs = model.generate(
+                    **inputs,
+                    max_length=max_length,
+                    num_beams=num_beams,
+                )
+                decoded = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                all_predictions.extend(decoded)
 
     return all_predictions
 
@@ -262,6 +336,7 @@ def evaluate_seq2seq_model(
     spelling_test_file: Path | None = None,
     grammar_test_file: Path | None = None,
     gate: bool = False,
+    confidence_threshold: float = 0.0,
 ) -> dict[str, Any]:
     """Evaluate the trained seq2seq model on test data.
 
@@ -272,6 +347,8 @@ def evaluate_seq2seq_model(
         latency_samples: Number of samples for latency benchmark
         spelling_test_file: Optional spelling-only test file for regression check
         grammar_test_file: Optional grammar-only test file
+        gate: If True, fail if quality thresholds are not met
+        confidence_threshold: Min confidence to apply correction (0.0 = disabled)
 
     Returns:
         Evaluation results dictionary
@@ -323,9 +400,20 @@ def evaluate_seq2seq_model(
         "word_order", "run_on", "pronoun_case", "grammar",
     }
 
+    # Strip legacy "correct: " prefix from input texts
+    for s in samples:
+        if s["input_text"].startswith("correct: "):
+            s["input_text"] = s["input_text"][len("correct: "):]
+
+    if confidence_threshold > 0.0:
+        logger.info(f"Confidence threshold: {confidence_threshold}")
+
     logger.info(f"Running batched inference on {len(samples)} test samples...")
     all_input_texts = [s["input_text"] for s in samples]
-    all_predictions = generate_predictions_batched(all_input_texts, tokenizer, model)
+    all_predictions = generate_predictions_batched(
+        all_input_texts, tokenizer, model,
+        confidence_threshold=confidence_threshold,
+    )
     all_targets = [s["target_text"] for s in samples]
 
     # Build metadata tracking from predictions
@@ -337,7 +425,7 @@ def evaluate_seq2seq_model(
         error_type = sample.get("error_type", "unknown")
 
         # Track no-change (passthrough) accuracy
-        raw_input = input_text.removeprefix("correct: ").strip()
+        raw_input = input_text.strip()
         if raw_input == target_text.strip():
             no_change_predictions.append(prediction)
             no_change_inputs.append(raw_input)
@@ -425,8 +513,14 @@ def evaluate_seq2seq_model(
     if spelling_test_file and spelling_test_file.exists():
         logger.info(f"\n--- Spelling Regression Check ({spelling_test_file.name}) ---")
         spelling_samples = load_test_data(spelling_test_file)
+        for s in spelling_samples:
+            if s["input_text"].startswith("correct: "):
+                s["input_text"] = s["input_text"][len("correct: "):]
         sp_input_texts = [s["input_text"] for s in spelling_samples]
-        sp_preds = generate_predictions_batched(sp_input_texts, tokenizer, model)
+        sp_preds = generate_predictions_batched(
+            sp_input_texts, tokenizer, model,
+            confidence_threshold=confidence_threshold,
+        )
         sp_tgts = [s["target_text"] for s in spelling_samples]
         sp_metrics = _compute_metrics(sp_preds, sp_tgts)
         results["spelling_regression"] = sp_metrics
@@ -439,8 +533,14 @@ def evaluate_seq2seq_model(
     if grammar_test_file and grammar_test_file.exists():
         logger.info(f"\n--- Grammar-Only Evaluation ({grammar_test_file.name}) ---")
         grammar_samples = load_test_data(grammar_test_file)
+        for s in grammar_samples:
+            if s["input_text"].startswith("correct: "):
+                s["input_text"] = s["input_text"][len("correct: "):]
         gr_input_texts = [s["input_text"] for s in grammar_samples]
-        gr_preds = generate_predictions_batched(gr_input_texts, tokenizer, model)
+        gr_preds = generate_predictions_batched(
+            gr_input_texts, tokenizer, model,
+            confidence_threshold=confidence_threshold,
+        )
         gr_tgts = [s["target_text"] for s in grammar_samples]
         gr_per_type: dict[str, dict[str, list[str]]] = {}
         for i, sample in enumerate(grammar_samples):
@@ -489,8 +589,14 @@ def evaluate_seq2seq_model(
         if sfile.exists():
             logger.info(f"\n--- Stratified: {stype} ({sfile.name}) ---")
             s_samples = load_test_data(sfile)
+            for s in s_samples:
+                if s["input_text"].startswith("correct: "):
+                    s["input_text"] = s["input_text"][len("correct: "):]
             s_input_texts = [s["input_text"] for s in s_samples]
-            s_preds = generate_predictions_batched(s_input_texts, tokenizer, model)
+            s_preds = generate_predictions_batched(
+                s_input_texts, tokenizer, model,
+                confidence_threshold=confidence_threshold,
+            )
             s_tgts = [s["target_text"] for s in s_samples]
             s_metrics = _compute_metrics(s_preds, s_tgts)
             results["stratified"][stype] = s_metrics
@@ -634,6 +740,19 @@ def main():
         action="store_true",
         help="Enable regression gate: fail if spelling < 95%%, grammar < 85%%, or P95 > 200ms",
     )
+    parser.add_argument(
+        "--beam",
+        type=int,
+        default=1,
+        help="Number of beams for beam search (default: 1 = greedy)",
+    )
+    parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.0,
+        help="Min confidence to apply correction; below threshold returns input unchanged "
+             "(default: 0.0 = disabled, suggested: 0.7-0.85)",
+    )
     args = parser.parse_args()
 
     model_dir = Path(args.model) if args.model else MODEL_DIR
@@ -662,6 +781,7 @@ def main():
         spelling_test_file=spelling_test,
         grammar_test_file=grammar_test,
         gate=args.gate,
+        confidence_threshold=args.confidence_threshold,
     )
 
     # Exit with non-zero code if gate fails

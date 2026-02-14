@@ -366,6 +366,7 @@ def train_model(
         dataloader_num_workers=4 if use_cuda else 0,
         dataloader_pin_memory=use_cuda,
         torch_compile=True,
+        report_to="none",
     )
 
     # Data collator

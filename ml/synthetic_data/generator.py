@@ -47,6 +47,12 @@ class SyntheticDataGenerator:
         self.phonetic = self._load_pattern("phonetic.json")
         self.transpositions = self._load_pattern("transpositions.json")
         self.omissions = self._load_pattern("omissions.json")
+        self.vowel_confusion = self._load_pattern("vowel_confusion.json")
+        self.visual_similarity = self._load_pattern("visual_similarity.json")
+        self.homophones = self._load_pattern("homophones.json")
+
+        # Load confusion pairs from the main database
+        self.confusion_pairs = self._load_confusion_pairs()
 
     def _load_pattern(self, filename: str) -> dict[str, Any]:
         """Load error pattern from JSON file."""
@@ -55,6 +61,47 @@ class SyntheticDataGenerator:
             return {"patterns": []}
         with open(filepath) as f:
             return json.load(f)
+
+    def _load_confusion_pairs(self) -> dict[str, list[str]]:
+        """Load confusion pairs from en.json and homophones pattern file.
+
+        Returns:
+            Dict mapping each word to its possible confusions.
+        """
+        pairs: dict[str, list[str]] = {}
+
+        # Load from ml/confusion_pairs/en.json
+        en_path = Path(__file__).parent.parent / "confusion_pairs" / "en.json"
+        if en_path.exists():
+            with open(en_path) as f:
+                data = json.load(f)
+            for entry in data.get("pairs", []):
+                words = entry.get("words", [])
+                for i, word in enumerate(words):
+                    others = [w for j, w in enumerate(words) if j != i]
+                    if word in pairs:
+                        pairs[word].extend(o for o in others if o not in pairs[word])
+                    else:
+                        pairs[word] = others
+
+        # Load from homophones pattern file
+        for sub in self.homophones.get("high_frequency_substitutions", []):
+            correct = sub["correct"]
+            errors = sub.get("errors", [])
+            if correct in pairs:
+                pairs[correct].extend(e for e in errors if e not in pairs[correct])
+            else:
+                pairs[correct] = list(errors)
+
+        for sub in self.homophones.get("pedler_confused_words", []):
+            correct = sub["correct"]
+            errors = sub.get("errors", [])
+            if correct in pairs:
+                pairs[correct].extend(e for e in errors if e not in pairs[correct])
+            else:
+                pairs[correct] = list(errors)
+
+        return pairs
 
     def apply_letter_reversal(
         self, word: str, probability: float = 0.3
@@ -165,6 +212,115 @@ class SyntheticDataGenerator:
 
         return word, False
 
+    def apply_vowel_confusion(
+        self, word: str, probability: float = 0.25
+    ) -> tuple[str, bool]:
+        """Apply vowel confusion error (separate→seperate, definite→definate).
+
+        Args:
+            word: Original word
+            probability: Chance of applying vowel confusion
+
+        Returns:
+            Tuple of (modified_word, was_changed)
+        """
+        if random.random() > probability or len(word) < 3:
+            return word, False
+
+        # Check common examples first
+        examples = self.vowel_confusion.get("common_examples", [])
+        for example in examples:
+            if word.lower() == example["correct"]:
+                if random.random() < 0.8:
+                    error = example["error"]
+                    if word[0].isupper():
+                        error = error[0].upper() + error[1:]
+                    return error, True
+
+        # Apply pattern-based vowel substitution
+        patterns = self.vowel_confusion.get("patterns", [])
+        for pattern in patterns:
+            from_str = pattern["from"]
+            to_str = pattern["to"]
+            if from_str in word.lower() and random.random() < pattern.get("frequency", 0.15):
+                new_word = word.lower().replace(from_str, to_str, 1)
+                if word[0].isupper() and new_word:
+                    new_word = new_word[0].upper() + new_word[1:]
+                if new_word != word.lower():
+                    return new_word, True
+
+        return word, False
+
+    def apply_homophone_substitution(
+        self, word: str, probability: float = 0.20
+    ) -> tuple[str, bool]:
+        """Apply homophone substitution (their→there, your→you're).
+
+        Uses the confusion pairs database loaded from en.json.
+
+        Args:
+            word: Original word
+            probability: Chance of applying substitution
+
+        Returns:
+            Tuple of (modified_word, was_changed)
+        """
+        if random.random() > probability:
+            return word, False
+
+        word_lower = word.lower().rstrip(".,!?;:'\"")
+        if word_lower in self.confusion_pairs:
+            alternatives = self.confusion_pairs[word_lower]
+            if alternatives:
+                replacement = random.choice(alternatives)
+                # Preserve case
+                if word[0].isupper():
+                    replacement = replacement[0].upper() + replacement[1:]
+                return replacement, True
+
+        return word, False
+
+    def apply_visual_similarity(
+        self, word: str, probability: float = 0.15
+    ) -> tuple[str, bool]:
+        """Apply visual similarity error (burn→bum, corner→comer).
+
+        Letters and letter combinations that look alike in common fonts.
+
+        Args:
+            word: Original word
+            probability: Chance of applying visual similarity error
+
+        Returns:
+            Tuple of (modified_word, was_changed)
+        """
+        if random.random() > probability or len(word) < 3:
+            return word, False
+
+        # Check common examples first
+        examples = self.visual_similarity.get("common_examples", [])
+        for example in examples:
+            if word.lower() == example["correct"]:
+                if random.random() < 0.7:
+                    error = example["error"]
+                    if word[0].isupper():
+                        error = error[0].upper() + error[1:]
+                    return error, True
+
+        # Apply pattern-based substitution
+        patterns = self.visual_similarity.get("patterns", [])
+        for pattern in patterns:
+            from_str = pattern["from"]
+            to_str = pattern["to"]
+            if from_str in word.lower() and random.random() < pattern.get("frequency", 0.10):
+                new_word = word.lower().replace(from_str, to_str, 1)
+                if word[0].isupper() and new_word:
+                    new_word = new_word[0].upper() + new_word[1:]
+                if new_word != word.lower():
+                    return new_word, True
+
+        return word, False
+
     def apply_error_patterns(self, text: str) -> tuple[str, list[dict[str, Any]]]:
         """Apply multiple error patterns to text.
 
@@ -192,20 +348,29 @@ class SyntheticDataGenerator:
             error_type = None
             changed = False
 
-            # Apply one random error type
+            # Apply one random error type with updated distribution
             error_choice = random.random()
-            if error_choice < 0.3:
+            if error_choice < 0.15:
                 core, changed = self.apply_letter_reversal(core)
                 error_type = "reversal"
-            elif error_choice < 0.52:
+            elif error_choice < 0.35:
                 core, changed = self.apply_transposition(core)
                 error_type = "transposition"
-            elif error_choice < 0.8:
+            elif error_choice < 0.55:
                 core, changed = self.apply_phonetic_substitution(core)
                 error_type = "phonetic"
-            elif error_choice < 0.96:
+            elif error_choice < 0.65:
                 core, changed = self.apply_omission(core)
                 error_type = "omission"
+            elif error_choice < 0.80:
+                core, changed = self.apply_vowel_confusion(core)
+                error_type = "vowel_confusion"
+            elif error_choice < 0.90:
+                core, changed = self.apply_homophone_substitution(core)
+                error_type = "homophone"
+            elif error_choice < 1.0:
+                core, changed = self.apply_visual_similarity(core)
+                error_type = "visual_similarity"
 
             if changed and core != original_core:
                 # Calculate exact position in text
@@ -332,7 +497,7 @@ class SyntheticDataGenerator:
                 continue
 
             samples.append({
-                "input_text": f"correct: {spelling_error_text}",
+                "input_text": spelling_error_text,
                 "target_text": clean_text,
                 "error_type": f"mixed_{grammar_type}",
                 "source": "synthetic_mixed",
@@ -414,7 +579,7 @@ class SyntheticDataGenerator:
 
             if error_types and error_text != sentence:
                 samples.append({
-                    "input_text": f"correct: {error_text}",
+                    "input_text": error_text,
                     "target_text": sentence,
                     "error_type": f"mixed_multi_{len(error_types)}",
                     "source": "synthetic_mixed",
@@ -435,7 +600,7 @@ class SyntheticDataGenerator:
                 modified, corrections = self.apply_error_patterns(long_sentence)
                 if corrections:
                     samples.append({
-                        "input_text": f"correct: {modified}",
+                        "input_text": modified,
                         "target_text": long_sentence,
                         "error_type": "mixed_single_long",
                         "source": "synthetic_mixed",
@@ -446,7 +611,7 @@ class SyntheticDataGenerator:
                 )
                 if etype is not None and modified != long_sentence:
                     samples.append({
-                        "input_text": f"correct: {modified}",
+                        "input_text": modified,
                         "target_text": long_sentence,
                         "error_type": "mixed_single_long",
                         "source": "synthetic_mixed",

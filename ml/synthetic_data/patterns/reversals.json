@@ -1,13 +1,21 @@
 {
-  "description": "Letter reversal patterns common in dyslexia",
+  "description": "Letter reversal patterns common in dyslexia — visually similar letters that get swapped",
   "patterns": [
-    {"from": "b", "to": "d", "frequency": 0.3},
-    {"from": "d", "to": "b", "frequency": 0.3},
-    {"from": "p", "to": "q", "frequency": 0.2},
-    {"from": "q", "to": "p", "frequency": 0.2},
-    {"from": "m", "to": "w", "frequency": 0.1},
-    {"from": "w", "to": "m", "frequency": 0.1},
+    {"from": "b", "to": "d", "frequency": 0.30},
+    {"from": "d", "to": "b", "frequency": 0.30},
+    {"from": "p", "to": "q", "frequency": 0.20},
+    {"from": "q", "to": "p", "frequency": 0.20},
+    {"from": "m", "to": "w", "frequency": 0.10},
+    {"from": "w", "to": "m", "frequency": 0.10},
     {"from": "n", "to": "u", "frequency": 0.15},
-    {"from": "u", "to": "n", "frequency": 0.15}
+    {"from": "u", "to": "n", "frequency": 0.15},
+    {"from": "s", "to": "z", "frequency": 0.08},
+    {"from": "z", "to": "s", "frequency": 0.08},
+    {"from": "g", "to": "j", "frequency": 0.06},
+    {"from": "j", "to": "g", "frequency": 0.06},
+    {"from": "h", "to": "n", "frequency": 0.05},
+    {"from": "n", "to": "h", "frequency": 0.05},
+    {"from": "a", "to": "e", "frequency": 0.08},
+    {"from": "e", "to": "a", "frequency": 0.08}
   ]
 }

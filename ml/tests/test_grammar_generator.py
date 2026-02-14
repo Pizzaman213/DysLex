@@ -171,7 +171,8 @@ class TestGenerateTrainingPairs:
             assert "target_text" in sample
             assert "error_type" in sample
             assert "source" in sample
-            assert sample["input_text"].startswith("correct: ")
+            assert isinstance(sample["input_text"], str)
+            assert len(sample["input_text"]) > 0
 
     def test_includes_passthrough(self, generator):
         """Should include no-error passthrough samples."""
@@ -182,14 +183,13 @@ class TestGenerateTrainingPairs:
         assert len(passthrough) > 0, "Should include passthrough samples"
 
     def test_passthrough_input_equals_target(self, generator):
-        """Passthrough samples should have input_text == target_text (minus prefix)."""
+        """Passthrough samples should have input_text == target_text."""
         samples = generator.generate_training_pairs(
             num_samples=100, include_passthrough=0.3
         )
         for sample in samples:
             if sample["error_type"] == "none":
-                raw_input = sample["input_text"].removeprefix("correct: ")
-                assert raw_input == sample["target_text"]
+                assert sample["input_text"] == sample["target_text"]
 
     def test_writes_to_file(self, generator, tmp_path):
         """Should write JSONL output to file."""

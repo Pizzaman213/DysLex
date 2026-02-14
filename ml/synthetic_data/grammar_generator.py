@@ -602,7 +602,7 @@ class GrammarErrorGenerator:
                 continue
 
             samples.append({
-                "input_text": f"correct: {error_text}",
+                "input_text": error_text,
                 "target_text": clean_text,
                 "error_type": error_type,
                 "source": "synthetic_grammar",
@@ -615,7 +615,7 @@ class GrammarErrorGenerator:
         for i in range(passthrough_count):
             sentence = random.choice(corpus)
             samples.append({
-                "input_text": f"correct: {sentence}",
+                "input_text": sentence,
                 "target_text": sentence,
                 "error_type": "none",
                 "source": "synthetic_grammar_passthrough",
