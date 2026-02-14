@@ -1,7 +1,9 @@
 """API dependencies — DB sessions and JWT authentication."""
 
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status

@@ -1,363 +1,320 @@
 {
   "system_info": {
-    "python_version": "3.12.7",
-    "platform": "macOS-26.1-arm64-arm-64bit",
-    "processor": "arm",
-    "machine": "arm64",
-    "pytorch_version": "2.6.0",
-    "mps_available": "True",
-    "cuda_available": "False",
-    "onnxruntime_version": "1.22.1",
-    "onnx_available_providers": "CoreMLExecutionProvider, AzureExecutionProvider, CPUExecutionProvider",
-    "transformers_version": "4.46.3"
+    "python_version": "3.10.12",
+    "platform": "Linux-6.8.0-94-generic-x86_64-with-glibc2.35",
+    "processor": "x86_64",
+    "machine": "x86_64",
+    "pytorch_version": "2.3.0a0+6ddf5cf85e.nv24.04",
+    "mps_available": "False",
+    "cuda_available": "True",
+    "onnxruntime_version": "1.23.2",
+    "onnx_available_providers": "AzureExecutionProvider, CPUExecutionProvider",
+    "transformers_version": "4.48.3"
   },
   "config": {
-    "pytorch_model_dir": "/Users/connorsecrist/Dyslexia/ml/quick_correction/models/quick_correction_seq2seq_v1",
-    "onnx_model_dir": "/Users/connorsecrist/Dyslexia/ml/models/quick_correction_seq2seq_v1",
-    "test_data_dir": "/Users/connorsecrist/Dyslexia/ml/quick_correction/data",
-    "onnx_only": true,
+    "pytorch_model_dir": "/root/DysLex/ml/quick_correction/models/quick_correction_seq2seq_v1",
+    "onnx_model_dir": "/root/DysLex/ml/models/quick_correction_seq2seq_v1",
+    "test_data_dir": "/root/DysLex/ml/quick_correction/data",
+    "onnx_only": false,
     "num_runs": 50,
     "max_length": 128
   },
-  "timestamp": "2026-02-13T23:09:00",
-  "onnx-cpu_accuracy": {
+  "timestamp": "2026-02-14T16:45:36",
+  "pytorch_accuracy": {
     "overall": {
-      "exact_match": 0.6857,
-      "wer": 0.0478,
-      "cer": 0.0292,
-      "num_samples": 5040
+      "exact_match": 0.9012,
+      "wer": 0.0106,
+      "cer": 0.0079,
+      "num_samples": 1681
     },
-    "no_change_accuracy": 0.9862,
-    "no_change_samples": 799,
+    "no_change_accuracy": 0.9955,
+    "no_change_samples": 221,
     "per_source": {
       "aspell": {
-        "exact_match": 0.9481,
-        "wer": 0.0049,
-        "cer": 0.0021,
-        "num_samples": 77
+        "exact_match": 0.7419,
+        "wer": 0.0285,
+        "cer": 0.03,
+        "num_samples": 31
       },
       "birkbeck": {
-        "exact_match": 0.7187,
-        "wer": 0.0261,
-        "cer": 0.0108,
-        "num_samples": 3893
-      },
-      "github_typo": {
-        "exact_match": 1.0,
-        "wer": 0.0,
-        "cer": 0.0,
-        "num_samples": 10
-      },
-      "synthetic_grammar": {
-        "exact_match": 0.1495,
-        "wer": 0.1556,
-        "cer": 0.1008,
-        "num_samples": 194
-      },
-      "synthetic_grammar_passthrough": {
-        "exact_match": 0.7872,
-        "wer": 0.0562,
-        "cer": 0.0319,
-        "num_samples": 47
-      },
-      "synthetic_mixed": {
-        "exact_match": 0.0593,
-        "wer": 0.3959,
-        "cer": 0.3224,
-        "num_samples": 253
-      },
-      "wikipedia": {
-        "exact_match": 0.8728,
-        "wer": 0.0106,
-        "cer": 0.0041,
-        "num_samples": 566
+        "exact_match": 0.9042,
+        "wer": 0.0102,
+        "cer": 0.0075,
+        "num_samples": 1650
       }
     },
     "per_error_type": {
-      "article": {
-        "exact_match": 0.122,
-        "wer": 0.1328,
-        "cer": 0.0866,
-        "num_samples": 82
-      },
-      "article+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.04,
-        "cer": 0.0247,
-        "num_samples": 1
-      },
-      "article+shuffled": {
-        "exact_match": 0.0,
-        "wer": 0.168,
-        "cer": 0.2068,
-        "num_samples": 3
-      },
-      "function_word": {
-        "exact_match": 0.2143,
-        "wer": 0.14,
-        "cer": 0.0821,
-        "num_samples": 56
-      },
-      "insertion": {
-        "exact_match": 0.8565,
-        "wer": 0.0102,
-        "cer": 0.0031,
-        "num_samples": 223
-      },
-      "mixed": {
-        "exact_match": 0.5876,
-        "wer": 0.039,
-        "cer": 0.0158,
-        "num_samples": 2488
-      },
-      "mixed_article": {
-        "exact_match": 0.0,
-        "wer": 0.2034,
-        "cer": 0.1239,
-        "num_samples": 22
-      },
-      "mixed_article+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.0842,
-        "cer": 0.0579,
-        "num_samples": 2
-      },
-      "mixed_article+shuffled": {
-        "exact_match": 0.0,
-        "wer": 0.125,
-        "cer": 0.0732,
-        "num_samples": 1
-      },
-      "mixed_function_word": {
-        "exact_match": 0.0,
-        "wer": 0.3279,
-        "cer": 0.2102,
-        "num_samples": 9
-      },
-      "mixed_function_word+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.0972,
-        "cer": 0.0647,
-        "num_samples": 2
-      },
-      "mixed_multi_1": {
-        "exact_match": 0.2,
-        "wer": 0.1328,
-        "cer": 0.0902,
-        "num_samples": 30
-      },
-      "mixed_multi_1+augmented": {
-        "exact_match": 1.0,
-        "wer": 0.0,
-        "cer": 0.0,
-        "num_samples": 1
-      },
-      "mixed_multi_2": {
-        "exact_match": 0.0526,
-        "wer": 0.3797,
-        "cer": 0.2637,
-        "num_samples": 57
-      },
-      "mixed_multi_3": {
-        "exact_match": 0.0488,
-        "wer": 0.6417,
-        "cer": 0.5501,
-        "num_samples": 41
-      },
-      "mixed_multi_3+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.3,
-        "cer": 0.1167,
-        "num_samples": 1
-      },
-      "mixed_multi_4": {
-        "exact_match": 0.0556,
-        "wer": 0.4118,
-        "cer": 0.3231,
-        "num_samples": 18
-      },
-      "mixed_pronoun_case": {
-        "exact_match": 0.0,
-        "wer": 0.0769,
-        "cer": 0.0667,
-        "num_samples": 1
-      },
-      "mixed_run_on": {
-        "exact_match": 0.0,
-        "wer": 0.4579,
-        "cer": 0.3491,
-        "num_samples": 3
-      },
-      "mixed_single_long": {
-        "exact_match": 0.0172,
-        "wer": 0.5257,
-        "cer": 0.4997,
-        "num_samples": 58
-      },
-      "mixed_subject_verb": {
-        "exact_match": 0.2,
-        "wer": 0.0645,
-        "cer": 0.0247,
-        "num_samples": 5
-      },
-      "mixed_verb_tense": {
-        "exact_match": 0.0,
-        "wer": 0.1714,
-        "cer": 0.0898,
-        "num_samples": 2
+      "addition": {
+        "exact_match": 0.8622,
+        "wer": 0.0162,
+        "cer": 0.0105,
+        "num_samples": 196
       },
       "none": {
-        "exact_match": 0.9862,
-        "wer": 0.0034,
-        "cer": 0.0019,
-        "num_samples": 799
+        "exact_match": 0.9955,
+        "wer": 0.0005,
+        "cer": 0.0003,
+        "num_samples": 221
       },
       "omission": {
-        "exact_match": 0.8517,
-        "wer": 0.012,
-        "cer": 0.0047,
-        "num_samples": 236
+        "exact_match": 0.814,
+        "wer": 0.0196,
+        "cer": 0.0151,
+        "num_samples": 484
       },
       "phonetic": {
-        "exact_match": 0.907,
-        "wer": 0.0065,
-        "cer": 0.0046,
-        "num_samples": 43
-      },
-      "pronoun_case": {
-        "exact_match": 1.0,
-        "wer": 0.0,
-        "cer": 0.0,
-        "num_samples": 1
+        "exact_match": 0.9253,
+        "wer": 0.0078,
+        "cer": 0.0057,
+        "num_samples": 589
       },
       "reversal": {
-        "exact_match": 0.0,
-        "wer": 0.0733,
-        "cer": 0.023,
-        "num_samples": 3
-      },
-      "run_on": {
-        "exact_match": 0.0,
-        "wer": 0.2354,
-        "cer": 0.1646,
-        "num_samples": 14
-      },
-      "spelling": {
-        "exact_match": 0.9018,
-        "wer": 0.0074,
-        "cer": 0.0041,
-        "num_samples": 713
-      },
-      "subject_verb": {
-        "exact_match": 0.1053,
-        "wer": 0.2332,
-        "cer": 0.1563,
-        "num_samples": 19
-      },
-      "transposition": {
         "exact_match": 1.0,
         "wer": 0.0,
         "cer": 0.0,
-        "num_samples": 88
+        "num_samples": 105
       },
-      "verb_tense": {
-        "exact_match": 0.2222,
-        "wer": 0.1771,
-        "cer": 0.1074,
-        "num_samples": 18
+      "transposition": {
+        "exact_match": 0.9535,
+        "wer": 0.0052,
+        "cer": 0.0047,
+        "num_samples": 86
       }
-    },
-    "grammar_aggregate": {
-      "exact_match": 0.1526,
-      "wer": 0.156,
-      "cer": 0.0995,
-      "num_samples": 190
     },
     "spelling_aggregate": {
-      "exact_match": 0.6514,
-      "wer": 0.0515,
-      "cer": 0.0312,
-      "num_samples": 4051
+      "exact_match": 0.887,
+      "wer": 0.0121,
+      "cer": 0.009,
+      "num_samples": 1460
     },
-    "stratified": {
-      "spelling": {
-        "exact_match": 0.6514,
-        "wer": 0.0515,
-        "cer": 0.0312,
-        "num_samples": 4051
-      },
-      "grammar": {
-        "exact_match": 0.1526,
-        "wer": 0.156,
-        "cer": 0.0995,
-        "num_samples": 190
-      },
-      "mixed": {
-        "exact_match": 0.0593,
-        "wer": 0.3959,
-        "cer": 0.3224,
-        "num_samples": 253
-      },
-      "hard": {
-        "exact_match": 0.0402,
-        "wer": 0.4934,
-        "cer": 0.416,
-        "num_samples": 174
-      },
-      "function_word": {
-        "exact_match": 0.2143,
-        "wer": 0.14,
-        "cer": 0.0821,
-        "num_samples": 56
-      },
-      "verb_tense": {
-        "exact_match": 0.2222,
-        "wer": 0.1771,
-        "cer": 0.1074,
-        "num_samples": 18
-      }
-    }
+    "stratified": {}
   },
-  "onnx-cpu_latency": {
+  "pytorch_latency": {
     "overall": {
-      "avg_ms": 47.907,
-      "p50_ms": 47.934,
-      "p95_ms": 53.9,
-      "p99_ms": 58.302,
-      "min_ms": 40.566,
-      "max_ms": 61.596,
-      "std_ms": 4.438,
+      "avg_ms": 274.423,
+      "p50_ms": 293.085,
+      "p95_ms": 301.386,
+      "p99_ms": 307.479,
+      "min_ms": 227.078,
+      "max_ms": 309.823,
+      "std_ms": 30.613,
       "num_runs": 150
     },
     "per_length": {
       "6w": {
-        "avg_ms": 42.671,
-        "p50_ms": 42.565,
-        "p95_ms": 44.599,
-        "p99_ms": 45.193,
-        "min_ms": 40.566,
-        "max_ms": 45.198,
-        "std_ms": 1.029,
+        "avg_ms": 231.428,
+        "p50_ms": 231.111,
+        "p95_ms": 236.129,
+        "p99_ms": 237.062,
+        "min_ms": 227.078,
+        "max_ms": 237.071,
+        "std_ms": 2.853,
         "num_runs": 50
       },
       "8w": {
-        "avg_ms": 48.494,
-        "p50_ms": 47.934,
-        "p95_ms": 51.189,
-        "p99_ms": 58.302,
-        "min_ms": 45.278,
-        "max_ms": 58.489,
-        "std_ms": 2.398,
+        "avg_ms": 296.702,
+        "p50_ms": 296.194,
+        "p95_ms": 301.386,
+        "p99_ms": 307.111,
+        "min_ms": 291.801,
+        "max_ms": 309.823,
+        "std_ms": 3.353,
         "num_runs": 50
       },
       "11w": {
-        "avg_ms": 52.555,
-        "p50_ms": 52.175,
-        "p95_ms": 54.739,
-        "p99_ms": 58.375,
-        "min_ms": 50.58,
-        "max_ms": 61.596,
-        "std_ms": 1.706,
+        "avg_ms": 295.14,
+        "p50_ms": 293.743,
+        "p95_ms": 302.773,
+        "p99_ms": 307.479,
+        "min_ms": 290.035,
+        "max_ms": 307.516,
+        "std_ms": 4.226,
+        "num_runs": 50
+      }
+    }
+  },
+  "pytorch_throughput": {
+    "short_5w": {
+      "word_count": 4,
+      "avg_ms": 210.07,
+      "sentences_per_second": 4.8,
+      "stats": {
+        "avg_ms": 210.07,
+        "p50_ms": 208.865,
+        "p95_ms": 217.771,
+        "p99_ms": 224.515,
+        "min_ms": 205.124,
+        "max_ms": 227.632,
+        "std_ms": 4.224,
+        "num_runs": 50
+      }
+    },
+    "medium_15w": {
+      "word_count": 10,
+      "avg_ms": 405.95,
+      "sentences_per_second": 2.5,
+      "stats": {
+        "avg_ms": 405.949,
+        "p50_ms": 404.778,
+        "p95_ms": 416.815,
+        "p99_ms": 419.028,
+        "min_ms": 399.007,
+        "max_ms": 420.733,
+        "std_ms": 5.125,
+        "num_runs": 50
+      }
+    },
+    "long_30w": {
+      "word_count": 26,
+      "avg_ms": 1135.85,
+      "sentences_per_second": 0.9,
+      "stats": {
+        "avg_ms": 1135.855,
+        "p50_ms": 1134.72,
+        "p95_ms": 1151.17,
+        "p99_ms": 1156.868,
+        "min_ms": 1120.044,
+        "max_ms": 1161.523,
+        "std_ms": 8.602,
+        "num_runs": 50
+      }
+    },
+    "very_long_60w": {
+      "word_count": 53,
+      "avg_ms": 2091.5,
+      "sentences_per_second": 0.5,
+      "stats": {
+        "avg_ms": 2091.499,
+        "p50_ms": 2091.057,
+        "p95_ms": 2112.716,
+        "p99_ms": 2120.698,
+        "min_ms": 2061.442,
+        "max_ms": 2126.432,
+        "std_ms": 14.08,
+        "num_runs": 50
+      }
+    }
+  },
+  "pytorch_memory": {
+    "file_sizes_mb": {
+      "model.safetensors": 944.47,
+      "spiece.model": 0.75,
+      "tokenizer.json": 2.31,
+      "TOTAL": 947.56,
+      "quantized_subset": 947.56
+    },
+    "peak_memory_mb": 0.05,
+    "current_memory_mb": 0.01
+  },
+  "onnx-cpu_accuracy": {
+    "overall": {
+      "exact_match": 0.9012,
+      "wer": 0.0106,
+      "cer": 0.0079,
+      "num_samples": 1681
+    },
+    "no_change_accuracy": 0.9955,
+    "no_change_samples": 221,
+    "per_source": {
+      "aspell": {
+        "exact_match": 0.7419,
+        "wer": 0.0285,
+        "cer": 0.03,
+        "num_samples": 31
+      },
+      "birkbeck": {
+        "exact_match": 0.9042,
+        "wer": 0.0102,
+        "cer": 0.0075,
+        "num_samples": 1650
+      }
+    },
+    "per_error_type": {
+      "addition": {
+        "exact_match": 0.8622,
+        "wer": 0.0162,
+        "cer": 0.0105,
+        "num_samples": 196
+      },
+      "none": {
+        "exact_match": 0.9955,
+        "wer": 0.0005,
+        "cer": 0.0003,
+        "num_samples": 221
+      },
+      "omission": {
+        "exact_match": 0.814,
+        "wer": 0.0196,
+        "cer": 0.0151,
+        "num_samples": 484
+      },
+      "phonetic": {
+        "exact_match": 0.9253,
+        "wer": 0.0078,
+        "cer": 0.0057,
+        "num_samples": 589
+      },
+      "reversal": {
+        "exact_match": 1.0,
+        "wer": 0.0,
+        "cer": 0.0,
+        "num_samples": 105
+      },
+      "transposition": {
+        "exact_match": 0.9535,
+        "wer": 0.0052,
+        "cer": 0.0047,
+        "num_samples": 86
+      }
+    },
+    "spelling_aggregate": {
+      "exact_match": 0.887,
+      "wer": 0.0121,
+      "cer": 0.009,
+      "num_samples": 1460
+    },
+    "stratified": {}
+  },
+  "onnx-cpu_latency": {
+    "overall": {
+      "avg_ms": 209.304,
+      "p50_ms": 207.301,
+      "p95_ms": 256.653,
+      "p99_ms": 305.218,
+      "min_ms": 151.467,
+      "max_ms": 319.444,
+      "std_ms": 30.875,
+      "num_runs": 150
+    },
+    "per_length": {
+      "6w": {
+        "avg_ms": 181.483,
+        "p50_ms": 177.567,
+        "p95_ms": 217.976,
+        "p99_ms": 223.249,
+        "min_ms": 151.467,
+        "max_ms": 224.359,
+        "std_ms": 19.88,
+        "num_runs": 50
+      },
+      "8w": {
+        "avg_ms": 224.057,
+        "p50_ms": 219.741,
+        "p95_ms": 263.152,
+        "p99_ms": 307.759,
+        "min_ms": 185.014,
+        "max_ms": 319.444,
+        "std_ms": 26.053,
+        "num_runs": 50
+      },
+      "11w": {
+        "avg_ms": 222.373,
+        "p50_ms": 220.987,
+        "p95_ms": 261.699,
+        "p99_ms": 290.505,
+        "min_ms": 185.89,
+        "max_ms": 314.463,
+        "std_ms": 24.965,
         "num_runs": 50
       }
     }
@@ -365,61 +322,61 @@
   "onnx-cpu_throughput": {
     "short_5w": {
       "word_count": 4,
-      "avg_ms": 40.16,
-      "sentences_per_second": 24.9,
+      "avg_ms": 165.75,
+      "sentences_per_second": 6.0,
       "stats": {
-        "avg_ms": 40.161,
-        "p50_ms": 39.846,
-        "p95_ms": 42.819,
-        "p99_ms": 43.703,
-        "min_ms": 37.855,
-        "max_ms": 44.226,
-        "std_ms": 1.29,
+        "avg_ms": 165.748,
+        "p50_ms": 164.857,
+        "p95_ms": 192.866,
+        "p99_ms": 205.154,
+        "min_ms": 134.283,
+        "max_ms": 208.495,
+        "std_ms": 14.841,
         "num_runs": 50
       }
     },
     "medium_15w": {
       "word_count": 10,
-      "avg_ms": 62.18,
-      "sentences_per_second": 16.1,
+      "avg_ms": 285.24,
+      "sentences_per_second": 3.5,
       "stats": {
-        "avg_ms": 62.177,
-        "p50_ms": 62.48,
-        "p95_ms": 64.627,
-        "p99_ms": 65.88,
-        "min_ms": 58.066,
-        "max_ms": 66.511,
-        "std_ms": 1.782,
+        "avg_ms": 285.245,
+        "p50_ms": 281.625,
+        "p95_ms": 339.749,
+        "p99_ms": 350.669,
+        "min_ms": 247.801,
+        "max_ms": 350.758,
+        "std_ms": 27.652,
         "num_runs": 50
       }
     },
     "long_30w": {
       "word_count": 26,
-      "avg_ms": 165.38,
-      "sentences_per_second": 6.0,
+      "avg_ms": 715.09,
+      "sentences_per_second": 1.4,
       "stats": {
-        "avg_ms": 165.377,
-        "p50_ms": 165.069,
-        "p95_ms": 169.608,
-        "p99_ms": 177.299,
-        "min_ms": 159.751,
-        "max_ms": 183.621,
-        "std_ms": 3.573,
+        "avg_ms": 715.094,
+        "p50_ms": 710.007,
+        "p95_ms": 782.886,
+        "p99_ms": 791.584,
+        "min_ms": 614.568,
+        "max_ms": 791.987,
+        "std_ms": 39.363,
         "num_runs": 50
       }
     },
     "very_long_60w": {
       "word_count": 53,
-      "avg_ms": 290.7,
-      "sentences_per_second": 3.4,
+      "avg_ms": 1283.41,
+      "sentences_per_second": 0.8,
       "stats": {
-        "avg_ms": 290.696,
-        "p50_ms": 291.558,
-        "p95_ms": 296.505,
-        "p99_ms": 298.447,
-        "min_ms": 282.163,
-        "max_ms": 299.919,
-        "std_ms": 4.089,
+        "avg_ms": 1283.407,
+        "p50_ms": 1281.055,
+        "p95_ms": 1400.992,
+        "p99_ms": 1413.161,
+        "min_ms": 1196.712,
+        "max_ms": 1413.741,
+        "std_ms": 54.887,
         "num_runs": 50
       }
     }
@@ -427,357 +384,125 @@
   "onnx-cpu_memory": {
     "file_sizes_mb": {
       "decoder_model.onnx": 620.72,
-      "decoder_model_quantized.onnx": 155.84,
-      "decoder_with_past_model.onnx": 566.69,
-      "decoder_with_past_model_quantized.onnx": 142.27,
+      "decoder_with_past_model.onnx": 566.68,
       "encoder_model.onnx": 418.38,
-      "encoder_model_quantized.onnx": 104.96,
       "spiece.model": 0.75,
       "tokenizer.json": 2.31,
-      "TOTAL": 2011.97,
-      "quantized_subset": 406.17
+      "TOTAL": 1608.88,
+      "quantized_subset": 3.1
     },
     "peak_memory_mb": 0.07,
     "current_memory_mb": 0.02
   },
   "onnx_accuracy": {
     "overall": {
-      "exact_match": 0.6857,
-      "wer": 0.0478,
-      "cer": 0.0292,
-      "num_samples": 5040
+      "exact_match": 0.9012,
+      "wer": 0.0106,
+      "cer": 0.0079,
+      "num_samples": 1681
     },
-    "no_change_accuracy": 0.9862,
-    "no_change_samples": 799,
+    "no_change_accuracy": 0.9955,
+    "no_change_samples": 221,
     "per_source": {
       "aspell": {
-        "exact_match": 0.9481,
-        "wer": 0.0049,
-        "cer": 0.0021,
-        "num_samples": 77
+        "exact_match": 0.7419,
+        "wer": 0.0285,
+        "cer": 0.03,
+        "num_samples": 31
       },
       "birkbeck": {
-        "exact_match": 0.7187,
-        "wer": 0.0261,
-        "cer": 0.0108,
-        "num_samples": 3893
-      },
-      "github_typo": {
-        "exact_match": 1.0,
-        "wer": 0.0,
-        "cer": 0.0,
-        "num_samples": 10
-      },
-      "synthetic_grammar": {
-        "exact_match": 0.1495,
-        "wer": 0.1556,
-        "cer": 0.1008,
-        "num_samples": 194
-      },
-      "synthetic_grammar_passthrough": {
-        "exact_match": 0.7872,
-        "wer": 0.0562,
-        "cer": 0.0319,
-        "num_samples": 47
-      },
-      "synthetic_mixed": {
-        "exact_match": 0.0593,
-        "wer": 0.3959,
-        "cer": 0.3224,
-        "num_samples": 253
-      },
-      "wikipedia": {
-        "exact_match": 0.8728,
-        "wer": 0.0106,
-        "cer": 0.0041,
-        "num_samples": 566
+        "exact_match": 0.9042,
+        "wer": 0.0102,
+        "cer": 0.0075,
+        "num_samples": 1650
       }
     },
     "per_error_type": {
-      "article": {
-        "exact_match": 0.122,
-        "wer": 0.1328,
-        "cer": 0.0866,
-        "num_samples": 82
-      },
-      "article+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.04,
-        "cer": 0.0247,
-        "num_samples": 1
-      },
-      "article+shuffled": {
-        "exact_match": 0.0,
-        "wer": 0.168,
-        "cer": 0.2068,
-        "num_samples": 3
-      },
-      "function_word": {
-        "exact_match": 0.2143,
-        "wer": 0.14,
-        "cer": 0.0821,
-        "num_samples": 56
-      },
-      "insertion": {
-        "exact_match": 0.8565,
-        "wer": 0.0102,
-        "cer": 0.0031,
-        "num_samples": 223
-      },
-      "mixed": {
-        "exact_match": 0.5876,
-        "wer": 0.039,
-        "cer": 0.0158,
-        "num_samples": 2488
-      },
-      "mixed_article": {
-        "exact_match": 0.0,
-        "wer": 0.2034,
-        "cer": 0.1239,
-        "num_samples": 22
-      },
-      "mixed_article+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.0842,
-        "cer": 0.0579,
-        "num_samples": 2
-      },
-      "mixed_article+shuffled": {
-        "exact_match": 0.0,
-        "wer": 0.125,
-        "cer": 0.0732,
-        "num_samples": 1
-      },
-      "mixed_function_word": {
-        "exact_match": 0.0,
-        "wer": 0.3279,
-        "cer": 0.2102,
-        "num_samples": 9
-      },
-      "mixed_function_word+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.0972,
-        "cer": 0.0647,
-        "num_samples": 2
-      },
-      "mixed_multi_1": {
-        "exact_match": 0.2,
-        "wer": 0.1328,
-        "cer": 0.0902,
-        "num_samples": 30
-      },
-      "mixed_multi_1+augmented": {
-        "exact_match": 1.0,
-        "wer": 0.0,
-        "cer": 0.0,
-        "num_samples": 1
-      },
-      "mixed_multi_2": {
-        "exact_match": 0.0526,
-        "wer": 0.3797,
-        "cer": 0.2637,
-        "num_samples": 57
-      },
-      "mixed_multi_3": {
-        "exact_match": 0.0488,
-        "wer": 0.6417,
-        "cer": 0.5501,
-        "num_samples": 41
-      },
-      "mixed_multi_3+augmented": {
-        "exact_match": 0.0,
-        "wer": 0.3,
-        "cer": 0.1167,
-        "num_samples": 1
-      },
-      "mixed_multi_4": {
-        "exact_match": 0.0556,
-        "wer": 0.4118,
-        "cer": 0.3231,
-        "num_samples": 18
-      },
-      "mixed_pronoun_case": {
-        "exact_match": 0.0,
-        "wer": 0.0769,
-        "cer": 0.0667,
-        "num_samples": 1
-      },
-      "mixed_run_on": {
-        "exact_match": 0.0,
-        "wer": 0.4579,
-        "cer": 0.3491,
-        "num_samples": 3
-      },
-      "mixed_single_long": {
-        "exact_match": 0.0172,
-        "wer": 0.5257,
-        "cer": 0.4997,
-        "num_samples": 58
-      },
-      "mixed_subject_verb": {
-        "exact_match": 0.2,
-        "wer": 0.0645,
-        "cer": 0.0247,
-        "num_samples": 5
-      },
-      "mixed_verb_tense": {
-        "exact_match": 0.0,
-        "wer": 0.1714,
-        "cer": 0.0898,
-        "num_samples": 2
+      "addition": {
+        "exact_match": 0.8622,
+        "wer": 0.0162,
+        "cer": 0.0105,
+        "num_samples": 196
       },
       "none": {
-        "exact_match": 0.9862,
-        "wer": 0.0034,
-        "cer": 0.0019,
-        "num_samples": 799
+        "exact_match": 0.9955,
+        "wer": 0.0005,
+        "cer": 0.0003,
+        "num_samples": 221
       },
       "omission": {
-        "exact_match": 0.8517,
-        "wer": 0.012,
-        "cer": 0.0047,
-        "num_samples": 236
+        "exact_match": 0.814,
+        "wer": 0.0196,
+        "cer": 0.0151,
+        "num_samples": 484
       },
       "phonetic": {
-        "exact_match": 0.907,
-        "wer": 0.0065,
-        "cer": 0.0046,
-        "num_samples": 43
-      },
-      "pronoun_case": {
-        "exact_match": 1.0,
-        "wer": 0.0,
-        "cer": 0.0,
-        "num_samples": 1
+        "exact_match": 0.9253,
+        "wer": 0.0078,
+        "cer": 0.0057,
+        "num_samples": 589
       },
       "reversal": {
-        "exact_match": 0.0,
-        "wer": 0.0733,
-        "cer": 0.023,
-        "num_samples": 3
-      },
-      "run_on": {
-        "exact_match": 0.0,
-        "wer": 0.2354,
-        "cer": 0.1646,
-        "num_samples": 14
-      },
-      "spelling": {
-        "exact_match": 0.9018,
-        "wer": 0.0074,
-        "cer": 0.0041,
-        "num_samples": 713
-      },
-      "subject_verb": {
-        "exact_match": 0.1053,
-        "wer": 0.2332,
-        "cer": 0.1563,
-        "num_samples": 19
-      },
-      "transposition": {
         "exact_match": 1.0,
         "wer": 0.0,
         "cer": 0.0,
-        "num_samples": 88
+        "num_samples": 105
       },
-      "verb_tense": {
-        "exact_match": 0.2222,
-        "wer": 0.1771,
-        "cer": 0.1074,
-        "num_samples": 18
+      "transposition": {
+        "exact_match": 0.9535,
+        "wer": 0.0052,
+        "cer": 0.0047,
+        "num_samples": 86
       }
-    },
-    "grammar_aggregate": {
-      "exact_match": 0.1526,
-      "wer": 0.156,
-      "cer": 0.0995,
-      "num_samples": 190
     },
     "spelling_aggregate": {
-      "exact_match": 0.6514,
-      "wer": 0.0515,
-      "cer": 0.0312,
-      "num_samples": 4051
+      "exact_match": 0.887,
+      "wer": 0.0121,
+      "cer": 0.009,
+      "num_samples": 1460
     },
-    "stratified": {
-      "spelling": {
-        "exact_match": 0.6514,
-        "wer": 0.0515,
-        "cer": 0.0312,
-        "num_samples": 4051
-      },
-      "grammar": {
-        "exact_match": 0.1526,
-        "wer": 0.156,
-        "cer": 0.0995,
-        "num_samples": 190
-      },
-      "mixed": {
-        "exact_match": 0.0593,
-        "wer": 0.3959,
-        "cer": 0.3224,
-        "num_samples": 253
-      },
-      "hard": {
-        "exact_match": 0.0402,
-        "wer": 0.4934,
-        "cer": 0.416,
-        "num_samples": 174
-      },
-      "function_word": {
-        "exact_match": 0.2143,
-        "wer": 0.14,
-        "cer": 0.0821,
-        "num_samples": 56
-      },
-      "verb_tense": {
-        "exact_match": 0.2222,
-        "wer": 0.1771,
-        "cer": 0.1074,
-        "num_samples": 18
-      }
-    }
+    "stratified": {}
   },
   "onnx_latency": {
     "overall": {
-      "avg_ms": 47.907,
-      "p50_ms": 47.934,
-      "p95_ms": 53.9,
-      "p99_ms": 58.302,
-      "min_ms": 40.566,
-      "max_ms": 61.596,
-      "std_ms": 4.438,
+      "avg_ms": 209.304,
+      "p50_ms": 207.301,
+      "p95_ms": 256.653,
+      "p99_ms": 305.218,
+      "min_ms": 151.467,
+      "max_ms": 319.444,
+      "std_ms": 30.875,
       "num_runs": 150
     },
     "per_length": {
       "6w": {
-        "avg_ms": 42.671,
-        "p50_ms": 42.565,
-        "p95_ms": 44.599,
-        "p99_ms": 45.193,
-        "min_ms": 40.566,
-        "max_ms": 45.198,
-        "std_ms": 1.029,
+        "avg_ms": 181.483,
+        "p50_ms": 177.567,
+        "p95_ms": 217.976,
+        "p99_ms": 223.249,
+        "min_ms": 151.467,
+        "max_ms": 224.359,
+        "std_ms": 19.88,
         "num_runs": 50
       },
       "8w": {
-        "avg_ms": 48.494,
-        "p50_ms": 47.934,
-        "p95_ms": 51.189,
-        "p99_ms": 58.302,
-        "min_ms": 45.278,
-        "max_ms": 58.489,
-        "std_ms": 2.398,
+        "avg_ms": 224.057,
+        "p50_ms": 219.741,
+        "p95_ms": 263.152,
+        "p99_ms": 307.759,
+        "min_ms": 185.014,
+        "max_ms": 319.444,
+        "std_ms": 26.053,
         "num_runs": 50
       },
       "11w": {
-        "avg_ms": 52.555,
-        "p50_ms": 52.175,
-        "p95_ms": 54.739,
-        "p99_ms": 58.375,
-        "min_ms": 50.58,
-        "max_ms": 61.596,
-        "std_ms": 1.706,
+        "avg_ms": 222.373,
+        "p50_ms": 220.987,
+        "p95_ms": 261.699,
+        "p99_ms": 290.505,
+        "min_ms": 185.89,
+        "max_ms": 314.463,
+        "std_ms": 24.965,
         "num_runs": 50
       }
     }
@@ -785,61 +510,61 @@
   "onnx_throughput": {
     "short_5w": {
       "word_count": 4,
-      "avg_ms": 40.16,
-      "sentences_per_second": 24.9,
+      "avg_ms": 165.75,
+      "sentences_per_second": 6.0,
       "stats": {
-        "avg_ms": 40.161,
-        "p50_ms": 39.846,
-        "p95_ms": 42.819,
-        "p99_ms": 43.703,
-        "min_ms": 37.855,
-        "max_ms": 44.226,
-        "std_ms": 1.29,
+        "avg_ms": 165.748,
+        "p50_ms": 164.857,
+        "p95_ms": 192.866,
+        "p99_ms": 205.154,
+        "min_ms": 134.283,
+        "max_ms": 208.495,
+        "std_ms": 14.841,
         "num_runs": 50
       }
     },
     "medium_15w": {
       "word_count": 10,
-      "avg_ms": 62.18,
-      "sentences_per_second": 16.1,
+      "avg_ms": 285.24,
+      "sentences_per_second": 3.5,
       "stats": {
-        "avg_ms": 62.177,
-        "p50_ms": 62.48,
-        "p95_ms": 64.627,
-        "p99_ms": 65.88,
-        "min_ms": 58.066,
-        "max_ms": 66.511,
-        "std_ms": 1.782,
+        "avg_ms": 285.245,
+        "p50_ms": 281.625,
+        "p95_ms": 339.749,
+        "p99_ms": 350.669,
+        "min_ms": 247.801,
+        "max_ms": 350.758,
+        "std_ms": 27.652,
         "num_runs": 50
       }
     },
     "long_30w": {
       "word_count": 26,
-      "avg_ms": 165.38,
-      "sentences_per_second": 6.0,
+      "avg_ms": 715.09,
+      "sentences_per_second": 1.4,
       "stats": {
-        "avg_ms": 165.377,
-        "p50_ms": 165.069,
-        "p95_ms": 169.608,
-        "p99_ms": 177.299,
-        "min_ms": 159.751,
-        "max_ms": 183.621,
-        "std_ms": 3.573,
+        "avg_ms": 715.094,
+        "p50_ms": 710.007,
+        "p95_ms": 782.886,
+        "p99_ms": 791.584,
+        "min_ms": 614.568,
+        "max_ms": 791.987,
+        "std_ms": 39.363,
         "num_runs": 50
       }
     },
     "very_long_60w": {
       "word_count": 53,
-      "avg_ms": 290.7,
-      "sentences_per_second": 3.4,
+      "avg_ms": 1283.41,
+      "sentences_per_second": 0.8,
       "stats": {
-        "avg_ms": 290.696,
-        "p50_ms": 291.558,
-        "p95_ms": 296.505,
-        "p99_ms": 298.447,
-        "min_ms": 282.163,
-        "max_ms": 299.919,
-        "std_ms": 4.089,
+        "avg_ms": 1283.407,
+        "p50_ms": 1281.055,
+        "p95_ms": 1400.992,
+        "p99_ms": 1413.161,
+        "min_ms": 1196.712,
+        "max_ms": 1413.741,
+        "std_ms": 54.887,
         "num_runs": 50
       }
     }
@@ -847,23 +572,22 @@
   "onnx_memory": {
     "file_sizes_mb": {
       "decoder_model.onnx": 620.72,
-      "decoder_model_quantized.onnx": 155.84,
-      "decoder_with_past_model.onnx": 566.69,
-      "decoder_with_past_model_quantized.onnx": 142.27,
+      "decoder_with_past_model.onnx": 566.68,
       "encoder_model.onnx": 418.38,
-      "encoder_model_quantized.onnx": 104.96,
       "spiece.model": 0.75,
       "tokenizer.json": 2.31,
-      "TOTAL": 2011.97,
-      "quantized_subset": 406.17
+      "TOTAL": 1608.88,
+      "quantized_subset": 3.1
     },
     "peak_memory_mb": 0.07,
     "current_memory_mb": 0.02
   },
+  "comparison": {
+    "latency_speedup_avg": 1.31,
+    "latency_speedup_p95": 1.17
+  },
   "gate_passed": false,
   "gate_failures": [
-    "Overall EM: 0.6857 < 0.85",
-    "Spelling EM: 0.6514 < 0.95",
-    "Grammar EM: 0.1526 < 0.85"
+    "P95 latency: 256.7ms > 200ms"
   ]
 }

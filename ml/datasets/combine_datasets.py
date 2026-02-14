@@ -18,20 +18,31 @@ random.seed(42)
 
 # Default sampling weights by source (higher = more samples selected)
 # Rebalanced to prioritize dyslexia-specific spelling data over grammar
+# github_typo excluded — code/XML/markdown noise hurts dyslexic writing correction
 SOURCE_WEIGHTS = {
-    "birkbeck": 0.35,
-    "wikipedia": 0.12,
-    "aspell": 0.08,
+    "birkbeck": 0.40,
+    "wikipedia": 0.15,
+    "aspell": 0.10,
     "synthetic": 0.20,
-    "github_typo": 0.05,
     "pedler": 0.10,
-    "grammar_synthetic": 0.05,
-    "mixed_synthetic": 0.05,
+    "grammar_synthetic": 0.03,
+    "mixed_synthetic": 0.02,
 }
+
+# Sources to exclude entirely (not relevant to dyslexic writing)
+EXCLUDED_SOURCES = {"github_typo"}
 
 # Error types that represent core dyslexic patterns — oversampled 2x
 DYSLEXIA_CORE_ERROR_TYPES = {
     "phonetic", "reversal", "vowel_confusion", "homophone", "visual_similarity",
+}
+
+# Error types that are severely underrepresented and need aggressive oversampling
+UNDERSAMPLE_TARGETS = {
+    "reversal": 3000,
+    "transposition": 3000,
+    "visual_similarity": 2000,
+    "vowel_confusion": 2000,
 }
 
 # Pattern files for augmentation (multi-error injection)
@@ -301,10 +312,13 @@ def combine_and_split_seq2seq(
         "word_order", "run_on", "pronoun_case", "grammar",
     }
 
-    # Load all seq2seq data sources
+    # Load all seq2seq data sources (excluding noisy sources)
     sources: dict[str, list[dict[str, Any]]] = {}
     for filepath in sorted(processed_dir.glob("*_seq2seq.jsonl")):
         source_name = filepath.stem.replace("_seq2seq", "")
+        if source_name in EXCLUDED_SOURCES:
+            logger.info(f"  SKIPPING {source_name} (in EXCLUDED_SOURCES)")
+            continue
         samples = _load_jsonl(filepath)
         if samples:
             sources[source_name] = samples
@@ -369,6 +383,25 @@ def combine_and_split_seq2seq(
     if core_samples:
         all_samples.extend(core_samples)  # duplicate = 2x total
         logger.info(f"  Oversampled {len(core_samples)} core dyslexic error samples (2x)")
+
+    # Aggressively oversample severely underrepresented error types
+    for error_type, target_count in UNDERSAMPLE_TARGETS.items():
+        type_samples = [
+            s for s in all_samples
+            if s.get("error_type", "unknown") == error_type
+        ]
+        current_count = len(type_samples)
+        if 0 < current_count < target_count:
+            copies_needed = target_count - current_count
+            oversampled = []
+            while len(oversampled) < copies_needed:
+                oversampled.extend(type_samples)
+            oversampled = oversampled[:copies_needed]
+            all_samples.extend(oversampled)
+            logger.info(
+                f"  Oversampled '{error_type}': {current_count} -> {current_count + copies_needed} "
+                f"(target: {target_count})"
+            )
 
     # Data augmentation (before cap, after oversampling)
     if augment:

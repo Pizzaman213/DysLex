@@ -2,7 +2,9 @@
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+UTC = timezone.utc
 from typing import Any
 
 from sqlalchemy import func, select, update

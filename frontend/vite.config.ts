@@ -60,14 +60,18 @@ export default defineConfig({
     serveMLModels(),
     viteStaticCopy({
       targets: [
-        // Seq2seq T5 model files (primary model)
+        // Seq2seq T5 model files (onnx/ subdir for @xenova/transformers)
         {
-          src: '../ml/models/quick_correction_seq2seq_v1/encoder_model*.onnx',
-          dest: 'models/quick_correction_seq2seq_v1',
+          src: '../ml/models/quick_correction_seq2seq_v1/onnx/encoder_model.onnx',
+          dest: 'models/quick_correction_seq2seq_v1/onnx',
         },
         {
-          src: '../ml/models/quick_correction_seq2seq_v1/decoder_model*.onnx',
-          dest: 'models/quick_correction_seq2seq_v1',
+          src: '../ml/models/quick_correction_seq2seq_v1/onnx/decoder_model.onnx',
+          dest: 'models/quick_correction_seq2seq_v1/onnx',
+        },
+        {
+          src: '../ml/models/quick_correction_seq2seq_v1/onnx/decoder_with_past_model.onnx',
+          dest: 'models/quick_correction_seq2seq_v1/onnx',
         },
         {
           src: '../ml/models/quick_correction_seq2seq_v1/config.json',
@@ -143,7 +147,8 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['onnxruntime-web', 'onnxruntime-web/wasm', '@xenova/transformers'],
+    exclude: ['@xenova/transformers'],
+    include: ['onnxruntime-web'],
   },
   build: {
     rollupOptions: {

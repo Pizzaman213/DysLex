@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models."""
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+UTC = timezone.utc
 
 from sqlalchemy import (
     Boolean,

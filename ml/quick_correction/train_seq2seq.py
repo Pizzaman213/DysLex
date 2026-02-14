@@ -378,14 +378,18 @@ def train_seq2seq_model(
     total_steps = steps_per_epoch * epochs
     warmup_steps = int(total_steps * 0.1)
 
-    # Detect accelerator and fp16 support
+    # Detect accelerator and mixed precision support
+    # NOTE: T5 models are numerically unstable with fp16 — use bf16 instead
     use_fp16 = False
+    use_bf16 = False
     use_cuda = torch.cuda.is_available()
     use_torch_compile = False
     if use_cuda:
-        use_fp16 = True
-        use_torch_compile = True
-        logger.info("CUDA detected, enabling fp16 mixed precision and torch.compile")
+        if torch.cuda.is_bf16_supported():
+            use_bf16 = True
+            logger.info("CUDA detected, enabling bf16 mixed precision (fp16 causes NaN with T5)")
+        else:
+            logger.info("CUDA detected, but bf16 not supported — training in fp32 (fp16 causes NaN with T5)")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         logger.info("Apple MPS detected, enabling GPU acceleration (torch.compile disabled)")
 
@@ -406,6 +410,7 @@ def train_seq2seq_model(
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         fp16=use_fp16,
+        bf16=use_bf16,
         label_smoothing_factor=0.05,
         logging_dir=str(output_dir / "logs"),
         logging_steps=100,
@@ -487,33 +492,40 @@ def train_seq2seq_model(
             if isinstance(cb, CurriculumCallback):
                 cb.on_epoch_begin = lambda args, state, control, _cb=cb, **kw: _on_epoch_begin_swap(_cb, args, state, control, **kw)
 
+    # Log multi-GPU info
+    if torch.cuda.device_count() > 1:
+        logger.info(f"Distributed training: {torch.cuda.device_count()} GPUs")
+
     # Train
     logger.info(f"Starting training ({total_steps} total steps, {warmup_steps} warmup)...")
     trainer.train()
 
-    # Evaluate
+    # Evaluate (Trainer gathers results across ranks)
     logger.info("Evaluating model...")
     eval_results = trainer.evaluate()
-    logger.info("Evaluation results:")
-    for key, value in sorted(eval_results.items()):
-        if isinstance(value, float):
-            logger.info(f"  {key}: {value:.4f}")
-        else:
-            logger.info(f"  {key}: {value}")
 
-    # Save
-    logger.info(f"Saving model to {output_dir}...")
-    trainer.save_model(str(output_dir))
-    tokenizer.save_pretrained(str(output_dir))
+    # Post-training steps on main process only (avoid duplicate saves/logs)
+    if trainer.is_world_process_zero():
+        logger.info("Evaluation results:")
+        for key, value in sorted(eval_results.items()):
+            if isinstance(value, float):
+                logger.info(f"  {key}: {value:.4f}")
+            else:
+                logger.info(f"  {key}: {value}")
 
-    # Check model size
-    model_size = sum(
-        f.stat().st_size for f in output_dir.rglob("*") if f.is_file()
-    )
-    model_size_mb = model_size / (1024 * 1024)
-    logger.info(f"Model size: {model_size_mb:.1f} MB")
+        # Save
+        logger.info(f"Saving model to {output_dir}...")
+        trainer.save_model(str(output_dir))
+        tokenizer.save_pretrained(str(output_dir))
 
-    logger.info("Seq2Seq training complete!")
+        # Check model size
+        model_size = sum(
+            f.stat().st_size for f in output_dir.rglob("*") if f.is_file()
+        )
+        model_size_mb = model_size / (1024 * 1024)
+        logger.info(f"Model size: {model_size_mb:.1f} MB")
+
+        logger.info("Seq2Seq training complete!")
 
 
 def parse_args() -> argparse.Namespace:

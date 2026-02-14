@@ -1,5 +1,5 @@
 {
-  "_name_or_path": "/Users/connorsecrist/Dyslexia/ml/quick_correction/models/quick_correction_seq2seq_v1/",
+  "_name_or_path": "ml/quick_correction/models/quick_correction_seq2seq_v1/",
   "architectures": [
     "T5ForConditionalGeneration"
   ],
@@ -56,7 +56,7 @@
   },
   "tie_word_embeddings": false,
   "torch_dtype": "float32",
-  "transformers_version": "4.46.3",
+  "transformers_version": "4.48.3",
   "use_cache": true,
   "vocab_size": 32128
 }

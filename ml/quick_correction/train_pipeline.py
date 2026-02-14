@@ -25,11 +25,16 @@ Accuracy improvements:
     --augment              Enable data augmentation (multi-error + position shuffle)
     --mine-hard            Mine hard examples after training for oversampled retraining
 
+Multi-GPU:
+    --multi-gpu            Enable distributed training via accelerate (auto-detects GPUs)
+    --num-gpus N           Use exactly N GPUs (implies --multi-gpu)
+
 Stages: download -> process -> [grammar] -> combine -> build-tokens -> train -> evaluate -> [mine-hard] -> export
 """
 
 import argparse
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -53,6 +58,34 @@ SEQ2SEQ_ONNX_DIR = ML_DIR / "models" / "quick_correction_seq2seq_v1"
 
 # Add project root to path for imports
 sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _launch_distributed(script: str, cli_args: list[str], num_gpus: int) -> bool:
+    """Launch a training script with accelerate for multi-GPU distributed training.
+
+    Uses HuggingFace accelerate to spawn one process per GPU with DDP.
+    The training scripts use HF Trainer which handles gradient sync automatically.
+
+    Args:
+        script: Path to the training script
+        cli_args: CLI arguments for the training script
+        num_gpus: Number of GPUs to use
+
+    Returns:
+        True if training succeeded
+    """
+    cmd = [
+        sys.executable, "-m", "accelerate.commands.launch",
+        "--num_processes", str(num_gpus),
+        "--multi_gpu",
+        script,
+    ] + cli_args
+
+    logger.info(f"Launching distributed training on {num_gpus} GPUs")
+    logger.info(f"  Command: {' '.join(cmd)}")
+
+    result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+    return result.returncode == 0
 
 
 def stage_download() -> bool:
@@ -134,6 +167,7 @@ def stage_train(
     batch_size: int = 32,
     learning_rate: float = 2e-5,
     patience: int = 10,
+    num_gpus: int = 1,
 ) -> bool:
     """Stage 4: Fine-tune DistilBERT on the combined dataset.
 
@@ -143,9 +177,12 @@ def stage_train(
         batch_size: Training batch size
         learning_rate: Learning rate
         patience: Early stopping patience
+        num_gpus: Number of GPUs (>1 launches distributed training via accelerate)
     """
     logger.info("=" * 60)
     logger.info("STAGE 4: Train Model")
+    if num_gpus > 1:
+        logger.info(f"  Multi-GPU: {num_gpus} GPUs")
     logger.info("=" * 60)
 
     train_file = DATA_DIR / "train.jsonl"
@@ -154,6 +191,24 @@ def stage_train(
     if not train_file.exists():
         logger.error(f"Training data not found at {train_file}. Run --combine first.")
         return False
+
+    if num_gpus > 1:
+        script = str(Path(__file__).parent / "train.py")
+        cli_args = [
+            "--data", str(train_file),
+            "--model", model_name,
+            "--epochs", str(epochs),
+            "--batch-size", str(batch_size),
+            "--lr", str(learning_rate),
+            "--output", str(MODEL_DIR),
+            "--patience", str(patience),
+        ]
+        if val_file.exists():
+            cli_args.extend(["--val", str(val_file)])
+        success = _launch_distributed(script, cli_args, num_gpus)
+        if success:
+            logger.info("Training stage complete")
+        return success
 
     from ml.quick_correction.train import train_model
 
@@ -431,16 +486,36 @@ def stage_train_seq2seq(
     learning_rate: float = 5e-5,
     patience: int = 25,
     max_eval_samples: int = 0,
+    num_gpus: int = 1,
 ) -> bool:
     """Stage 4 (seq2seq): Fine-tune FLAN-T5-base on the combined seq2seq dataset."""
     logger.info("=" * 60)
     logger.info("STAGE 4: Train Seq2Seq Model")
+    if num_gpus > 1:
+        logger.info(f"  Multi-GPU: {num_gpus} GPUs")
     logger.info("=" * 60)
 
     train_file = DATA_DIR / "train_seq2seq.jsonl"
     if not train_file.exists():
         logger.error(f"Seq2seq training data not found at {train_file}. Run --combine first.")
         return False
+
+    if num_gpus > 1:
+        script = str(Path(__file__).parent / "train_seq2seq.py")
+        cli_args = [
+            "--data-dir", str(DATA_DIR),
+            "--model", model_name,
+            "--epochs", str(epochs),
+            "--batch-size", str(batch_size),
+            "--lr", str(learning_rate),
+            "--output", str(SEQ2SEQ_MODEL_DIR),
+            "--patience", str(patience),
+            "--max-eval-samples", str(max_eval_samples),
+        ]
+        success = _launch_distributed(script, cli_args, num_gpus)
+        if success:
+            logger.info("Seq2seq training stage complete")
+        return success
 
     from ml.quick_correction.train_seq2seq import train_seq2seq_model
 
@@ -645,6 +720,12 @@ Examples:
   # Train with custom settings
   python ml/quick_correction/train_pipeline.py --train --epochs 10 --batch-size 16
 
+  # Multi-GPU training (auto-detect GPUs)
+  python ml/quick_correction/train_pipeline.py --all --model-type seq2seq --multi-gpu
+
+  # Multi-GPU with specific GPU count
+  python ml/quick_correction/train_pipeline.py --all --model-type seq2seq --num-gpus 4
+
   # Evaluate and export
   python ml/quick_correction/train_pipeline.py --evaluate --export
         """,
@@ -731,6 +812,17 @@ Examples:
         default=25,
         help="Early stopping patience in eval steps (default: 25)",
     )
+    training.add_argument(
+        "--multi-gpu",
+        action="store_true",
+        help="Enable multi-GPU distributed training via accelerate",
+    )
+    training.add_argument(
+        "--num-gpus",
+        type=int,
+        default=0,
+        help="Number of GPUs (0 = auto-detect, default: 0). Implies --multi-gpu.",
+    )
 
     # Dataset parameters
     dataset = parser.add_argument_group("dataset parameters")
@@ -784,6 +876,7 @@ def main():
         args.export = True
         download_dyslexia = True  # Always include dyslexia datasets in --all
         build_tokens = True  # Build custom tokens in --all flow
+        mine_hard = True  # Mine hard examples for oversampled retraining
 
     is_seq2seq = args.model_type == "seq2seq"
     include_grammar = args.grammar
@@ -792,6 +885,26 @@ def main():
     if include_grammar and not is_seq2seq:
         logger.warning("--grammar flag requires --model-type seq2seq. Ignoring grammar flag.")
         include_grammar = False
+
+    # Detect multi-GPU setup
+    num_gpus = 1
+    if args.multi_gpu or args.num_gpus > 1:
+        try:
+            import torch as _torch
+            available = _torch.cuda.device_count()
+        except ImportError:
+            available = 0
+            logger.warning("PyTorch not found, cannot detect GPUs")
+
+        num_gpus = args.num_gpus if args.num_gpus > 0 else available
+        if num_gpus > 1:
+            logger.info(f"Multi-GPU training: {num_gpus} GPUs")
+        else:
+            logger.warning(
+                f"Multi-GPU requested but only {available} GPU(s) available. "
+                "Using single GPU."
+            )
+            num_gpus = 1
 
     logger.info(f"Quick Correction Model Training Pipeline [{model_type_label}]")
     if include_grammar:
@@ -880,7 +993,7 @@ def main():
         if is_seq2seq:
             # Use seq2seq defaults if user didn't override
             model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "google/flan-t5-base"
-            # Use lower LR for flan-t5-base
+            # Use 5e-5 for flan-t5-base (1e-4 causes catastrophic forgetting)
             default_lr = 5e-5
             lr = args.lr if args.lr != 2e-5 else default_lr
             # More epochs with early stopping
@@ -892,6 +1005,7 @@ def main():
                 learning_rate=lr,
                 patience=args.patience,
                 max_eval_samples=args.max_eval_samples,
+                num_gpus=num_gpus,
             )
         else:
             success = stage_train(
@@ -900,6 +1014,7 @@ def main():
                 batch_size=args.batch_size,
                 learning_rate=args.lr,
                 patience=args.patience,
+                num_gpus=num_gpus,
             )
         stage_results["train"] = success
         if not success:
@@ -914,11 +1029,43 @@ def main():
             success = stage_evaluate()
         stage_results["evaluate"] = success
 
-    # Mine hard examples (after evaluate, before optional retrain)
+    # Mine hard examples, then retrain with them mixed in
     if mine_hard and is_seq2seq:
         success = stage_mine_hard_examples()
         stage_results["mine_hard"] = success
-        if not success:
+        if success:
+            # Re-combine with hard examples included (they're auto-merged)
+            logger.info("Re-combining dataset with hard examples for second training pass...")
+            target = args.target_samples
+            if include_grammar and target == 80000:
+                target = 180000
+            recombine_ok = stage_combine_seq2seq(
+                target_total=target,
+                include_grammar=include_grammar,
+                augment=args.augment,
+            )
+            stage_results["recombine_with_hard"] = recombine_ok
+
+            if recombine_ok:
+                # Second training pass with hard examples — fewer epochs, lower LR
+                logger.info("Starting second training pass with hard examples...")
+                model_name = args.model_name if args.model_name != "distilbert-base-uncased" else "google/flan-t5-base"
+                retrain_ok = stage_train_seq2seq(
+                    model_name=model_name,
+                    epochs=5,
+                    batch_size=args.batch_size,
+                    learning_rate=2e-5,  # Lower LR for fine-tuning pass
+                    patience=10,
+                    max_eval_samples=args.max_eval_samples,
+                    num_gpus=num_gpus,
+                )
+                stage_results["retrain_with_hard"] = retrain_ok
+
+                if retrain_ok:
+                    # Re-evaluate after second pass
+                    eval_ok = stage_evaluate_seq2seq(gate=args.gate)
+                    stage_results["re_evaluate"] = eval_ok
+        else:
             logger.warning("Hard example mining failed, continuing...")
 
     if args.export:

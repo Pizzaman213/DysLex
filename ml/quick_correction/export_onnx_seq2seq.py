@@ -59,33 +59,54 @@ def export_seq2seq_to_onnx(
     ort_model.save_pretrained(str(output_path))
     tokenizer.save_pretrained(str(output_path))
 
-    # Apply INT8 quantization
+    # Apply quantization using Optimum's ORTQuantizer (transformer-aware)
     if quantize:
-        logger.info("Applying INT8 quantization...")
+        logger.info("Applying quantization via Optimum ORTQuantizer...")
         try:
-            from onnxruntime.quantization import QuantType, quantize_dynamic
+            from optimum.onnxruntime import ORTQuantizer
+            from optimum.onnxruntime.configuration import AutoQuantizationConfig
 
-            # Quantize each ONNX file
-            onnx_files = list(output_path.glob("*.onnx"))
+            # Optimum quantizes each component (encoder, decoder, decoder_with_past)
+            # using avx512_vnni config for best CPU compatibility
+            quantization_config = AutoQuantizationConfig.avx2(
+                is_static=False,
+                per_channel=False,
+            )
+
+            onnx_files = [
+                f for f in sorted(output_path.glob("*.onnx"))
+                if "quantized" not in f.stem
+            ]
+
             for onnx_file in onnx_files:
-                quantized_name = onnx_file.stem + "_quantized" + onnx_file.suffix
-                quantized_file = output_path / quantized_name
-
                 logger.info(f"  Quantizing {onnx_file.name}...")
-                quantize_dynamic(
-                    model_input=str(onnx_file),
-                    model_output=str(quantized_file),
-                    weight_type=QuantType.QUInt8,
+                original_size = onnx_file.stat().st_size / (1024 * 1024)
+
+                quantizer = ORTQuantizer.from_pretrained(
+                    str(output_path),
+                    file_name=onnx_file.name,
+                )
+                quantizer.quantize(
+                    save_dir=str(output_path),
+                    quantization_config=quantization_config,
                 )
 
-                original_size = onnx_file.stat().st_size / (1024 * 1024)
-                quantized_size = quantized_file.stat().st_size / (1024 * 1024)
-                reduction = (1 - quantized_size / original_size) * 100 if original_size > 0 else 0
-                logger.info(
-                    f"    {onnx_file.name}: {original_size:.1f} MB -> "
-                    f"{quantized_name}: {quantized_size:.1f} MB "
-                    f"({reduction:.1f}% reduction)"
-                )
+                # Optimum saves as <stem>_quantized.onnx
+                quantized_file = output_path / (onnx_file.stem + "_quantized.onnx")
+                if quantized_file.exists():
+                    quantized_size = quantized_file.stat().st_size / (1024 * 1024)
+                    reduction = (1 - quantized_size / original_size) * 100 if original_size > 0 else 0
+                    logger.info(
+                        f"    {onnx_file.name}: {original_size:.1f} MB -> "
+                        f"{quantized_file.name}: {quantized_size:.1f} MB "
+                        f"({reduction:.1f}% reduction)"
+                    )
+                    # Remove FP32, rename quantized to original name
+                    onnx_file.unlink()
+                    quantized_file.rename(onnx_file)
+                    logger.info(f"    Replaced {onnx_file.name} with quantized version")
+                else:
+                    logger.warning(f"    Quantized file not found for {onnx_file.name}")
 
         except Exception as e:
             logger.error(f"Quantization failed: {e}")

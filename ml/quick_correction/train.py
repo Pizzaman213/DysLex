@@ -393,36 +393,43 @@ def train_model(
         callbacks=callbacks,  # type: ignore[arg-type]
     )
 
+    # Log multi-GPU info
+    if torch.cuda.device_count() > 1:
+        logger.info(f"Distributed training: {torch.cuda.device_count()} GPUs")
+
     # Train
     logger.info(f"Starting training ({total_steps} total steps, {warmup_steps} warmup)...")
     trainer.train()
 
-    # Evaluate
+    # Evaluate (Trainer gathers results across ranks)
     logger.info("Evaluating model...")
     eval_results = trainer.evaluate()
-    logger.info(f"Evaluation results:")
-    for key, value in sorted(eval_results.items()):
-        if isinstance(value, float):
-            logger.info(f"  {key}: {value:.4f}")
-        else:
-            logger.info(f"  {key}: {value}")
 
-    # Save
-    logger.info(f"Saving model to {output_dir}...")
-    trainer.save_model(str(output_dir))
-    tokenizer.save_pretrained(str(output_dir))
+    # Post-training steps on main process only (avoid duplicate saves/logs)
+    if trainer.is_world_process_zero():
+        logger.info("Evaluation results:")
+        for key, value in sorted(eval_results.items()):
+            if isinstance(value, float):
+                logger.info(f"  {key}: {value:.4f}")
+            else:
+                logger.info(f"  {key}: {value}")
 
-    # Check model size
-    model_size = sum(
-        f.stat().st_size for f in output_dir.rglob("*") if f.is_file()
-    )
-    model_size_mb = model_size / (1024 * 1024)
-    logger.info(f"Model size: {model_size_mb:.1f} MB")
+        # Save
+        logger.info(f"Saving model to {output_dir}...")
+        trainer.save_model(str(output_dir))
+        tokenizer.save_pretrained(str(output_dir))
 
-    if model_size_mb > 150:
-        logger.warning(f"Model size ({model_size_mb:.1f} MB) exceeds target of 150 MB")
+        # Check model size
+        model_size = sum(
+            f.stat().st_size for f in output_dir.rglob("*") if f.is_file()
+        )
+        model_size_mb = model_size / (1024 * 1024)
+        logger.info(f"Model size: {model_size_mb:.1f} MB")
 
-    logger.info("Training complete!")
+        if model_size_mb > 150:
+            logger.warning(f"Model size ({model_size_mb:.1f} MB) exceeds target of 150 MB")
+
+        logger.info("Training complete!")
 
 
 def parse_args() -> argparse.Namespace:

@@ -62,7 +62,7 @@ const state: OnnxModelState = {
   userDictionary: {},
 };
 
-const MODEL_PATH = '/models/quick_correction_seq2seq_v1';
+const MODEL_PATH = 'quick_correction_seq2seq_v1';
 
 /**
  * Load the T5 seq2seq pipeline, and base correction dictionary
@@ -114,7 +114,7 @@ export async function loadModel(): Promise<void> {
       state.pipeline = await transformers.pipeline(
         'text2text-generation',
         MODEL_PATH + '/',
-        { local_files_only: true }
+        { local_files_only: true, quantized: false }
       );
 
       console.log('[ONNX] Seq2Seq pipeline loaded successfully');

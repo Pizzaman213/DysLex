@@ -1,6 +1,8 @@
 """Adaptive learning — snapshot submission endpoints."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 from fastapi import APIRouter, Depends
 

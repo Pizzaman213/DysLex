@@ -1,4 +1,5 @@
 {
+  "add_prefix_space": null,
   "added_tokens_decoder": {
     "0": {
       "content": "<pad>",
@@ -930,6 +931,7 @@
   "clean_up_tokenization_spaces": false,
   "eos_token": "</s>",
   "extra_ids": 100,
+  "extra_special_tokens": {},
   "model_max_length": 512,
   "pad_token": "<pad>",
   "sp_model_kwargs": {},
