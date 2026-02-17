@@ -10,8 +10,10 @@ from __future__ import annotations
 import enum
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 

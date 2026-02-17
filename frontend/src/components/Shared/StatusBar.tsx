@@ -1,11 +1,12 @@
 import { useEditorStore } from '@/stores/editorStore';
 import { useEffect, useState } from 'react';
+import { parseText } from '@/utils/readabilityUtils';
 
 export function StatusBar() {
   const { content, corrections, isSaving } = useEditorStore();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  const wordCount = content.split(/\s+/).filter(Boolean).length;
+  const { wordCount } = parseText(content);
   const suggestionCount = corrections.filter((c) => !c.isApplied && !c.isDismissed).length;
 
   useEffect(() => {

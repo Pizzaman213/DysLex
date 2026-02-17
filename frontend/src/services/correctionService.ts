@@ -62,12 +62,28 @@ function mapContextCorrection(cc: ContextCorrection): Correction {
 
 /**
  * Map an API correction to the UI Correction format.
- * Filters out corrections without valid position data.
+ * Falls back to case-insensitive text search when position is missing.
+ * Filters out corrections where position still can't be resolved.
  */
-function mapApiCorrection(c: any): Correction | null {
-  const start = c.position?.start;
-  const end = c.position?.end;
-  if (typeof start !== 'number' || typeof end !== 'number' || start === end) return null;
+function mapApiCorrection(c: any, text?: string): Correction | null {
+  let start: number | undefined = c.position?.start;
+  let end: number | undefined = c.position?.end;
+
+  // Fallback: search for the original text when position is missing
+  if ((typeof start !== 'number' || typeof end !== 'number' || start === end) && c.original && text) {
+    const idx = text.toLowerCase().indexOf(c.original.toLowerCase());
+    if (idx !== -1) {
+      start = idx;
+      end = idx + c.original.length;
+    }
+  }
+
+  if (typeof start !== 'number' || typeof end !== 'number' || start === end) {
+    if (c.original) {
+      console.warn('[Corrections] Dropping correction — position not resolvable:', c.original, '->', c.correction || c.suggested);
+    }
+    return null;
+  }
   return {
     original: c.original || '',
     suggested: c.correction || c.suggested || '',
@@ -131,7 +147,7 @@ export async function getCorrections(text: string): Promise<Correction[]> {
     api.getCorrections(text)
       .then((res) =>
         res.data.corrections
-          .map(mapApiCorrection)
+          .map((c: any) => mapApiCorrection(c, text))
           .filter((c): c is Correction => c !== null)
       )
       .catch((err) => {

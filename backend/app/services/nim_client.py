@@ -10,17 +10,25 @@ from app.models.correction import Correction
 
 logger = logging.getLogger(__name__)
 
-# Import QuickCorrectionService
-_quick_service = None
+# Import QuickCorrectionService — _UNAVAILABLE sentinel prevents retrying broken imports.
+_quick_service: object | None = None
+_UNAVAILABLE = object()
 
 
 def _get_quick_service() -> object | None:
     """Get or initialize Quick Correction Service."""
     global _quick_service
+    if _quick_service is _UNAVAILABLE:
+        return None
     if _quick_service is None:
-        from app.services.quick_correction_service import get_quick_correction_service
+        try:
+            from app.services.quick_correction_service import get_quick_correction_service
 
-        _quick_service = get_quick_correction_service()
+            _quick_service = get_quick_correction_service()
+        except Exception as e:
+            logger.warning("Quick correction service unavailable: %s", e)
+            _quick_service = _UNAVAILABLE
+            return None
     return _quick_service
 
 

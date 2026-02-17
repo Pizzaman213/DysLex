@@ -2,6 +2,7 @@
 
 import json
 import logging
+import uuid
 
 import httpx
 from fastapi import APIRouter
@@ -35,6 +36,25 @@ class MindMapEdge(BaseModel):
     relationship: str | None = None
 
 
+class SuggestConnectionsRequest(BaseModel):
+    nodes: list[MindMapNode]
+    edges: list[MindMapEdge]
+
+
+class ConnectionSuggestion(BaseModel):
+    id: str
+    type: str  # "connection", "gap", or "cluster"
+    sourceNodeId: str | None = None  # noqa: N815
+    targetNodeId: str | None = None  # noqa: N815
+    description: str
+    confidence: float | None = None
+
+
+class SuggestConnectionsResponse(BaseModel):
+    suggestions: list[ConnectionSuggestion]
+    clusterNames: dict[str, str] | None = None  # noqa: N815
+
+
 class BuildScaffoldRequest(BaseModel):
     nodes: list[MindMapNode]
     edges: list[MindMapEdge]
@@ -51,6 +71,216 @@ class ScaffoldSection(BaseModel):
 class BuildScaffoldResponse(BaseModel):
     title: str
     sections: list[ScaffoldSection]
+
+
+# ---------------------------------------------------------------------------
+# LLM-powered connection suggester
+# ---------------------------------------------------------------------------
+
+SUGGEST_CONNECTIONS_SYSTEM_PROMPT = """\
+You are a writing coach helping a dyslexic thinker discover connections between their ideas.
+
+You will receive a list of idea nodes (each with an id, title, body, and cluster number) \
+and any existing connections between them. Your job is to:
+
+1. Suggest new connections between nodes that share themes, arguments, or evidence.
+2. Identify gaps — areas where the writer might need more ideas.
+3. Suggest meaningful names for each cluster of ideas.
+
+Rules:
+- Only suggest connections that are genuinely meaningful.
+- Each suggestion needs a clear, short description of WHY these ideas connect.
+- Confidence should be 0.0–1.0 (how confident you are in the connection).
+- Do NOT repeat connections that already exist.
+- Cluster names should be short (2-4 words) and capture the theme.
+
+Respond with ONLY valid JSON (no markdown fences):
+{
+  "suggestions": [
+    {
+      "type": "connection",
+      "sourceNodeId": "node-id-1",
+      "targetNodeId": "node-id-2",
+      "description": "Both discuss X",
+      "confidence": 0.85
+    },
+    {
+      "type": "gap",
+      "description": "You might need more evidence for Y",
+      "confidence": 0.7
+    }
+  ],
+  "clusterNames": {
+    "1": "Theme Name",
+    "2": "Another Theme"
+  }
+}\
+"""
+
+
+def _build_suggest_connections_prompt(request: SuggestConnectionsRequest) -> str:
+    """Build the user message for connection suggestion."""
+    lines = ["Here are the idea nodes:\n"]
+    for node in request.nodes:
+        lines.append(
+            f"- [{node.id}] (cluster {node.cluster}) \"{node.title}\": {node.body}"
+        )
+
+    if request.edges:
+        lines.append("\nExisting connections:")
+        for edge in request.edges:
+            rel = f" ({edge.relationship})" if edge.relationship else ""
+            lines.append(f"- {edge.source} → {edge.target}{rel}")
+    else:
+        lines.append("\nNo existing connections yet.")
+
+    lines.append("\nSuggest new connections and name the clusters.")
+    return "\n".join(lines)
+
+
+async def _llm_suggest_connections(
+    request: SuggestConnectionsRequest,
+) -> SuggestConnectionsResponse | None:
+    """Call the LLM to suggest connections between mind map nodes."""
+    if not settings.nvidia_nim_api_key:
+        logger.warning("NVIDIA_NIM_API_KEY not set — falling back to simple suggestions")
+        return None
+
+    url = f"{settings.nvidia_nim_llm_url}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.nvidia_nim_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.nvidia_nim_llm_model,
+        "messages": [
+            {"role": "system", "content": SUGGEST_CONNECTIONS_SYSTEM_PROMPT},
+            {"role": "user", "content": _build_suggest_connections_prompt(request)},
+        ],
+        "temperature": 0.5,
+        "max_tokens": 4096,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+
+        result = response.json()
+        content = result["choices"][0]["message"]["content"]
+        logger.info(f"Suggest-connections LLM response: {content[:300]}")
+
+        # Strip markdown fences if present
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3].strip()
+
+        parsed = json.loads(cleaned)
+        valid_ids = {n.id for n in request.nodes}
+        existing = {(e.source, e.target) for e in request.edges}
+
+        suggestions = []
+        for s in parsed.get("suggestions", []):
+            src = s.get("sourceNodeId")
+            tgt = s.get("targetNodeId")
+            stype = s.get("type", "connection")
+
+            # Skip if connection already exists
+            if stype == "connection" and (src, tgt) in existing:
+                continue
+            # Skip if referencing invalid node IDs
+            if src and src not in valid_ids:
+                continue
+            if tgt and tgt not in valid_ids:
+                continue
+
+            suggestions.append(
+                ConnectionSuggestion(
+                    id=str(uuid.uuid4()),
+                    type=stype,
+                    sourceNodeId=src,
+                    targetNodeId=tgt,
+                    description=s.get("description", "Related ideas"),
+                    confidence=s.get("confidence"),
+                )
+            )
+
+        return SuggestConnectionsResponse(
+            suggestions=suggestions,
+            clusterNames=parsed.get("clusterNames"),
+        )
+
+    except httpx.HTTPError as e:
+        logger.error(f"Suggest-connections LLM API error: {e}")
+        return None
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        logger.error(f"Failed to parse suggest-connections LLM response: {e}")
+        return None
+
+
+def _simple_suggest_connections(
+    request: SuggestConnectionsRequest,
+) -> SuggestConnectionsResponse:
+    """Suggest connections based on shared clusters (no LLM fallback)."""
+    existing = {(e.source, e.target) for e in request.edges}
+    existing |= {(e.target, e.source) for e in request.edges}
+
+    suggestions: list[ConnectionSuggestion] = []
+    cluster_groups: dict[int, list[MindMapNode]] = {}
+    for node in request.nodes:
+        cluster_groups.setdefault(node.cluster, []).append(node)
+
+    # Suggest connections between nodes in the same cluster
+    for nodes in cluster_groups.values():
+        for i, a in enumerate(nodes):
+            for b in nodes[i + 1 :]:
+                if (a.id, b.id) not in existing:
+                    suggestions.append(
+                        ConnectionSuggestion(
+                            id=str(uuid.uuid4()),
+                            type="connection",
+                            sourceNodeId=a.id,
+                            targetNodeId=b.id,
+                            description=f"Both in the same idea cluster",
+                            confidence=0.5,
+                        )
+                    )
+
+    # Generate simple cluster names
+    cluster_names: dict[str, str] = {}
+    for cid, nodes in cluster_groups.items():
+        if nodes:
+            cluster_names[str(cid)] = nodes[0].title[:30] if nodes[0].title else f"Group {cid}"
+
+    return SuggestConnectionsResponse(
+        suggestions=suggestions[:10],  # Limit to 10 suggestions
+        clusterNames=cluster_names,
+    )
+
+
+@router.post("/suggest-connections", response_model=SuggestConnectionsResponse)
+async def suggest_connections(
+    request: SuggestConnectionsRequest,
+) -> SuggestConnectionsResponse:
+    """Suggest connections between mind map nodes.
+
+    Uses the LLM to find thematic connections, identify gaps, and name
+    clusters. Falls back to simple cluster-based suggestions if the LLM
+    is unavailable.
+    """
+    if not request.nodes:
+        return SuggestConnectionsResponse(suggestions=[], clusterNames={})
+
+    # Try LLM first
+    result = await _llm_suggest_connections(request)
+    if result is not None:
+        return result
+
+    # Fallback
+    logger.info("Using simple suggest-connections fallback")
+    return _simple_suggest_connections(request)
 
 
 # ---------------------------------------------------------------------------

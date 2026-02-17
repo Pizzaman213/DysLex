@@ -79,14 +79,21 @@ export function LoginPage() {
 
   return (
     <div className="auth-page">
+      <Link to="/" className="auth-home-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M19 12H5" />
+          <path d="M12 19l-7-7 7-7" />
+        </svg>
+        Back to home
+      </Link>
       <div className="auth-container">
         <div className="auth-card">
-          <div className="auth-logo">
+          <Link to="/" className="auth-logo" aria-label="Back to home">
             <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
               <rect width="40" height="40" rx="10" fill="var(--accent)" />
               <text x="50%" y="54%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="20" fontWeight="700">D</text>
             </svg>
-          </div>
+          </Link>
 
           <h1 className="auth-title anim anim-d1">Welcome back</h1>
           <p className="auth-subtitle anim anim-d2">Sign in to continue writing</p>
@@ -157,6 +164,7 @@ export function LoginPage() {
           <p className="auth-footer anim anim-d6">
             Don't have an account? <Link to="/signup">Create one</Link>
           </p>
+
         </div>
       </div>
     </div>

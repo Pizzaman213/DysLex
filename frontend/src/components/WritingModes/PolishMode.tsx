@@ -122,6 +122,7 @@ export function PolishMode() {
               isReadAloudPlaying={isPlaying}
               isReadAloudLoading={isLoading}
               readAloudDisabled={!content.trim()}
+              showFormatSelector
             />
           </div>
 

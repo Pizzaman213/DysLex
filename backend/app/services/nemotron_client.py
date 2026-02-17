@@ -186,6 +186,14 @@ async def deep_analysis(
                 )
                 # Compute positions relative to the chunk text
                 _compute_positions(chunk_text, corrections)
+                # Log corrections that still have no position after resolution
+                for c in corrections:
+                    if c.position is None and c.original:
+                        logger.debug(
+                            "Correction has no position after _compute_positions: "
+                            "'%s' -> '%s' (chunk_offset=%d)",
+                            c.original, c.correction, doc_offset,
+                        )
                 # Shift positions: subtract overlap prefix, then add doc offset
                 # Discard corrections that fall entirely within the overlap zone
                 # (they belong to the previous chunk)
@@ -406,20 +414,53 @@ def _compute_positions(text: str, corrections: list[Correction]) -> None:
     Searches for each correction's ``original`` text in the source and assigns
     the character offsets.  Uses a ``search_from`` cursor so that duplicate
     words get distinct positions.
+
+    Falls back to case-insensitive and stripped matching when exact match fails,
+    since LLMs sometimes return slightly different casing or extra whitespace.
     """
+    text_lower = text.lower()
     search_from = 0
     for c in corrections:
         if c.position is not None:
             continue
         if not c.original:
             continue
+
+        # 1. Exact match from cursor
         idx = text.find(c.original, search_from)
         if idx == -1:
             # Retry from the beginning (the LLM may have returned them out of order)
             idx = text.find(c.original)
+
+        # 2. Case-insensitive fallback
+        if idx == -1:
+            idx = text_lower.find(c.original.lower(), search_from)
+            if idx == -1:
+                idx = text_lower.find(c.original.lower())
+
+        # 3. Stripped fallback — remove surrounding whitespace/punctuation
+        if idx == -1:
+            stripped = c.original.strip().strip(".,;:!?\"'()[]{}").strip()
+            if stripped and stripped != c.original:
+                idx = text_lower.find(stripped.lower(), search_from)
+                if idx == -1:
+                    idx = text_lower.find(stripped.lower())
+
         if idx != -1:
-            c.position = Position(start=idx, end=idx + len(c.original))
-            search_from = idx + len(c.original)
+            # Use the length of the actual text span, not the LLM's original
+            match_len = len(c.original)
+            # For case-insensitive/stripped matches, use the found span length
+            # Check if exact original fits; if not, use stripped length
+            if text[idx:idx + match_len].lower() != c.original.lower():
+                stripped = c.original.strip().strip(".,;:!?\"'()[]{}").strip()
+                match_len = len(stripped)
+            c.position = Position(start=idx, end=idx + match_len)
+            search_from = idx + match_len
+        else:
+            logger.warning(
+                "Could not find position for correction: '%s' -> '%s'",
+                c.original, c.correction,
+            )
 
 
 # ---------------------------------------------------------------------------

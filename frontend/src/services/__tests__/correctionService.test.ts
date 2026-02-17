@@ -296,15 +296,59 @@ describe('getCorrections', () => {
     expect(result[0].suggested).toBe('estimations');
   });
 
-  it('filters out API corrections without valid position data', async () => {
+  it('resolves API corrections with missing position via text search fallback', async () => {
     mockApiCorrections.mockResolvedValue({
       data: {
         corrections: [
           {
-            original: 'bad',
-            correction: 'good',
+            original: 'becuase',
+            correction: 'because',
             error_type: 'spelling',
-            // no position
+            // no position — fallback should find it in text
+            confidence: 0.9,
+          },
+        ],
+      },
+    } as any);
+
+    const result = await getCorrections('I went becuase of rain');
+    expect(result.length).toBe(1);
+    expect(result[0].original).toBe('becuase');
+    expect(result[0].start).toBe(7);
+    expect(result[0].end).toBe(14);
+  });
+
+  it('resolves API corrections with missing position via case-insensitive fallback', async () => {
+    mockApiCorrections.mockResolvedValue({
+      data: {
+        corrections: [
+          {
+            original: 'Teh',
+            correction: 'The',
+            error_type: 'spelling',
+            // no position — case differs from text
+            confidence: 0.9,
+          },
+        ],
+      },
+    } as any);
+
+    const result = await getCorrections('I saw teh cat');
+    expect(result.length).toBe(1);
+    expect(result[0].original).toBe('Teh');
+    expect(result[0].start).toBe(6);
+    expect(result[0].end).toBe(9);
+  });
+
+  it('filters out API corrections that cannot be found in text at all', async () => {
+    mockApiCorrections.mockResolvedValue({
+      data: {
+        corrections: [
+          {
+            original: 'xyzzy',
+            correction: 'magic',
+            error_type: 'spelling',
+            // no position, and word doesn't exist in text
             confidence: 0.9,
           },
           {

@@ -87,7 +87,7 @@ export function getReadabilityLevel(grade: number): 'easy' | 'medium' | 'advance
 /**
  * Parse text to extract basic metrics
  */
-function parseText(text: string): { wordCount: number; sentenceCount: number } {
+export function parseText(text: string): { wordCount: number; sentenceCount: number } {
   // Remove HTML tags if any
   const cleanText = text.replace(/<[^>]*>/g, ' ');
 

@@ -2,15 +2,21 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { useCoachStore } from '../../stores/coachStore';
 import { useCoachChat } from '../../hooks/useCoachChat';
+import { useEditorStore } from '../../stores/editorStore';
 
 interface CoachPanelProps {
   editor: Editor | null;
 }
 
-const STARTERS = [
+// Starters that only make sense when the editor has text
+const WRITING_STARTERS = [
   "How's my writing going?",
-  'Help me get unstuck',
   'What should I work on next?',
+];
+
+// Starters that work regardless of editor content
+const GENERAL_STARTERS = [
+  'Help me get unstuck',
   'Can you explain a correction?',
 ];
 
@@ -18,6 +24,7 @@ export function CoachPanel({ editor }: CoachPanelProps) {
   const { messages, isLoading, pendingExplainCorrection, clearPendingExplanation } = useCoachStore();
   const { sendMessage } = useCoachChat(editor);
   const [input, setInput] = useState('');
+  const hasContent = !!useEditorStore((s) => s.content).trim();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom on new messages
@@ -64,7 +71,7 @@ export function CoachPanel({ editor }: CoachPanelProps) {
         </div>
 
         <div className="coach-panel__starters">
-          {STARTERS.map((starter) => (
+          {(hasContent ? WRITING_STARTERS : []).concat(GENERAL_STARTERS).map((starter) => (
             <button
               key={starter}
               className="coach-panel__starter-btn"

@@ -11,9 +11,10 @@ interface EditorToolbarProps {
   isReadAloudPlaying?: boolean;
   isReadAloudLoading?: boolean;
   readAloudDisabled?: boolean;
+  showFormatSelector?: boolean;
 }
 
-export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAloud }: EditorToolbarProps) {
+export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAloud, showFormatSelector }: EditorToolbarProps) {
   const { font, setFont, fontSize, setFontSize, zoom, setZoom, showZoom } = useSettingsStore();
   const [sizeInput, setSizeInput] = useState(String(fontSize));
 
@@ -251,10 +252,12 @@ export function EditorToolbar({ editor, panelsVisible, onTogglePanels, onReadAlo
         />
       </div>
 
-      {/* Format group */}
-      <div className="editor-toolbar__group">
-        <FormatSelector />
-      </div>
+      {/* Format group — only shown in Polish mode */}
+      {showFormatSelector && (
+        <div className="editor-toolbar__group">
+          <FormatSelector />
+        </div>
+      )}
 
       {/* Zoom group (toggled via Settings > Appearance) */}
       {showZoom && (

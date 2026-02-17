@@ -168,9 +168,21 @@ CREATE TABLE IF NOT EXISTS user_settings (
     -- Advanced
     developer_mode BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- LLM Provider (nullable = use system default)
+    llm_provider VARCHAR(20),
+    llm_base_url VARCHAR(500),
+    llm_model VARCHAR(200),
+    llm_api_key_encrypted TEXT,
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Ensure LLM columns exist on older databases created before these were added
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS llm_provider VARCHAR(20);
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS llm_base_url VARCHAR(500);
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS llm_model VARCHAR(200);
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS llm_api_key_encrypted TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
 

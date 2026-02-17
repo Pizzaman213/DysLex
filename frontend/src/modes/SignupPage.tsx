@@ -84,12 +84,12 @@ export function SignupPage() {
     <div className="auth-page">
       <div className="auth-container">
         <div className="auth-card">
-          <div className="auth-logo">
+          <Link to="/" className="auth-logo" aria-label="Back to home">
             <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
               <rect width="40" height="40" rx="10" fill="var(--accent)" />
               <text x="50%" y="54%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="20" fontWeight="700">D</text>
             </svg>
-          </div>
+          </Link>
 
           <h1 className="auth-title anim anim-d1">Create your account</h1>
           <p className="auth-subtitle anim anim-d2">

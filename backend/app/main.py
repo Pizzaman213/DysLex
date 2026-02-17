@@ -301,6 +301,12 @@ app.include_router(brainstorm.router, prefix="/api/v1/capture/brainstorm", tags=
 # ---------------------------------------------------------------------------
 
 
+@app.get("/v2/health/live")
+async def triton_health_live() -> dict:
+    """Triton/NIM-compatible liveness probe."""
+    return {"status": "live"}
+
+
 @app.get("/health")
 async def health_check() -> dict:
     """Liveness check — verifies the API process is alive."""

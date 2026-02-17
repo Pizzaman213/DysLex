@@ -38,6 +38,7 @@ Why sudo? (Linux only):
       2. Starting system services (PostgreSQL and Redis via systemctl)
     On macOS, Homebrew handles packages without sudo. On Windows, Chocolatey is used instead.
     Without --auto-setup, sudo is never invoked.
+    If running as root (e.g., in Docker containers), sudo is skipped automatically.
 
 License:
     Apache 2.0 - See LICENSE file
@@ -82,6 +83,36 @@ HEALTH_CHECK_INTERVAL = 1  # seconds
 HEALTH_CHECK_REQUEST_TIMEOUT = 5  # seconds per HTTP request (cold starts with SQLAlchemy lazy init take longer)
 
 SHUTDOWN_TIMEOUT = 5  # seconds to wait for graceful shutdown
+
+# Root detection — when running as root (e.g., in Docker containers),
+# sudo is unnecessary and may not even be installed.
+IS_ROOT = (os.getuid() == 0) if hasattr(os, 'getuid') else False
+
+
+def _sudo() -> List[str]:
+    """Return ['sudo'] prefix, or [] if already running as root."""
+    return [] if IS_ROOT else ['sudo']
+
+
+def _sudo_user(user: str) -> List[str]:
+    """Return command prefix to run as a different user.
+
+    When root: ['runuser', '-u', user, '--']
+    When not root: ['sudo', '-u', user]
+    """
+    if IS_ROOT:
+        return ['runuser', '-u', user, '--']
+    return ['sudo', '-u', user]
+
+
+def _shell_sudo() -> str:
+    """Return 'sudo ' or '' for use inside shell command strings."""
+    return '' if IS_ROOT else 'sudo '
+
+
+def _shell_sudo_E() -> str:
+    """Return 'sudo -E ' or '' for use inside shell command strings."""
+    return '' if IS_ROOT else 'sudo -E '
 
 # NVIDIA NIM defaults (must match backend/app/config.py)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -425,6 +456,66 @@ def should_auto_setup(script_dir: Path) -> Tuple[bool, str]:
 
 
 # ============================================================================
+# Port utilities
+# ============================================================================
+
+def _find_pids_on_port(port: int) -> list:
+    """Find PIDs using a port. Tries lsof first, falls back to /proc/net/tcp."""
+    # Try lsof first
+    try:
+        result = subprocess.run(
+            ['lsof', '-ti', f':{port}'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split('\n')
+    except FileNotFoundError:
+        pass
+
+    # Fallback: parse /proc/net/tcp and /proc/net/tcp6 (Linux)
+    try:
+        hex_port = f'{port:04X}'
+        inodes = set()
+        for tcp_file in ('/proc/net/tcp', '/proc/net/tcp6'):
+            try:
+                with open(tcp_file, 'r') as f:
+                    for line in f.readlines()[1:]:  # skip header
+                        fields = line.split()
+                        if len(fields) >= 10:
+                            local_port = fields[1].split(':')[1]
+                            if local_port == hex_port:
+                                inodes.add(fields[9])
+            except FileNotFoundError:
+                continue
+        if not inodes:
+            return []
+        # Find PIDs owning those socket inodes
+        pids = []
+        for pid_dir in os.listdir('/proc'):
+            if not pid_dir.isdigit():
+                continue
+            fd_dir = f'/proc/{pid_dir}/fd'
+            try:
+                for fd in os.listdir(fd_dir):
+                    try:
+                        link = os.readlink(f'{fd_dir}/{fd}')
+                        if link.startswith('socket:['):
+                            inode = link[8:-1]
+                            if inode in inodes:
+                                pids.append(pid_dir)
+                                break
+                    except (OSError, ValueError):
+                        continue
+            except (PermissionError, FileNotFoundError):
+                continue
+        return pids
+    except Exception:
+        return []
+
+
+# ============================================================================
 # PackageInstaller
 # ============================================================================
 
@@ -706,7 +797,7 @@ class PackageInstaller:
             return False
         print(self._colorize(f'  Trying snap: {snap_name}...', Color.GRAY))
         try:
-            cmd = ['sudo', 'snap', 'install', snap_name]
+            cmd = [*_sudo(), 'snap', 'install', snap_name]
             if classic:
                 cmd.append('--classic')
             result = subprocess.run(cmd, timeout=300)
@@ -812,6 +903,140 @@ class PackageInstaller:
             pass
 
     # ------------------------------------------------------------------
+    # dpkg recovery (Debian/Ubuntu)
+    # ------------------------------------------------------------------
+
+    def _fix_dpkg(self) -> None:
+        """Run 'dpkg --configure -a' if dpkg is in a broken state.
+
+        This can happen when a previous apt operation was interrupted
+        (e.g., in Docker builds, OOM kills, or Ctrl+C during install).
+        """
+        if self._detect_package_manager() != 'apt':
+            return
+        # Quick check: run a harmless dpkg command to see if it complains
+        result = subprocess.run(
+            [*_sudo(), 'dpkg', '--audit'],
+            capture_output=True, text=True, timeout=30,
+        )
+        # Also try apt-get check which surfaces the "dpkg was interrupted" error
+        result2 = subprocess.run(
+            [*_sudo(), 'apt-get', 'check'],
+            capture_output=True, text=True, timeout=30,
+        )
+        stderr_combined = (result.stderr or '') + (result2.stderr or '')
+        if 'dpkg --configure -a' in stderr_combined or result2.returncode != 0:
+            print(self._colorize('⚙️  Fixing interrupted dpkg state...', Color.YELLOW))
+            env = os.environ.copy()
+            env['DEBIAN_FRONTEND'] = 'noninteractive'
+            subprocess.run(
+                [*_sudo(), 'dpkg', '--configure', '-a'],
+                timeout=300,
+                env=env,
+            )
+            print(self._colorize('✓ dpkg state recovered', Color.GREEN))
+
+    # ------------------------------------------------------------------
+    # Python 3.11+
+    # ------------------------------------------------------------------
+
+    def install_python(self) -> Optional[str]:
+        """Install Python 3.11+ via platform package manager.
+
+        Returns the absolute path to the new python3.11 binary on success,
+        or None on failure. The caller can use os.execv() to re-exec the
+        script under the new interpreter in the same terminal session.
+        """
+        print(self._colorize('⚙️  Python 3.11+ not found.', Color.YELLOW))
+        if not self._confirm('Install Python 3.11?'):
+            return None
+
+        pkg = self._detect_package_manager()
+        if not pkg:
+            print(self._colorize('  Could not detect package manager', Color.RED))
+            return None
+
+        print(self._colorize('  Installing Python 3.11...', Color.GRAY))
+        try:
+            if pkg == 'brew':
+                if not self._ensure_homebrew():
+                    return False
+                self._run_command(['brew', 'install', 'python@3.11'], timeout=600)
+
+            elif pkg == 'apt':
+                self._fix_dpkg()
+                # Try deadsnakes PPA first (Ubuntu), then default repos
+                env = os.environ.copy()
+                env['DEBIAN_FRONTEND'] = 'noninteractive'
+                # Install software-properties-common for add-apt-repository
+                subprocess.run(
+                    [*_sudo(), 'apt-get', 'install', '-y', '-qq',
+                     'software-properties-common'],
+                    timeout=120, env=env,
+                )
+                subprocess.run(
+                    [*_sudo(), 'add-apt-repository', '-y', 'ppa:deadsnakes/ppa'],
+                    timeout=120, env=env,
+                )
+                subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'],
+                               timeout=120, env=env)
+                self._run_command(
+                    [*_sudo(), 'apt-get', 'install', '-y', '-qq',
+                     'python3.11', 'python3.11-venv', 'python3.11-dev'],
+                    timeout=300,
+                )
+
+            elif pkg == 'dnf':
+                self._run_command(
+                    [*_sudo(), 'dnf', 'install', '-y', '-q',
+                     'python3.11', 'python3.11-devel'],
+                    timeout=300,
+                )
+
+            elif pkg == 'pacman':
+                self._run_command(
+                    [*_sudo(), 'pacman', '-Sy', '--noconfirm', '--needed', 'python'],
+                    timeout=300,
+                )
+
+            elif pkg == 'choco':
+                if not self._ensure_chocolatey():
+                    return False
+                self._run_command(
+                    ['choco', 'install', 'python311', '-y', '--no-progress'],
+                    timeout=600,
+                )
+                self._refresh_windows_path()
+
+            # Find the new python3.11 binary
+            import shutil
+            for candidate in ['python3.11', 'python3']:
+                binary = shutil.which(candidate)
+                if not binary:
+                    continue
+                try:
+                    result = subprocess.run(
+                        [binary, '--version'],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if result.returncode == 0:
+                        ver = result.stdout.strip()
+                        parts = ver.split()[-1].split('.')
+                        if int(parts[0]) >= 3 and int(parts[1]) >= 11:
+                            print(self._colorize(f'✓ {ver} installed', Color.GREEN))
+                            return binary
+                except Exception:
+                    continue
+
+            print(self._colorize('  Python 3.11+ install failed.', Color.RED))
+            print(self._colorize(
+                '  Install manually from https://python.org/downloads', Color.YELLOW))
+            return None
+        except Exception as e:
+            print(self._colorize(f'  Error installing Python: {e}', Color.RED))
+            return None
+
+    # ------------------------------------------------------------------
     # System prerequisites (build tools, libraries)
     # ------------------------------------------------------------------
 
@@ -825,6 +1050,10 @@ class PackageInstaller:
         pkg = self._detect_package_manager()
         if not pkg:
             return True
+
+        # Fix broken dpkg state before any apt operations
+        if pkg == 'apt':
+            self._fix_dpkg()
 
         print(self._colorize('⚙️  Installing system prerequisites...', Color.YELLOW))
         try:
@@ -876,10 +1105,10 @@ class PackageInstaller:
                     self._refresh_windows_path()
 
             elif pkg == 'apt':
-                subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
                 py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
                 self._run_command([
-                    'sudo', 'apt-get', 'install', '-y', '-qq',
+                    *_sudo(), 'apt-get', 'install', '-y', '-qq',
                     # Core tools
                     'curl', 'wget', 'git', 'ca-certificates', 'gnupg',
                     # Build toolchain (needed by pip packages with C extensions)
@@ -895,7 +1124,7 @@ class PackageInstaller:
 
             elif pkg == 'dnf':
                 self._run_command([
-                    'sudo', 'dnf', 'install', '-y', '-q',
+                    *_sudo(), 'dnf', 'install', '-y', '-q',
                     'curl', 'wget', 'git', 'ca-certificates',
                     'gcc', 'gcc-c++', 'make', 'pkgconfig',
                     'python3-devel', 'python3-pip',
@@ -906,7 +1135,7 @@ class PackageInstaller:
 
             elif pkg == 'pacman':
                 self._run_command([
-                    'sudo', 'pacman', '-Sy', '--noconfirm', '--needed',
+                    *_sudo(), 'pacman', '-Sy', '--noconfirm', '--needed',
                     'curl', 'wget', 'git', 'base-devel',
                     'python', 'python-pip',
                     'postgresql-libs',
@@ -963,42 +1192,49 @@ class PackageInstaller:
             elif pkg == 'apt':
                 # Ensure curl is available for NodeSource setup
                 if not self._is_command_available('curl'):
-                    subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
                     subprocess.run(
-                        ['sudo', 'apt-get', 'install', '-y', '-qq', 'curl'],
+                        [*_sudo(), 'apt-get', 'install', '-y', '-qq', 'curl'],
                         timeout=120,
+                    )
+                # Remove conflicting old Node.js dev packages that block
+                # NodeSource installs (e.g. libnode-dev from distro Node 12/16).
+                for conflict_pkg in ['libnode-dev', 'libnode72']:
+                    subprocess.run(
+                        [*_sudo(), 'apt-get', 'remove', '-y', '-qq', conflict_pkg],
+                        capture_output=True, timeout=60,
                     )
                 # NodeSource setup — its nodejs package already includes npm,
                 # so do NOT install the separate npm package alongside it.
                 result = subprocess.run(
-                    ['bash', '-c', 'curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -'],
+                    ['bash', '-c', f'curl -fsSL https://deb.nodesource.com/setup_20.x | {_shell_sudo_E()}bash -'],
                     timeout=120,
                 )
                 if result.returncode == 0:
-                    self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
+                    self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
                 else:
                     # NodeSource failed — fall back to distro packages (older Node, separate npm)
                     print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
-                    subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
-                    self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
+                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
+                    self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
 
             elif pkg == 'dnf':
                 # Ensure curl is available for NodeSource setup
                 if not self._is_command_available('curl'):
                     subprocess.run(
-                        ['sudo', 'dnf', 'install', '-y', '-q', 'curl'],
+                        [*_sudo(), 'dnf', 'install', '-y', '-q', 'curl'],
                         timeout=120,
                     )
                 result = subprocess.run(
-                    ['bash', '-c', 'curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo -E bash -'],
+                    ['bash', '-c', f'curl -fsSL https://rpm.nodesource.com/setup_20.x | {_shell_sudo_E()}bash -'],
                     timeout=120,
                 )
                 if result.returncode != 0:
                     print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
-                self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'nodejs'], timeout=300)
+                self._run_command([*_sudo(), 'dnf', 'install', '-y', '-q', 'nodejs'], timeout=300)
 
             elif pkg == 'pacman':
-                self._run_command(['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'nodejs', 'npm'], timeout=300)
+                self._run_command([*_sudo(), 'pacman', '-Sy', '--noconfirm', '--needed', 'nodejs', 'npm'], timeout=300)
 
             elif pkg == 'choco':
                 if not self._ensure_chocolatey():
@@ -1025,10 +1261,23 @@ class PackageInstaller:
                             os.environ['PATH'] += ';' + str(node_path)
                             break
 
-            # Verify node is actually available now
+            # Verify node is actually available AND meets minimum version
             if self._is_command_available('node'):
-                print(self._colorize('✓ Node.js installed', Color.GREEN))
-                return True
+                try:
+                    ver_result = subprocess.run(
+                        ['node', '--version'], capture_output=True, text=True, timeout=5,
+                    )
+                    ver_major = int(ver_result.stdout.strip().lstrip('v').split('.')[0])
+                    if ver_major >= NODE_MIN_VERSION[0]:
+                        print(self._colorize('✓ Node.js installed', Color.GREEN))
+                        return True
+                    else:
+                        print(self._colorize(
+                            f'  Node.js {ver_result.stdout.strip()} found but {NODE_MIN_VERSION[0]}+ required',
+                            Color.YELLOW,
+                        ))
+                except Exception:
+                    pass  # Fall through to fallback sources
 
             # --- Fallback sources ---
             print(self._colorize('  Primary install failed, trying alternative sources...', Color.YELLOW))
@@ -1121,9 +1370,9 @@ class PackageInstaller:
                         break
 
             elif pkg == 'apt':
-                subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
                 self._run_command(
-                    ['sudo', 'apt-get', 'install', '-y', '-qq',
+                    [*_sudo(), 'apt-get', 'install', '-y', '-qq',
                      'postgresql', 'postgresql-contrib', 'libpq-dev'],
                     timeout=300,
                 )
@@ -1131,32 +1380,32 @@ class PackageInstaller:
                 # apt usually does this automatically, but not always
                 # (e.g., when upgrading from an older version).
                 subprocess.run(
-                    ['sudo', 'systemctl', 'enable', 'postgresql'],
+                    [*_sudo(), 'systemctl', 'enable', 'postgresql'],
                     capture_output=True, timeout=10,
                 )
                 subprocess.run(
-                    ['sudo', 'systemctl', 'start', 'postgresql'],
+                    [*_sudo(), 'systemctl', 'start', 'postgresql'],
                     capture_output=True, timeout=30,
                 )
 
             elif pkg == 'dnf':
                 self._run_command(
-                    ['sudo', 'dnf', 'install', '-y', '-q',
+                    [*_sudo(), 'dnf', 'install', '-y', '-q',
                      'postgresql-server', 'postgresql-devel'],
                     timeout=300,
                 )
                 subprocess.run(
-                    ['sudo', 'postgresql-setup', '--initdb'],
+                    [*_sudo(), 'postgresql-setup', '--initdb'],
                     capture_output=True, timeout=60,
                 )
 
             elif pkg == 'pacman':
                 self._run_command(
-                    ['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'postgresql'],
+                    [*_sudo(), 'pacman', '-Sy', '--noconfirm', '--needed', 'postgresql'],
                     timeout=300,
                 )
                 subprocess.run(
-                    ['sudo', '-u', 'postgres', 'initdb', '--locale', 'en_US.UTF-8',
+                    [*_sudo_user('postgres'), 'initdb', '--locale', 'en_US.UTF-8',
                      '-D', '/var/lib/postgres/data'],
                     capture_output=True, timeout=60,
                 )
@@ -1215,7 +1464,7 @@ class PackageInstaller:
                     subprocess.run(
                         ['bash', '-c',
                          'curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | '
-                         'sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg 2>/dev/null'],
+                         f'{_shell_sudo()}gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg 2>/dev/null'],
                         capture_output=True, timeout=30,
                     )
                     # Get codename
@@ -1227,12 +1476,12 @@ class PackageInstaller:
                         ['bash', '-c',
                          f'echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] '
                          f'https://apt.postgresql.org/pub/repos/apt {codename}-pgdg main" | '
-                         f'sudo tee /etc/apt/sources.list.d/pgdg.list'],
+                         f'{_shell_sudo()}tee /etc/apt/sources.list.d/pgdg.list'],
                         capture_output=True, timeout=10,
                     )
-                    subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
+                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
                     result = subprocess.run(
-                        ['sudo', 'apt-get', 'install', '-y', '-qq', 'postgresql', 'postgresql-contrib'],
+                        [*_sudo(), 'apt-get', 'install', '-y', '-qq', 'postgresql', 'postgresql-contrib'],
                         timeout=300,
                     )
                     if result.returncode == 0 and self._is_postgres_installed():
@@ -1283,12 +1532,12 @@ class PackageInstaller:
                     return False
                 self._run_command(['brew', 'install', 'redis'], timeout=300)
             elif pkg == 'apt':
-                subprocess.run(['sudo', 'apt-get', 'update', '-qq'], timeout=120)
-                self._run_command(['sudo', 'apt-get', 'install', '-y', '-qq', 'redis-server'], timeout=300)
+                subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
+                self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'redis-server'], timeout=300)
             elif pkg == 'dnf':
-                self._run_command(['sudo', 'dnf', 'install', '-y', '-q', 'redis'], timeout=300)
+                self._run_command([*_sudo(), 'dnf', 'install', '-y', '-q', 'redis'], timeout=300)
             elif pkg == 'pacman':
-                self._run_command(['sudo', 'pacman', '-Sy', '--noconfirm', '--needed', 'redis'], timeout=300)
+                self._run_command([*_sudo(), 'pacman', '-Sy', '--noconfirm', '--needed', 'redis'], timeout=300)
             elif pkg == 'choco':
                 if not self._ensure_chocolatey():
                     return False
@@ -1398,17 +1647,17 @@ class PackageInstaller:
                 )
             elif self.platform_name == 'Linux':
                 subprocess.run(
-                    ['sudo', '-u', 'postgres', 'psql', '-c',
+                    [*_sudo_user('postgres'), 'psql', '-c',
                      "CREATE USER dyslex WITH PASSWORD 'dyslex';"],
                     capture_output=True, timeout=10,
                 )
                 subprocess.run(
-                    ['sudo', '-u', 'postgres', 'psql', '-c',
+                    [*_sudo_user('postgres'), 'psql', '-c',
                      "CREATE DATABASE dyslex OWNER dyslex;"],
                     capture_output=True, timeout=10,
                 )
                 subprocess.run(
-                    ['sudo', '-u', 'postgres', 'psql', '-c',
+                    [*_sudo_user('postgres'), 'psql', '-c',
                      "GRANT ALL PRIVILEGES ON DATABASE dyslex TO dyslex;"],
                     capture_output=True, timeout=10,
                 )
@@ -1454,12 +1703,12 @@ class PackageInstaller:
                 elif self.platform_name == 'Linux':
                     # Grant schema permissions first, then run as dyslex user
                     subprocess.run(
-                        ['sudo', '-u', 'postgres', 'psql', '-d', 'dyslex', '-c',
+                        [*_sudo_user('postgres'), 'psql', '-d', 'dyslex', '-c',
                          'GRANT ALL ON SCHEMA public TO dyslex;'],
                         capture_output=True, timeout=10,
                     )
                     result = subprocess.run(
-                        ['sudo', '-u', 'postgres', 'psql', '-d', 'dyslex',
+                        [*_sudo_user('postgres'), 'psql', '-d', 'dyslex',
                          '-f', str(init_sql.resolve())],
                         capture_output=True, timeout=30,
                     )
@@ -1518,7 +1767,7 @@ class PackageInstaller:
 
             # Check if a rule for dyslex already exists
             content = subprocess.run(
-                ['sudo', 'cat', str(pg_hba)],
+                [*_sudo(), 'cat', str(pg_hba)],
                 capture_output=True, text=True, timeout=5,
             )
             if content.returncode != 0:
@@ -1539,7 +1788,7 @@ class PackageInstaller:
 
             # Insert rules at the top of the host section using a sed command
             subprocess.run(
-                ['sudo', 'bash', '-c',
+                [*_sudo(), 'bash', '-c',
                  f'echo "# DysLex AI — allow password auth for dyslex user" >> {pg_hba}\n'
                  f'echo "{rule}" >> {pg_hba}\n'
                  f'echo "{rule_v6}" >> {pg_hba}'],
@@ -1548,7 +1797,7 @@ class PackageInstaller:
 
             # Reload PostgreSQL to pick up the change
             subprocess.run(
-                ['sudo', 'systemctl', 'reload', 'postgresql'],
+                [*_sudo(), 'systemctl', 'reload', 'postgresql'],
                 capture_output=True, timeout=10,
             )
             # Also try versioned reload (Debian/Ubuntu)
@@ -1562,7 +1811,7 @@ class PackageInstaller:
                         parts = line.split()
                         if len(parts) >= 3:
                             subprocess.run(
-                                ['sudo', 'systemctl', 'reload', f'postgresql@{parts[0]}-{parts[1]}'],
+                                [*_sudo(), 'systemctl', 'reload', f'postgresql@{parts[0]}-{parts[1]}'],
                                 capture_output=True, timeout=10,
                             )
             except FileNotFoundError:
@@ -1752,7 +2001,7 @@ class PrerequisiteChecker:
         Warns about potential issues that would cause installs to fail:
         - Low disk space
         - No network connectivity to package registries
-        - Missing sudo access (Linux only)
+        - Missing sudo access (Linux only, skipped when running as root)
         """
         # --- Disk space ---
         try:
@@ -1805,8 +2054,8 @@ class PrerequisiteChecker:
                 "    Check your internet connection and retry."
             )
 
-        # --- Sudo access (Linux only) ---
-        if self.platform_name == 'Linux':
+        # --- Sudo access (Linux only, skip if already root) ---
+        if self.platform_name == 'Linux' and not IS_ROOT:
             try:
                 result = subprocess.run(
                     ['sudo', '-v'],
@@ -1854,14 +2103,112 @@ class PrerequisiteChecker:
         if self.setup_state:
             self.setup_state.clear()
 
+    def _find_suitable_python(self) -> Optional[str]:
+        """Search for an already-installed Python >= PYTHON_MIN_VERSION.
+
+        Checks versioned binaries like python3.13, python3.12, python3.11
+        (highest first) so we pick the best available interpreter.
+        Returns the absolute path if found, None otherwise.
+        """
+        import shutil
+        # Check from highest to lowest so we prefer the newest version
+        for minor in range(15, PYTHON_MIN_VERSION[1] - 1, -1):
+            candidate = f'python3.{minor}'
+            binary = shutil.which(candidate)
+            if not binary:
+                continue
+            try:
+                result = subprocess.run(
+                    [binary, '--version'],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    ver_str = result.stdout.strip().split()[-1]
+                    parts = ver_str.split('.')
+                    if int(parts[0]) >= 3 and int(parts[1]) >= PYTHON_MIN_VERSION[1]:
+                        return binary
+            except Exception:
+                continue
+        return None
+
     def check_python_version(self):
-        """Verify Python version is 3.11+."""
+        """Verify Python version is 3.11+. Install if missing and auto_setup.
+
+        When the current interpreter is too old, this method first searches
+        for an already-installed suitable Python (e.g. python3.11, python3.12)
+        before attempting to install one. If a suitable binary is found, the
+        script re-execs under it via os.execv() — same terminal, same
+        arguments, seamless switchover.
+        """
         version = sys.version_info[:2]
         if version < PYTHON_MIN_VERSION:
+            # Before installing anything, check if a suitable Python is
+            # already on the system (e.g. python3.11 exists but python3
+            # points to an older version).
+            existing = self._find_suitable_python()
+            if existing:
+                script = os.path.abspath(sys.argv[0])
+                print(f"\n{Color.CYAN}  Found {existing} — restarting under it...{Color.RESET}\n")
+                os.execv(existing, [existing, script] + sys.argv[1:])
+
+            if self.auto_setup and self.installer:
+                new_python = self.installer.install_python()
+                if new_python:
+                    # Re-exec this script under the new Python in-place.
+                    # os.execv replaces the current process — same PID,
+                    # same terminal, user sees no interruption.
+                    script = os.path.abspath(sys.argv[0])
+                    print(f"\n{Color.CYAN}  Restarting under {new_python}...{Color.RESET}\n")
+                    os.execv(new_python, [new_python, script] + sys.argv[1:])
+                raise CheckError(
+                    f"Failed to install Python {PYTHON_MIN_VERSION[0]}.{PYTHON_MIN_VERSION[1]}+ automatically\n"
+                    f"    Fix: Install Python 3.11+ manually: https://python.org/downloads"
+                )
             raise CheckError(
                 f"Python {PYTHON_MIN_VERSION[0]}.{PYTHON_MIN_VERSION[1]}+ required, found {version[0]}.{version[1]}\n"
-                f"    Fix: Install Python 3.11+: https://python.org/downloads"
+                f"    Fix: Install Python 3.11+: https://python.org/downloads\n"
+                f"    Or use: python3 run.py --auto-setup"
             )
+
+    def _find_node_via_nvm(self) -> Optional[str]:
+        """Try to find a Node.js >= NODE_MIN_VERSION via nvm.
+
+        Checks common nvm directories for installed versions and, if a
+        suitable version is found, adds it to PATH so subsequent
+        subprocess calls use it.  Returns the node binary path on
+        success, None otherwise.
+        """
+        nvm_dirs = [
+            os.environ.get('NVM_DIR', ''),
+            os.path.expanduser('~/.nvm'),
+            '/usr/local/nvm',
+        ]
+        for nvm_dir in nvm_dirs:
+            if not nvm_dir or not os.path.isdir(nvm_dir):
+                continue
+            versions_dir = os.path.join(nvm_dir, 'versions', 'node')
+            if not os.path.isdir(versions_dir):
+                continue
+            # Collect installed versions, pick the best one >= minimum
+            candidates: List[Tuple[int, str]] = []
+            for entry in os.listdir(versions_dir):
+                ver_str = entry.lstrip('v')
+                try:
+                    major = int(ver_str.split('.')[0])
+                except (ValueError, IndexError):
+                    continue
+                if major >= NODE_MIN_VERSION[0]:
+                    bin_path = os.path.join(versions_dir, entry, 'bin')
+                    node_bin = os.path.join(bin_path, 'node')
+                    if os.path.isfile(node_bin):
+                        candidates.append((major, bin_path))
+            if candidates:
+                # Use the highest available version
+                candidates.sort(reverse=True)
+                best_bin_dir = candidates[0][1]
+                os.environ['PATH'] = best_bin_dir + ':' + os.environ.get('PATH', '')
+                return os.path.join(best_bin_dir, 'node')
+        return None
 
     def check_node_version(self):
         """Verify Node.js version is 20+. Install if missing and auto_setup."""
@@ -1884,6 +2231,21 @@ class PrerequisiteChecker:
             raise CheckError(f"Could not determine Node.js version: {e}")
 
         if need_install:
+            # Before installing, check if a suitable version is already
+            # available via nvm but just not the active selection.
+            nvm_node = self._find_node_via_nvm()
+            if nvm_node:
+                try:
+                    result = subprocess.run(
+                        [nvm_node, '--version'],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    ver = result.stdout.strip().lstrip('v')
+                    print(f"{self._colorize(f'  Found Node.js v{ver} via nvm — using it', Color.GREEN)}")
+                    return  # PATH already updated by _find_node_via_nvm
+                except Exception:
+                    pass  # Fall through to install
+
             if self.auto_setup and self.installer:
                 if self.installer.install_node():
                     return  # Successfully installed
@@ -2268,7 +2630,7 @@ class PrerequisiteChecker:
         if self.platform_name == 'Darwin':  # macOS
             return "Start PostgreSQL: brew services start postgresql@15  (or @16, @17)"
         elif self.platform_name == 'Linux':
-            return "Start PostgreSQL: sudo systemctl start postgresql"
+            return "Start PostgreSQL: sudo systemctl start postgresql" if not IS_ROOT else "Start PostgreSQL: systemctl start postgresql"
         else:  # Windows
             return "Start PostgreSQL: net start postgresql-x64-15  (or open Services panel)"
 
@@ -2277,7 +2639,7 @@ class PrerequisiteChecker:
         if self.platform_name == 'Darwin':  # macOS
             return "Start Redis: brew services start redis"
         elif self.platform_name == 'Linux':
-            return "Start Redis: sudo systemctl start redis-server  (or redis)"
+            return "Start Redis: sudo systemctl start redis-server  (or redis)" if not IS_ROOT else "Start Redis: systemctl start redis-server  (or redis)"
         else:  # Windows
             return "Start Redis: Download from https://redis.io/download or use Docker"
 
@@ -2327,7 +2689,7 @@ class PrerequisiteChecker:
                             break
                         # Try systemctl first
                         result = subprocess.run(
-                            ['sudo', 'systemctl', 'start', f'postgresql@{ver}-{name}'],
+                            [*_sudo(), 'systemctl', 'start', f'postgresql@{ver}-{name}'],
                             capture_output=True, text=True, timeout=30,
                         )
                         if result.returncode == 0:
@@ -2335,7 +2697,7 @@ class PrerequisiteChecker:
                             break
                         # Try pg_ctlcluster
                         result = subprocess.run(
-                            ['sudo', 'pg_ctlcluster', ver, name, 'start'],
+                            [*_sudo(), 'pg_ctlcluster', ver, name, 'start'],
                             capture_output=True, text=True, timeout=30,
                         )
                         if result.returncode == 0:
@@ -2349,15 +2711,15 @@ class PrerequisiteChecker:
                         for ver, name, status in detected_clusters:
                             print(f"{self._colorize(f'  Cluster {ver}/{name} failed to start. Recreating...', Color.YELLOW)}")
                             subprocess.run(
-                                ['sudo', 'pg_dropcluster', '--stop', ver, name],
+                                [*_sudo(), 'pg_dropcluster', '--stop', ver, name],
                                 capture_output=True, timeout=30,
                             )
                             result = subprocess.run(
-                                ['sudo', 'pg_createcluster', ver, name, '--start'],
+                                [*_sudo(), 'pg_createcluster', ver, name, '--start'],
                                 capture_output=True, text=True, timeout=60,
                             )
                             if result.returncode == 0:
-                                print(f"{self._colorize(f'  ✓ Cluster {ver}/{name} recreated and started', Color.GREEN)}")
+                                print(f"{self._colorize(f'  Cluster {ver}/{name} recreated and started', Color.GREEN)}")
                                 started = True
                                 break
                             else:
@@ -2368,11 +2730,31 @@ class PrerequisiteChecker:
                 if not started and not is_debian:
                     for svc_name in ['postgresql']:
                         result = subprocess.run(
-                            ['sudo', 'systemctl', 'start', svc_name],
+                            [*_sudo(), 'systemctl', 'start', svc_name],
                             timeout=30,
                         )
                         if result.returncode == 0:
                             started = True
+                            break
+
+                # Step 4: Fallback — start directly as postgres user via pg_ctl
+                # (useful in Docker containers without systemd)
+                if not started:
+                    for data_dir in [
+                        Path('/var/lib/postgresql/14/main'),
+                        Path('/var/lib/postgresql/15/main'),
+                        Path('/var/lib/postgresql/16/main'),
+                        Path('/var/lib/postgresql/17/main'),
+                    ]:
+                        if data_dir.exists():
+                            result = subprocess.run(
+                                [*_sudo_user('postgres'),
+                                 'pg_ctl', 'start', '-D', str(data_dir),
+                                 '-l', '/var/log/postgresql/startup.log', '-w'],
+                                capture_output=True, timeout=30,
+                            )
+                            if result.returncode == 0:
+                                started = True
                             break
 
                 # Wait for service to be ready (up to 10s)
@@ -2464,7 +2846,7 @@ class PrerequisiteChecker:
                 # Fedora/Arch use 'redis'
                 for svc_name in ['redis-server', 'redis']:
                     result = subprocess.run(
-                        ['sudo', 'systemctl', 'start', svc_name],
+                        [*_sudo(), 'systemctl', 'start', svc_name],
                         capture_output=True,
                         timeout=30
                     )
@@ -2529,14 +2911,14 @@ class PrerequisiteChecker:
                         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
                         print(f"{self._colorize('  Installing python3-venv (required on Ubuntu)...', Color.GRAY)}")
                         subprocess.run(
-                            ['sudo', 'apt-get', 'install', '-y', '-qq',
+                            [*_sudo(), 'apt-get', 'install', '-y', '-qq',
                              f'python{py_ver}-venv', 'python3-venv'],
                             timeout=120,
                         )
                     elif pkg == 'dnf':
                         print(f"{self._colorize('  Installing python3-venv...', Color.GRAY)}")
                         subprocess.run(
-                            ['sudo', 'dnf', 'install', '-y', '-q', 'python3-libs'],
+                            [*_sudo(), 'dnf', 'install', '-y', '-q', 'python3-libs'],
                             timeout=120,
                         )
                 elif plat == 'Darwin':
@@ -2686,12 +3068,12 @@ class PrerequisiteChecker:
             if platform.system() == 'Linux' and os.path.exists(swap_path):
                 print(f"{self._colorize('  Cleaning up stale swap file from previous run...', Color.GRAY)}")
                 try:
-                    subprocess.run(['sudo', 'swapoff', swap_path],
+                    subprocess.run([*_sudo(), 'swapoff', swap_path],
                                    capture_output=True, timeout=30)
                 except Exception:
                     pass
                 try:
-                    subprocess.run(['sudo', 'rm', '-f', swap_path],
+                    subprocess.run([*_sudo(), 'rm', '-f', swap_path],
                                    capture_output=True, timeout=10)
                 except Exception:
                     pass
@@ -2701,12 +3083,12 @@ class PrerequisiteChecker:
                 """Emergency swap cleanup registered via atexit."""
                 if os.path.exists(swap_path):
                     try:
-                        subprocess.run(['sudo', 'swapoff', swap_path],
+                        subprocess.run([*_sudo(), 'swapoff', swap_path],
                                        capture_output=True, timeout=30)
                     except Exception:
                         pass
                     try:
-                        subprocess.run(['sudo', 'rm', '-f', swap_path],
+                        subprocess.run([*_sudo(), 'rm', '-f', swap_path],
                                        capture_output=True, timeout=10)
                     except Exception:
                         pass
@@ -2725,10 +3107,10 @@ class PrerequisiteChecker:
                                     atexit.register(_atexit_swap_cleanup)
                                     # Create a 4GB swap file
                                     swap_cmds = [
-                                        ['sudo', 'fallocate', '-l', '4G', swap_path],
-                                        ['sudo', 'chmod', '600', swap_path],
-                                        ['sudo', 'mkswap', swap_path],
-                                        ['sudo', 'swapon', swap_path],
+                                        [*_sudo(), 'fallocate', '-l', '4G', swap_path],
+                                        [*_sudo(), 'chmod', '600', swap_path],
+                                        [*_sudo(), 'mkswap', swap_path],
+                                        [*_sudo(), 'swapon', swap_path],
                                     ]
                                     for cmd in swap_cmds:
                                         r = subprocess.run(cmd, capture_output=True, timeout=60)
@@ -2736,7 +3118,7 @@ class PrerequisiteChecker:
                                             # fallocate may not work on all filesystems, try dd
                                             if 'fallocate' in cmd:
                                                 subprocess.run(
-                                                    ['sudo', 'dd', 'if=/dev/zero', f'of={swap_path}',
+                                                    [*_sudo(), 'dd', 'if=/dev/zero', f'of={swap_path}',
                                                      'bs=1M', 'count=4096'],
                                                     capture_output=True, timeout=120,
                                                 )
@@ -2848,9 +3230,9 @@ class PrerequisiteChecker:
             # Clean up swap file if we created one
             if created_swap:
                 try:
-                    subprocess.run(['sudo', 'swapoff', swap_path],
+                    subprocess.run([*_sudo(), 'swapoff', swap_path],
                                    capture_output=True, timeout=30)
-                    subprocess.run(['sudo', 'rm', '-f', swap_path],
+                    subprocess.run([*_sudo(), 'rm', '-f', swap_path],
                                    capture_output=True, timeout=10)
                     print(f"{self._colorize('  ✓ Temporary swap file removed', Color.GREEN)}")
                 except Exception:
@@ -2866,9 +3248,9 @@ class PrerequisiteChecker:
             # Clean up swap file on exception
             if os.path.exists(self._SWAP_PATH):
                 try:
-                    subprocess.run(['sudo', 'swapoff', self._SWAP_PATH],
+                    subprocess.run([*_sudo(), 'swapoff', self._SWAP_PATH],
                                    capture_output=True, timeout=30)
-                    subprocess.run(['sudo', 'rm', '-f', self._SWAP_PATH],
+                    subprocess.run([*_sudo(), 'rm', '-f', self._SWAP_PATH],
                                    capture_output=True, timeout=10)
                     print(f"{self._colorize('  ✓ Temporary swap file removed after error', Color.GREEN)}")
                 except Exception:
@@ -2887,17 +3269,13 @@ class PrerequisiteChecker:
         """Kill the process using the specified port."""
         try:
             if self.platform_name == 'Darwin' or self.platform_name == 'Linux':
-                # Find process using lsof
-                result = subprocess.run(
-                    ['lsof', '-ti', f':{port}'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    pids = result.stdout.strip().split('\n')
+                pids = _find_pids_on_port(port)
+                if pids:
                     for pid in pids:
-                        subprocess.run(['kill', '-9', pid], timeout=5)
+                        try:
+                            os.kill(int(pid), signal.SIGKILL)
+                        except (ProcessLookupError, PermissionError, ValueError):
+                            pass
                     time.sleep(1)
                     return self._is_port_available(port)
             elif self.platform_name == 'Windows':
@@ -2970,7 +3348,7 @@ class PrerequisiteChecker:
                 print(f"{self._colorize('✓ PostgreSQL stopped', Color.GREEN)}")
             elif self.platform_name == 'Linux':
                 subprocess.run(
-                    ['sudo', 'systemctl', 'stop', 'postgresql'],
+                    [*_sudo(), 'systemctl', 'stop', 'postgresql'],
                     capture_output=True,
                     timeout=10
                 )
@@ -2991,7 +3369,7 @@ class PrerequisiteChecker:
             elif self.platform_name == 'Linux':
                 for svc_name in ['redis-server', 'redis']:
                     result = subprocess.run(
-                        ['sudo', 'systemctl', 'stop', svc_name],
+                        [*_sudo(), 'systemctl', 'stop', svc_name],
                         capture_output=True,
                         timeout=10
                     )
@@ -3400,14 +3778,8 @@ class ServiceManager:
         for port in self._managed_ports:
             try:
                 if platform.system() in ('Darwin', 'Linux'):
-                    result = subprocess.run(
-                        ['lsof', '-ti', f':{port}'],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0 and result.stdout.strip():
-                        pids = set(result.stdout.strip().split('\n'))
+                    pids = set(_find_pids_on_port(port))
+                    if pids:
                         # Don't kill our own children (they're managed via process groups)
                         own_pids = {str(p.pid) for p in self.processes.values()
                                     if p.returncode is None}

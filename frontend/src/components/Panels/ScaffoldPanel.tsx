@@ -67,7 +67,7 @@ export function ScaffoldPanel({ editor }: ScaffoldPanelProps) {
   return (
     <div className="scaffold-panel">
       <div className="scaffold-panel__header">
-        <h2 className="scaffold-panel__title">Essay Scaffold</h2>
+        <h2 className="scaffold-panel__title">Outline</h2>
 
         <div className="scaffold-panel__input-group">
           <input
@@ -124,7 +124,7 @@ export function ScaffoldPanel({ editor }: ScaffoldPanelProps) {
 
             {section.hints && section.hints.length > 0 && (
               <details className="scaffold-section__hints">
-                <summary>Hints</summary>
+                <summary>Key points</summary>
                 <ul>
                   {section.hints.map((hint, idx) => (
                     <li key={idx}>{hint}</li>

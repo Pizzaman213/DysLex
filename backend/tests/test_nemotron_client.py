@@ -144,6 +144,40 @@ class TestComputePositions:
         assert corrections[1].position is not None
         assert corrections[1].position.start == 8
 
+    def test_case_insensitive_fallback(self):
+        """LLM returns different casing — should still find the word."""
+        text = "I saw The cat"
+        corrections = [Correction(original="the", correction="a")]
+        _compute_positions(text, corrections)
+        assert corrections[0].position is not None
+        assert corrections[0].position.start == 6
+        assert corrections[0].position.end == 9
+
+    def test_case_insensitive_fallback_uppercase_original(self):
+        """LLM returns uppercase original for a lowercase word in text."""
+        text = "she went becuase of rain"
+        corrections = [Correction(original="Becuase", correction="because")]
+        _compute_positions(text, corrections)
+        assert corrections[0].position is not None
+        assert corrections[0].position.start == 9
+        assert corrections[0].position.end == 16
+
+    def test_stripped_fallback(self):
+        """LLM wraps original with punctuation — stripped search should match."""
+        text = "I like teh cat"
+        corrections = [Correction(original='"teh"', correction="the")]
+        _compute_positions(text, corrections)
+        assert corrections[0].position is not None
+        assert corrections[0].position.start == 7
+        assert corrections[0].position.end == 10
+
+    def test_unfindable_correction_gets_no_position(self):
+        """Correction that genuinely doesn't exist in text stays positionless."""
+        text = "hello world"
+        corrections = [Correction(original="xyzzy", correction="magic")]
+        _compute_positions(text, corrections)
+        assert corrections[0].position is None
+
 
 # ---------------------------------------------------------------------------
 # Pure unit tests — response parsing

@@ -46,13 +46,29 @@ class GenerateScaffoldResponse(BaseModel):
 
 SCAFFOLD_SYSTEM_PROMPT = """\
 You are a writing coach helping a dyslexic thinker plan an essay. \
-Your job is to create a clear, encouraging scaffold they can follow.
+Your job is to create a detailed outline of the IDEAS and TOPICS to cover \
+in each section — NOT instructions on how to write each section.
 
 Rules:
 - Create sections tailored to the specific topic — NOT generic "First Main Point" placeholders.
-- Each section needs a concrete, topic-specific title and suggested opening sentence.
-- Write hints that are specific and actionable, not vague.
-- Keep language warm and encouraging.
+- Each section title should name the topic or idea covered in that section.
+- "suggested_topic_sentence" should be a detailed description of what this section \
+is about — the core idea, argument, or point. Write 1-2 full sentences describing the \
+content and ideas, NOT describing the act of writing. \
+BAD: "In this section, I'll explain why Nvidia matters." \
+GOOD: "Nvidia's GPUs power most modern AI training — their CUDA ecosystem became the \
+standard because it gave researchers the parallel processing they needed."
+- "hints" should be 2-4 specific sub-topics, facts, examples, or arguments to include \
+in that section. Be detailed and specific to the topic. \
+BAD: "Begin with a hook, then transition to your thesis." \
+GOOD: "CUDA vs OpenCL — why CUDA won", "H100 vs A100 performance leap", \
+"Nvidia's dominance in data centers (80%+ market share)".
+- NEVER use phrases like "In this essay", "I'll explain", "First I'll", "Begin with", \
+"Start by", "Mention that". Describe the IDEAS, not the writing process.
+- NEVER refer to "the writer", "the reader", "you", "your argument", "your thesis". \
+Just state the ideas directly. \
+BAD: "The reader learns why GPUs matter." \
+GOOD: "GPUs matter because they handle thousands of parallel operations at once."
 - Suggest useful transition words.
 
 Respond with ONLY valid JSON (no markdown fences, no extra text):
@@ -62,8 +78,8 @@ Respond with ONLY valid JSON (no markdown fences, no extra text):
       "id": "unique-id",
       "title": "Section title",
       "type": "intro" | "body" | "conclusion",
-      "suggested_topic_sentence": "A concrete opening sentence for this section...",
-      "hints": ["Specific, actionable hint 1", "Hint 2"],
+      "suggested_topic_sentence": "Detailed description of the core idea for this section",
+      "hints": ["Specific sub-topic or detail 1", "Specific sub-topic 2", "Example or fact 3"],
       "order": 0
     }
   ],
@@ -80,11 +96,11 @@ def _build_user_prompt(request: GenerateScaffoldRequest) -> str:
         lines.append(f"Essay type: {request.essay_type}")
 
     if request.existing_ideas:
-        lines.append("\nIdeas the writer already has:")
+        lines.append("\nExisting ideas to build on:")
         for idea in request.existing_ideas:
             lines.append(f"- {idea}")
 
-    lines.append("\nCreate a writing scaffold for this essay.")
+    lines.append("\nCreate a topic outline for this essay. List what to cover, not how to write it.")
     return "\n".join(lines)
 
 
@@ -167,42 +183,56 @@ def _static_scaffold(topic: str) -> GenerateScaffoldResponse:
     sections = [
         ScaffoldSection(
             id="intro", title="Introduction", type="intro",
-            suggested_topic_sentence=f"This essay will explore {topic}.",
-            hints=["Hook the reader with an interesting fact or question",
-                   "Provide background on the topic",
-                   "State your thesis clearly"],
+            suggested_topic_sentence=(
+                f"{topic} matters because it affects how we think about the subject — "
+                f"the big picture and why it's important."
+            ),
+            hints=["Background and context",
+                   "The core question or problem",
+                   "The main argument or claim"],
             order=0,
         ),
         ScaffoldSection(
             id="body1", title="First Main Point", type="body",
-            suggested_topic_sentence=f"One key aspect of {topic} is...",
-            hints=["Start with a clear topic sentence",
-                   "Provide evidence or examples",
-                   "Explain how this supports your thesis"],
+            suggested_topic_sentence=(
+                f"The most fundamental aspect of {topic} — the foundation "
+                f"everything else builds on."
+            ),
+            hints=["Key facts or evidence",
+                   "A real-world example or case study",
+                   "Connection to the bigger argument"],
             order=1,
         ),
         ScaffoldSection(
             id="body2", title="Second Main Point", type="body",
-            suggested_topic_sentence=f"Another important consideration regarding {topic} is...",
-            hints=["Connect to your previous point",
-                   "Introduce new evidence",
-                   "Analyze and explain"],
+            suggested_topic_sentence=(
+                f"A different angle on {topic} that adds depth — "
+                f"something most people overlook."
+            ),
+            hints=["A surprising detail or counterpoint",
+                   "Evidence from a different source or perspective",
+                   "The link between this point and the previous one"],
             order=2,
         ),
         ScaffoldSection(
             id="body3", title="Third Main Point", type="body",
-            suggested_topic_sentence=f"Finally, when considering {topic}, we must examine...",
-            hints=["Introduce your strongest or final point",
-                   "Provide compelling evidence",
-                   "Tie back to your thesis"],
+            suggested_topic_sentence=(
+                f"The strongest argument about {topic} — the one "
+                f"that ties everything together."
+            ),
+            hints=["The most compelling evidence or example",
+                   "Why this point matters most",
+                   "How it reinforces the main idea"],
             order=3,
         ),
         ScaffoldSection(
             id="conclusion", title="Conclusion", type="conclusion",
-            suggested_topic_sentence=f"In conclusion, {topic} demonstrates...",
-            hints=["Restate your thesis in new words",
-                   "Summarize main points briefly",
-                   "End with a memorable closing thought"],
+            suggested_topic_sentence=(
+                f"What {topic} ultimately shows — the key takeaway."
+            ),
+            hints=["The main argument restated in fresh words",
+                   "The key points brought together",
+                   "A final thought that stays with people"],
             order=4,
         ),
     ]
