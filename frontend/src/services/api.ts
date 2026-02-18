@@ -110,13 +110,13 @@ export const api = {
   // Auth
   // -----------------------------------------------------------------------
   register: (email: string, name: string, password: string) =>
-    request<{ status: string; data: { access_token: string; user_id: string } }>(
+    request<{ status: string; data: { access_token: string; user_id: string; user_name: string; user_email: string } }>(
       '/api/v1/auth/register',
       { method: 'POST', body: JSON.stringify({ email, name, password }) },
     ),
 
   login: (email: string, password: string) =>
-    request<{ status: string; data: { access_token: string; user_id: string } }>(
+    request<{ status: string; data: { access_token: string; user_id: string; user_name: string; user_email: string } }>(
       '/api/v1/auth/login',
       { method: 'POST', body: JSON.stringify({ email, password }) },
     ),

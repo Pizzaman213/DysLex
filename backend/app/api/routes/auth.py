@@ -54,6 +54,8 @@ class AuthToken(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: str
+    user_name: str = ""
+    user_email: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +84,7 @@ async def register(request: Request, body: RegisterRequest, db: DbSession) -> di
 
     token = create_access_token(user.id, user.email)
     return success_response(
-        AuthToken(access_token=token, user_id=user.id).model_dump(),
+        AuthToken(access_token=token, user_id=user.id, user_name=user.name, user_email=user.email).model_dump(),
     )
 
 
@@ -99,7 +101,7 @@ async def login(request: Request, body: LoginRequest, db: DbSession) -> dict:
 
     token = create_access_token(user.id, user.email)
     return success_response(
-        AuthToken(access_token=token, user_id=user.id).model_dump(),
+        AuthToken(access_token=token, user_id=user.id, user_name=user.name, user_email=user.email).model_dump(),
     )
 
 
@@ -116,5 +118,5 @@ async def refresh(body: RefreshRequest, db: DbSession) -> dict:
 
     new_token = create_access_token(user.id, user.email)
     return success_response(
-        AuthToken(access_token=new_token, user_id=user.id).model_dump(),
+        AuthToken(access_token=new_token, user_id=user.id, user_name=user.name, user_email=user.email).model_dump(),
     )

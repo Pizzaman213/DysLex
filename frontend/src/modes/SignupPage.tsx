@@ -9,10 +9,12 @@ import {
 } from '@/utils/webauthn';
 
 export function SignupPage() {
-  const [step, setStep] = useState<'info' | 'passkey'>('info');
+  const [step, setStep] = useState<'info' | 'passkey' | 'password'>('info');
   const [stepDirection, setStepDirection] = useState<'forward' | 'back'>('forward');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -80,6 +82,46 @@ export function SignupPage() {
     }
   }
 
+  async function handlePasswordRegister(e: React.FormEvent) {
+    e.preventDefault();
+    if (!password || !confirmPassword) return;
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (!/[a-zA-Z]/.test(password)) {
+      setError('Password must contain at least one letter.');
+      return;
+    }
+    if (!/\d/.test(password)) {
+      setError('Password must contain at least one number.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+    try {
+      const result = await api.register(email.trim(), name.trim(), password);
+      setAuthToken(result.data.access_token);
+      setUser({
+        id: result.data.user_id,
+        name: result.data.user_name,
+        email: result.data.user_email,
+      });
+      navigate('/capture', { replace: true });
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.data?.errors?.[0]?.message || err?.message;
+      setError(detail || 'Registration failed — please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="auth-page">
       <div className="auth-container">
@@ -93,16 +135,10 @@ export function SignupPage() {
 
           <h1 className="auth-title anim anim-d1">Create your account</h1>
           <p className="auth-subtitle anim anim-d2">
-            {step === 'info'
-              ? 'Enter your name and email to get started'
-              : 'Set up a passkey for secure, password-free sign in'}
+            {step === 'info' && 'Enter your name and email to get started'}
+            {step === 'passkey' && 'Choose how you want to sign in'}
+            {step === 'password' && 'Create a password for your account'}
           </p>
-
-          {!webauthnOk && (
-            <div className="auth-error auth-error--visible">
-              Your browser doesn't support passkeys. Please use a modern browser like Chrome, Safari, or Edge.
-            </div>
-          )}
 
           <div
             className={`auth-error ${error ? 'auth-error--visible' : 'auth-error--hidden'}`}
@@ -160,40 +196,57 @@ export function SignupPage() {
               key="step-passkey"
               className={`auth-passkey-prompt ${stepDirection === 'forward' ? 'auth-step-forward' : 'auth-step-back'}`}
             >
-              <div className="auth-passkey-icon" aria-hidden="true">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 11c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z" />
-                  <path d="M14 13.5V17l-1.5 1.5" />
-                  <path d="M14 17l1.5 1.5" />
-                  <circle cx="10" cy="10" r="8" />
-                </svg>
-              </div>
+              {webauthnOk && (
+                <>
+                  <div className="auth-passkey-icon" aria-hidden="true">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 11c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z" />
+                      <path d="M14 13.5V17l-1.5 1.5" />
+                      <path d="M14 17l1.5 1.5" />
+                      <circle cx="10" cy="10" r="8" />
+                    </svg>
+                  </div>
 
-              <p className="auth-passkey-description">
-                A passkey lets you sign in with your fingerprint, face, or screen lock —
-                no password needed. It's stored securely on your device.
-              </p>
+                  <p className="auth-passkey-description">
+                    A passkey lets you sign in with your fingerprint, face, or screen lock —
+                    no password needed. It's stored securely on your device.
+                  </p>
+
+                  <button
+                    type="button"
+                    className="auth-passkey-btn"
+                    onClick={handleCreatePasskey}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <span className="auth-btn-spinner" aria-hidden="true" />
+                        Creating passkey...
+                      </>
+                    ) : (
+                      <>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                        Create passkey
+                      </>
+                    )}
+                  </button>
+
+                  <div className="auth-divider">
+                    <span>or</span>
+                  </div>
+                </>
+              )}
 
               <button
                 type="button"
-                className="auth-passkey-btn"
-                onClick={handleCreatePasskey}
-                disabled={loading || !webauthnOk}
+                className="auth-passkey-btn auth-passkey-btn--secondary"
+                onClick={() => { setStepDirection('forward'); setStep('password'); setError(''); }}
+                disabled={loading}
               >
-                {loading ? (
-                  <>
-                    <span className="auth-btn-spinner" aria-hidden="true" />
-                    Creating passkey...
-                  </>
-                ) : (
-                  <>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    Create passkey
-                  </>
-                )}
+                Use a password instead
               </button>
 
               <button
@@ -205,6 +258,70 @@ export function SignupPage() {
                 Back
               </button>
             </div>
+          )}
+
+          {step === 'password' && (
+            <form
+              key="step-password"
+              onSubmit={handlePasswordRegister}
+              className="auth-step-forward"
+            >
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="signup-password">Password</label>
+                <input
+                  id="signup-password"
+                  className="auth-input"
+                  type="password"
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={loading}
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="signup-confirm-password">Confirm password</label>
+                <input
+                  id="signup-confirm-password"
+                  className="auth-input"
+                  type="password"
+                  placeholder="Type it again"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={loading}
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="auth-passkey-btn"
+                disabled={loading || !password || !confirmPassword}
+              >
+                {loading ? (
+                  <>
+                    <span className="auth-btn-spinner" aria-hidden="true" />
+                    Creating account...
+                  </>
+                ) : (
+                  'Create account'
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="auth-back-btn"
+                onClick={() => { setStepDirection('back'); setStep('passkey'); setError(''); setPassword(''); setConfirmPassword(''); }}
+                disabled={loading}
+              >
+                Back
+              </button>
+            </form>
           )}
 
           <p className="auth-footer anim anim-d5">

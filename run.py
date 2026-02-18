@@ -47,6 +47,7 @@ License:
 import asyncio
 import argparse
 import atexit
+from enum import Enum
 import json
 import shutil
 import ssl
@@ -153,6 +154,39 @@ class CheckWarning(Exception):
 class CheckSkipped(Exception):
     """Check was skipped (e.g., not applicable for current mode)."""
     pass
+
+
+# ============================================================================
+# Dependency Pre-Scan Types
+# ============================================================================
+
+class DepState(Enum):
+    """State of a dependency detected during pre-scan."""
+    INSTALLED = 'installed'
+    MISSING = 'MISSING'
+    OUTDATED = 'OUTDATED'
+    RUNNING = 'running'
+    STOPPED = 'stopped'
+
+
+class DependencyStatus:
+    """Result of scanning a single dependency."""
+
+    __slots__ = ('name', 'state', 'version', 'action', 'critical')
+
+    def __init__(
+        self,
+        name: str,
+        state: DepState,
+        version: str = '-',
+        action: str = '',
+        critical: bool = True,
+    ):
+        self.name = name
+        self.state = state
+        self.version = version
+        self.action = action
+        self.critical = critical
 
 
 # ============================================================================
@@ -533,6 +567,7 @@ class PackageInstaller:
         self.platform_name = platform.system()
         self._pkg_manager: Optional[str] = None
         self._linux_distro: Optional[str] = None
+        self._dpkg_broken: bool = False
 
     def _colorize(self, text: str, color: str) -> str:
         if not self.color_enabled:
@@ -906,14 +941,15 @@ class PackageInstaller:
     # dpkg recovery (Debian/Ubuntu)
     # ------------------------------------------------------------------
 
-    def _fix_dpkg(self) -> None:
+    def _fix_dpkg(self) -> bool:
         """Run 'dpkg --configure -a' if dpkg is in a broken state.
 
+        Returns True if dpkg is healthy, False if broken and unfixable.
         This can happen when a previous apt operation was interrupted
         (e.g., in Docker builds, OOM kills, or Ctrl+C during install).
         """
         if self._detect_package_manager() != 'apt':
-            return
+            return True
         # Quick check: run a harmless dpkg command to see if it complains
         result = subprocess.run(
             [*_sudo(), 'dpkg', '--audit'],
@@ -925,16 +961,30 @@ class PackageInstaller:
             capture_output=True, text=True, timeout=30,
         )
         stderr_combined = (result.stderr or '') + (result2.stderr or '')
-        if 'dpkg --configure -a' in stderr_combined or result2.returncode != 0:
-            print(self._colorize('⚙️  Fixing interrupted dpkg state...', Color.YELLOW))
-            env = os.environ.copy()
-            env['DEBIAN_FRONTEND'] = 'noninteractive'
-            subprocess.run(
-                [*_sudo(), 'dpkg', '--configure', '-a'],
-                timeout=300,
-                env=env,
-            )
+        if 'dpkg --configure -a' not in stderr_combined and result2.returncode == 0:
+            return True  # dpkg is fine
+
+        print(self._colorize('⚙️  Fixing interrupted dpkg state...', Color.YELLOW))
+        env = os.environ.copy()
+        env['DEBIAN_FRONTEND'] = 'noninteractive'
+        subprocess.run(
+            [*_sudo(), 'dpkg', '--configure', '-a'],
+            timeout=300,
+            env=env,
+        )
+        # Verify the fix actually worked
+        verify = subprocess.run(
+            [*_sudo(), 'apt-get', 'check'],
+            capture_output=True, text=True, timeout=30,
+        )
+        if verify.returncode == 0:
             print(self._colorize('✓ dpkg state recovered', Color.GREEN))
+            return True
+        else:
+            print(self._colorize('✗ Could not fix dpkg automatically.', Color.RED))
+            print(self._colorize('  Run manually: sudo dpkg --configure -a', Color.YELLOW))
+            self._dpkg_broken = True
+            return False
 
     # ------------------------------------------------------------------
     # Python 3.11+
@@ -960,11 +1010,13 @@ class PackageInstaller:
         try:
             if pkg == 'brew':
                 if not self._ensure_homebrew():
-                    return False
+                    return None
                 self._run_command(['brew', 'install', 'python@3.11'], timeout=600)
 
             elif pkg == 'apt':
-                self._fix_dpkg()
+                if not self._fix_dpkg():
+                    print(self._colorize('  Skipping apt (dpkg is broken — see above)', Color.YELLOW))
+                    return None
                 # Try deadsnakes PPA first (Ubuntu), then default repos
                 env = os.environ.copy()
                 env['DEBIAN_FRONTEND'] = 'noninteractive'
@@ -1001,7 +1053,7 @@ class PackageInstaller:
 
             elif pkg == 'choco':
                 if not self._ensure_chocolatey():
-                    return False
+                    return None
                 self._run_command(
                     ['choco', 'install', 'python311', '-y', '--no-progress'],
                     timeout=600,
@@ -1009,7 +1061,6 @@ class PackageInstaller:
                 self._refresh_windows_path()
 
             # Find the new python3.11 binary
-            import shutil
             for candidate in ['python3.11', 'python3']:
                 binary = shutil.which(candidate)
                 if not binary:
@@ -1053,7 +1104,9 @@ class PackageInstaller:
 
         # Fix broken dpkg state before any apt operations
         if pkg == 'apt':
-            self._fix_dpkg()
+            if not self._fix_dpkg():
+                print(self._colorize('  Skipping apt prerequisites (dpkg broken)', Color.YELLOW))
+                return True  # Don't block pipeline — fallbacks may still work
 
         print(self._colorize('⚙️  Installing system prerequisites...', Color.YELLOW))
         try:
@@ -1190,33 +1243,36 @@ class PackageInstaller:
                             break
 
             elif pkg == 'apt':
-                # Ensure curl is available for NodeSource setup
-                if not self._is_command_available('curl'):
-                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
-                    subprocess.run(
-                        [*_sudo(), 'apt-get', 'install', '-y', '-qq', 'curl'],
+                if self._dpkg_broken:
+                    print(self._colorize('  Skipping apt (dpkg is broken — see above)', Color.YELLOW))
+                else:
+                    # Ensure curl is available for NodeSource setup
+                    if not self._is_command_available('curl'):
+                        subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
+                        subprocess.run(
+                            [*_sudo(), 'apt-get', 'install', '-y', '-qq', 'curl'],
+                            timeout=120,
+                        )
+                    # Remove conflicting old Node.js dev packages that block
+                    # NodeSource installs (e.g. libnode-dev from distro Node 12/16).
+                    for conflict_pkg in ['libnode-dev', 'libnode72']:
+                        subprocess.run(
+                            [*_sudo(), 'apt-get', 'remove', '-y', '-qq', conflict_pkg],
+                            capture_output=True, timeout=60,
+                        )
+                    # NodeSource setup — its nodejs package already includes npm,
+                    # so do NOT install the separate npm package alongside it.
+                    result = subprocess.run(
+                        ['bash', '-c', f'curl -fsSL https://deb.nodesource.com/setup_20.x | {_shell_sudo_E()}bash -'],
                         timeout=120,
                     )
-                # Remove conflicting old Node.js dev packages that block
-                # NodeSource installs (e.g. libnode-dev from distro Node 12/16).
-                for conflict_pkg in ['libnode-dev', 'libnode72']:
-                    subprocess.run(
-                        [*_sudo(), 'apt-get', 'remove', '-y', '-qq', conflict_pkg],
-                        capture_output=True, timeout=60,
-                    )
-                # NodeSource setup — its nodejs package already includes npm,
-                # so do NOT install the separate npm package alongside it.
-                result = subprocess.run(
-                    ['bash', '-c', f'curl -fsSL https://deb.nodesource.com/setup_20.x | {_shell_sudo_E()}bash -'],
-                    timeout=120,
-                )
-                if result.returncode == 0:
-                    self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
-                else:
-                    # NodeSource failed — fall back to distro packages (older Node, separate npm)
-                    print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
-                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
-                    self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
+                    if result.returncode == 0:
+                        self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'nodejs'], timeout=300)
+                    else:
+                        # NodeSource failed — fall back to distro packages (older Node, separate npm)
+                        print(self._colorize('  NodeSource setup failed, trying default repos...', Color.YELLOW))
+                        subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
+                        self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'nodejs', 'npm'], timeout=300)
 
             elif pkg == 'dnf':
                 # Ensure curl is available for NodeSource setup
@@ -1370,23 +1426,26 @@ class PackageInstaller:
                         break
 
             elif pkg == 'apt':
-                subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
-                self._run_command(
-                    [*_sudo(), 'apt-get', 'install', '-y', '-qq',
-                     'postgresql', 'postgresql-contrib', 'libpq-dev'],
-                    timeout=300,
-                )
-                # Ubuntu/Debian: ensure the cluster is created and started.
-                # apt usually does this automatically, but not always
-                # (e.g., when upgrading from an older version).
-                subprocess.run(
-                    [*_sudo(), 'systemctl', 'enable', 'postgresql'],
-                    capture_output=True, timeout=10,
-                )
-                subprocess.run(
-                    [*_sudo(), 'systemctl', 'start', 'postgresql'],
-                    capture_output=True, timeout=30,
-                )
+                if self._dpkg_broken:
+                    print(self._colorize('  Skipping apt (dpkg is broken — see above)', Color.YELLOW))
+                else:
+                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
+                    self._run_command(
+                        [*_sudo(), 'apt-get', 'install', '-y', '-qq',
+                         'postgresql', 'postgresql-contrib', 'libpq-dev'],
+                        timeout=300,
+                    )
+                    # Ubuntu/Debian: ensure the cluster is created and started.
+                    # apt usually does this automatically, but not always
+                    # (e.g., when upgrading from an older version).
+                    subprocess.run(
+                        [*_sudo(), 'systemctl', 'enable', 'postgresql'],
+                        capture_output=True, timeout=10,
+                    )
+                    subprocess.run(
+                        [*_sudo(), 'systemctl', 'start', 'postgresql'],
+                        capture_output=True, timeout=30,
+                    )
 
             elif pkg == 'dnf':
                 self._run_command(
@@ -1459,7 +1518,9 @@ class PackageInstaller:
             # Fallback: snap (Linux — not ideal for databases but works)
             if self.platform_name == 'Linux':
                 # PostgreSQL via apt.postgresql.org official repo
-                if self._is_command_available('curl'):
+                if self._dpkg_broken:
+                    pass  # Skip apt fallback too — dpkg is broken
+                elif self._is_command_available('curl'):
                     print(self._colorize('  Trying official PostgreSQL apt repo...', Color.GRAY))
                     subprocess.run(
                         ['bash', '-c',
@@ -1532,8 +1593,11 @@ class PackageInstaller:
                     return False
                 self._run_command(['brew', 'install', 'redis'], timeout=300)
             elif pkg == 'apt':
-                subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
-                self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'redis-server'], timeout=300)
+                if self._dpkg_broken:
+                    print(self._colorize('  Skipping apt (dpkg is broken — see above)', Color.YELLOW))
+                else:
+                    subprocess.run([*_sudo(), 'apt-get', 'update', '-qq'], timeout=120)
+                    self._run_command([*_sudo(), 'apt-get', 'install', '-y', '-qq', 'redis-server'], timeout=300)
             elif pkg == 'dnf':
                 self._run_command([*_sudo(), 'dnf', 'install', '-y', '-q', 'redis'], timeout=300)
             elif pkg == 'pacman':
@@ -1697,7 +1761,7 @@ class PackageInstaller:
                 print(self._colorize('  Applying database schema...', Color.GRAY))
                 if self.platform_name == 'Darwin':
                     subprocess.run(
-                        ['psql', '-d', 'dyslex', '-f', str(init_sql)],
+                        ['psql', '-U', 'dyslex', '-d', 'dyslex', '-f', str(init_sql)],
                         capture_output=True, timeout=30,
                     )
                 elif self.platform_name == 'Linux':
@@ -1893,26 +1957,288 @@ class PrerequisiteChecker:
             return text
         return f"{color}{text}{Color.RESET}"
 
+    # ------------------------------------------------------------------
+    # Dependency Pre-Scan
+    # ------------------------------------------------------------------
+
+    def scan_dependencies(self) -> List[DependencyStatus]:
+        """Read-only scan of all dependencies — no installations, only detection.
+
+        Returns a list of DependencyStatus objects describing what is present,
+        missing, running, or stopped.
+        """
+        results: List[DependencyStatus] = []
+
+        # --- Python ---
+        version = sys.version_info[:3]
+        ver_str = f'{version[0]}.{version[1]}.{version[2]}'
+        if version[:2] >= PYTHON_MIN_VERSION:
+            results.append(DependencyStatus('Python', DepState.INSTALLED, ver_str))
+        else:
+            results.append(DependencyStatus(
+                'Python', DepState.OUTDATED, ver_str,
+                action=f'Need Python {PYTHON_MIN_VERSION[0]}.{PYTHON_MIN_VERSION[1]}+',
+            ))
+
+        # --- Node.js ---
+        if self.mode in ('dev', 'frontend'):
+            try:
+                result = subprocess.run(
+                    ['node', '--version'],
+                    capture_output=True, text=True, timeout=5,
+                )
+                node_ver = result.stdout.strip().lstrip('v')
+                major = int(node_ver.split('.')[0])
+                if major >= NODE_MIN_VERSION[0]:
+                    results.append(DependencyStatus('Node.js', DepState.INSTALLED, node_ver))
+                else:
+                    results.append(DependencyStatus(
+                        'Node.js', DepState.OUTDATED, node_ver,
+                        action=f'Need Node.js {NODE_MIN_VERSION[0]}+',
+                    ))
+            except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, IndexError):
+                # Try nvm fallback (read-only: _find_node_via_nvm updates PATH)
+                nvm_node = self._find_node_via_nvm()
+                if nvm_node:
+                    try:
+                        result = subprocess.run(
+                            [nvm_node, '--version'],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        node_ver = result.stdout.strip().lstrip('v')
+                        results.append(DependencyStatus('Node.js', DepState.INSTALLED, f'{node_ver} (nvm)'))
+                    except Exception:
+                        results.append(DependencyStatus(
+                            'Node.js', DepState.MISSING,
+                            action='Install Node.js 20+',
+                        ))
+                else:
+                    results.append(DependencyStatus(
+                        'Node.js', DepState.MISSING,
+                        action='Install Node.js 20+',
+                    ))
+
+        # --- PostgreSQL ---
+        if self.mode in ('dev', 'backend'):
+            pg_installed = self.installer._is_postgres_installed() if self.installer else (
+                shutil.which('psql') is not None or shutil.which('pg_isready') is not None
+            )
+            if pg_installed:
+                if self._is_port_open('localhost', POSTGRES_PORT):
+                    results.append(DependencyStatus('PostgreSQL', DepState.RUNNING))
+                else:
+                    results.append(DependencyStatus(
+                        'PostgreSQL', DepState.STOPPED,
+                        action='Start PostgreSQL service',
+                    ))
+            else:
+                results.append(DependencyStatus(
+                    'PostgreSQL', DepState.MISSING,
+                    action='Install and start PostgreSQL',
+                ))
+
+        # --- Redis (optional) ---
+        if self.mode in ('dev', 'backend'):
+            redis_installed = self.installer._is_redis_installed() if self.installer else (
+                shutil.which('redis-server') is not None
+            )
+            if redis_installed:
+                if self._is_port_open('localhost', REDIS_PORT):
+                    results.append(DependencyStatus('Redis', DepState.RUNNING, critical=False))
+                else:
+                    results.append(DependencyStatus(
+                        'Redis', DepState.STOPPED,
+                        action='Start Redis service',
+                        critical=False,
+                    ))
+            else:
+                results.append(DependencyStatus(
+                    'Redis', DepState.MISSING,
+                    action='Install and start Redis',
+                    critical=False,
+                ))
+
+        # --- Build tools ---
+        if self.installer:
+            has_gcc = self.installer._is_command_available('gcc')
+            has_make = self.installer._is_command_available('make')
+            if has_gcc and has_make:
+                results.append(DependencyStatus('Build tools', DepState.INSTALLED))
+            else:
+                missing = []
+                if not has_gcc:
+                    missing.append('gcc')
+                if not has_make:
+                    missing.append('make')
+                results.append(DependencyStatus(
+                    'Build tools', DepState.MISSING,
+                    action=f'Install {", ".join(missing)}',
+                ))
+
+        # --- Backend venv ---
+        if self.mode in ('dev', 'backend'):
+            venv_python = self._find_venv_python()
+            if venv_python and venv_python.exists():
+                results.append(DependencyStatus('Backend venv', DepState.INSTALLED))
+            else:
+                results.append(DependencyStatus(
+                    'Backend venv', DepState.MISSING,
+                    action='Create venv + install pip packages',
+                ))
+
+        # --- Frontend deps ---
+        if self.mode in ('dev', 'frontend'):
+            if Path('frontend/node_modules').exists():
+                results.append(DependencyStatus('Frontend deps', DepState.INSTALLED))
+            else:
+                results.append(DependencyStatus(
+                    'Frontend deps', DepState.MISSING,
+                    action='Run npm install',
+                ))
+
+        # --- .env file (optional) ---
+        if Path('.env').exists():
+            results.append(DependencyStatus('.env file', DepState.INSTALLED, critical=False))
+        else:
+            results.append(DependencyStatus(
+                '.env file', DepState.MISSING,
+                action='Create from template',
+                critical=False,
+            ))
+
+        return results
+
+    def _print_scan_summary(self, results: List[DependencyStatus]) -> None:
+        """Print a color-coded dependency scan table."""
+        print(f"\n{self._colorize('  Dependency Pre-Scan:', Color.BOLD)}\n")
+
+        # Find the longest dependency name for alignment
+        max_name = max(len(r.name) for r in results)
+
+        for r in results:
+            # Padded name + dotted leader
+            dots = '.' * (max_name + 4 - len(r.name))
+            name_part = f'    {r.name} {dots}'
+
+            # Version column (fixed width)
+            ver_part = f'{r.version:<14}'
+
+            # State + action
+            state_val = r.state.value
+            if r.state in (DepState.INSTALLED, DepState.RUNNING):
+                state_color = Color.GREEN
+                action_part = ''
+            elif r.state == DepState.STOPPED:
+                state_color = Color.YELLOW
+                action_part = f' -> {r.action}' if r.action else ''
+            else:
+                state_color = Color.RED
+                action_part = f' -> {r.action}' if r.action else ''
+
+            state_part = self._colorize(state_val, state_color)
+
+            print(f'{name_part} {ver_part}{state_part}{action_part}')
+
+        # Summary counts
+        needs_action = [r for r in results if r.state not in (DepState.INSTALLED, DepState.RUNNING)]
+        required = [r for r in needs_action if r.critical]
+        optional = [r for r in needs_action if not r.critical]
+
+        if needs_action:
+            print()
+            if required:
+                names = ', '.join(r.name for r in required)
+                print(self._colorize(
+                    f'  {len(required)} required to install: {names}',
+                    Color.YELLOW,
+                ))
+            if optional:
+                names = ', '.join(r.name for r in optional)
+                print(self._colorize(
+                    f'  {len(optional)} optional: {names}',
+                    Color.GRAY,
+                ))
+        print()
+
+    def _confirm_scan(self, results: List[DependencyStatus]) -> bool:
+        """Ask the user to confirm before installing scanned dependencies.
+
+        Returns True if:
+        - All deps are already satisfied (no prompt needed)
+        - --yes flag or non-interactive mode (auto-confirmed)
+        - --check-only mode (scan shown but nothing to install)
+        - User answers Y/yes/Enter
+        """
+        needs_action = any(
+            r.state not in (DepState.INSTALLED, DepState.RUNNING)
+            for r in results
+        )
+        if not needs_action:
+            return True
+
+        # In --check-only mode, show the scan but don't prompt
+        if self.config.get('check_only', False):
+            return True
+
+        # --yes flag
+        if self.config.get('yes', False):
+            print(self._colorize(
+                '  Proceeding with install (auto-confirmed with --yes)',
+                Color.GRAY,
+            ))
+            return True
+
+        # Non-interactive
+        if not sys.stdin.isatty():
+            print(self._colorize(
+                '  Proceeding with install (auto-confirmed: non-interactive mode)',
+                Color.GRAY,
+            ))
+            return True
+
+        # Interactive prompt
+        try:
+            answer = input('  Proceed with installing the above? [Y/n] ').strip().lower()
+            if answer in ('', 'y', 'yes'):
+                return True
+            print(self._colorize('  Aborted by user.', Color.YELLOW))
+            return False
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+
     def check_all(self) -> bool:
         """Run all applicable checks. Returns True if all critical checks pass.
 
         Check order is dependency-aware:
-        0. Pre-flight checks (disk space, network, sudo)
-        1. Python version (always first — we're running in it)
-        2. Node.js (needed before frontend deps)
-        3. PostgreSQL (install → start → database setup)
-        4. Redis (install → start)
-        5. Backend dependencies (venv)
-        6. Backend port
-        7. Frontend dependencies (npm install)
-        8. Frontend port
-        9. Environment file (.env)
-        10. Environment variables (NVIDIA key prompt)
-        11. NVIDIA NIM API ping
+        0. Dependency pre-scan (read-only summary + user confirmation)
+        1. Pre-flight checks (disk space, network, sudo)
+        2. Python version (always first — we're running in it)
+        3. Node.js (needed before frontend deps)
+        4. PostgreSQL (install → start → database setup)
+        5. Redis (install → start)
+        6. Backend dependencies (venv)
+        7. Backend port
+        8. Frontend dependencies (npm install)
+        9. Frontend port
+        10. Environment file (.env)
+        11. Environment variables (NVIDIA key prompt)
+        12. NVIDIA NIM API ping
         """
-        # Pre-flight checks — fatal: bail immediately if disk/network is gone
+        # --- Dependency pre-scan: show what needs installing before doing anything ---
         if self.auto_setup and self.mode != 'docker':
-            self.preflight_checks()
+            scan_results = self.scan_dependencies()
+            self._print_scan_summary(scan_results)
+            if not self._confirm_scan(scan_results):
+                return False  # user declined
+
+            # Only run preflight (disk/network/sudo) if something needs installing
+            needs_install = any(
+                r.state not in (DepState.INSTALLED, DepState.RUNNING)
+                for r in scan_results
+            )
+            if needs_install:
+                self.preflight_checks()
 
         # Install system build tools & libraries upfront on Linux
         if self.auto_setup and self.installer and self.mode != 'docker':
@@ -2110,7 +2436,6 @@ class PrerequisiteChecker:
         (highest first) so we pick the best available interpreter.
         Returns the absolute path if found, None otherwise.
         """
-        import shutil
         # Check from highest to lowest so we prefer the newest version
         for minor in range(15, PYTHON_MIN_VERSION[1] - 1, -1):
             candidate = f'python3.{minor}'
@@ -2908,13 +3233,16 @@ class PrerequisiteChecker:
                 if plat == 'Linux' and self.installer:
                     pkg = self.installer._detect_package_manager()
                     if pkg == 'apt':
-                        py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
-                        print(f"{self._colorize('  Installing python3-venv (required on Ubuntu)...', Color.GRAY)}")
-                        subprocess.run(
-                            [*_sudo(), 'apt-get', 'install', '-y', '-qq',
-                             f'python{py_ver}-venv', 'python3-venv'],
-                            timeout=120,
-                        )
+                        if self.installer._dpkg_broken:
+                            print(f"{self._colorize('  Skipping apt (dpkg is broken — see above)', Color.YELLOW)}")
+                        else:
+                            py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+                            print(f"{self._colorize('  Installing python3-venv (required on Ubuntu)...', Color.GRAY)}")
+                            subprocess.run(
+                                [*_sudo(), 'apt-get', 'install', '-y', '-qq',
+                                 f'python{py_ver}-venv', 'python3-venv'],
+                                timeout=120,
+                            )
                     elif pkg == 'dnf':
                         print(f"{self._colorize('  Installing python3-venv...', Color.GRAY)}")
                         subprocess.run(
@@ -3117,11 +3445,13 @@ class PrerequisiteChecker:
                                         if r.returncode != 0:
                                             # fallocate may not work on all filesystems, try dd
                                             if 'fallocate' in cmd:
-                                                subprocess.run(
+                                                dd_result = subprocess.run(
                                                     [*_sudo(), 'dd', 'if=/dev/zero', f'of={swap_path}',
                                                      'bs=1M', 'count=4096'],
                                                     capture_output=True, timeout=120,
                                                 )
+                                                if dd_result.returncode != 0:
+                                                    break
                                             else:
                                                 break
                                     else:
@@ -4154,6 +4484,7 @@ async def main():
         'auto_setup': args.auto_setup,
         'yes': args.yes,
         'kill_ports': args.kill_ports,
+        'check_only': args.check_only,
         'https': args.https,
         'ssl_cert': ssl_cert,
         'ssl_key': ssl_key,

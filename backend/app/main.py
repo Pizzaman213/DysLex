@@ -95,7 +95,7 @@ async def _validate_startup() -> None:
     except Exception:
         logger.warning(
             "Startup check: could not read alembic_version (migrations may not have been applied)",
-            exc_info=True,
+            exc_info=False,
         )
 
     # 3. NVIDIA NIM API key

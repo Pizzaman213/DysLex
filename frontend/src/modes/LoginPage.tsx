@@ -10,8 +10,10 @@ import {
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [method, setMethod] = useState<'passkey' | 'password'>('passkey');
   const navigate = useNavigate();
   const location = useLocation();
   const { setUser } = useUserStore();
@@ -71,7 +73,29 @@ export function LoginPage() {
     }
   }
 
-  function handleEmailSubmit(e: React.FormEvent) {
+  async function handlePasswordLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+    setError('');
+    setLoading(true);
+    try {
+      const result = await api.login(email.trim(), password);
+      setAuthToken(result.data.access_token);
+      setUser({
+        id: result.data.user_id,
+        name: result.data.user_name,
+        email: result.data.user_email,
+      });
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.message;
+      setError(detail || 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handlePasskeyEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
     handlePasskeyLogin(email.trim());
@@ -98,12 +122,6 @@ export function LoginPage() {
           <h1 className="auth-title anim anim-d1">Welcome back</h1>
           <p className="auth-subtitle anim anim-d2">Sign in to continue writing</p>
 
-          {!webauthnOk && (
-            <div className="auth-error auth-error--visible">
-              Your browser doesn't support passkeys. Please use a modern browser like Chrome, Safari, or Edge.
-            </div>
-          )}
-
           <div
             className={`auth-error ${error ? 'auth-error--visible' : 'auth-error--hidden'}`}
             aria-live="polite"
@@ -111,55 +129,143 @@ export function LoginPage() {
             {error || '\u00A0'}
           </div>
 
-          <button
-            type="button"
-            className="auth-passkey-btn anim anim-d3"
-            onClick={() => handlePasskeyLogin()}
-            disabled={loading || !webauthnOk}
-          >
-            {loading ? (
-              <>
-                <span className="auth-btn-spinner" aria-hidden="true" />
-                Authenticating...
-              </>
-            ) : (
-              <>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                Sign in with passkey
-              </>
-            )}
-          </button>
+          {method === 'passkey' && (
+            <>
+              {!webauthnOk && (
+                <div className="auth-error auth-error--visible">
+                  Your browser doesn't support passkeys. Try signing in with a password instead.
+                </div>
+              )}
 
-          <div className="auth-divider anim anim-d4">
-            <span>or sign in with email</span>
-          </div>
+              <button
+                type="button"
+                className="auth-passkey-btn anim anim-d3"
+                onClick={() => handlePasskeyLogin()}
+                disabled={loading || !webauthnOk}
+              >
+                {loading ? (
+                  <>
+                    <span className="auth-btn-spinner" aria-hidden="true" />
+                    Authenticating...
+                  </>
+                ) : (
+                  <>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    Sign in with passkey
+                  </>
+                )}
+              </button>
 
-          <form onSubmit={handleEmailSubmit} className="anim anim-d5">
-            <div className="auth-field">
-              <label className="auth-label" htmlFor="login-email">Email</label>
-              <input
-                id="login-email"
-                className="auth-input"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email webauthn"
-                disabled={loading}
-              />
-            </div>
+              <div className="auth-divider anim anim-d4">
+                <span>or sign in with email</span>
+              </div>
 
-            <button
-              type="submit"
-              className="auth-passkey-btn auth-passkey-btn--secondary"
-              disabled={loading || !webauthnOk || !email.trim()}
-            >
-              Continue with email
-            </button>
-          </form>
+              <form onSubmit={handlePasskeyEmailSubmit} className="anim anim-d5">
+                <div className="auth-field">
+                  <label className="auth-label" htmlFor="login-email">Email</label>
+                  <input
+                    id="login-email"
+                    className="auth-input"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email webauthn"
+                    disabled={loading}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-passkey-btn auth-passkey-btn--secondary"
+                  disabled={loading || !webauthnOk || !email.trim()}
+                >
+                  Continue with email
+                </button>
+              </form>
+
+              <div className="auth-divider anim anim-d5">
+                <span>or</span>
+              </div>
+
+              <button
+                type="button"
+                className="auth-passkey-btn auth-passkey-btn--secondary anim anim-d5"
+                onClick={() => { setMethod('password'); setError(''); }}
+              >
+                Sign in with password
+              </button>
+            </>
+          )}
+
+          {method === 'password' && (
+            <form onSubmit={handlePasswordLogin} className="anim anim-d3">
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="login-email-pw">Email</label>
+                <input
+                  id="login-email-pw"
+                  className="auth-input"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  disabled={loading}
+                  required
+                />
+              </div>
+
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="login-password">Password</label>
+                <input
+                  id="login-password"
+                  className="auth-input"
+                  type="password"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={loading}
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="auth-passkey-btn"
+                disabled={loading || !email.trim() || !password}
+              >
+                {loading ? (
+                  <>
+                    <span className="auth-btn-spinner" aria-hidden="true" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+
+              {webauthnOk && (
+                <>
+                  <div className="auth-divider">
+                    <span>or</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="auth-passkey-btn auth-passkey-btn--secondary"
+                    onClick={() => { setMethod('passkey'); setError(''); }}
+                    disabled={loading}
+                  >
+                    Sign in with passkey
+                  </button>
+                </>
+              )}
+            </form>
+          )}
 
           <p className="auth-footer anim anim-d6">
             Don't have an account? <Link to="/signup">Create one</Link>
