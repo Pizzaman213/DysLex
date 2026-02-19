@@ -8,10 +8,10 @@ from datetime import datetime, timedelta, timezone
 UTC = timezone.utc
 from typing import Annotated
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -35,23 +35,20 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 # Password hashing
 # ---------------------------------------------------------------------------
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def _prehash(password: str) -> str:
+def _prehash(password: str) -> bytes:
     """SHA-256 pre-hash to avoid bcrypt's 72-byte truncation."""
     digest = hashlib.sha256(password.encode("utf-8")).digest()
-    return base64.b64encode(digest).decode("ascii")
+    return base64.b64encode(digest)
 
 
 def hash_password(password: str) -> str:
     """Hash a plain-text password."""
-    return pwd_context.hash(_prehash(password))
+    return bcrypt.hashpw(_prehash(password), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plain-text password against a hash."""
-    return pwd_context.verify(_prehash(plain), hashed)
+    return bcrypt.checkpw(_prehash(plain), hashed.encode("ascii"))
 
 # ---------------------------------------------------------------------------
 # JWT helpers
