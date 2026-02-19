@@ -1,5 +1,7 @@
 """API dependencies — DB sessions and JWT authentication."""
 
+import base64
+import hashlib
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
@@ -36,14 +38,20 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _prehash(password: str) -> str:
+    """SHA-256 pre-hash to avoid bcrypt's 72-byte truncation."""
+    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(digest).decode("ascii")
+
+
 def hash_password(password: str) -> str:
     """Hash a plain-text password."""
-    return pwd_context.hash(password)
+    return pwd_context.hash(_prehash(password))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Verify a plain-text password against a hash."""
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_prehash(plain), hashed)
 
 # ---------------------------------------------------------------------------
 # JWT helpers
